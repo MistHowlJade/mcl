@@ -124,9 +124,7 @@ export function registerIpcHandlers(): void {
   /* ---------- 启动 ---------- */
   ipcMain.handle('launch:start', async (_e, instanceId: string, accountId?: string | null) => {
     minecraft.launchState.instanceId = instanceId;
-    minecraft.launchState.status = 'preparing';
-    minecraft.launchState.message = '正在准备游戏…';
-    sendToAll('launch:status', { ...minecraft.launchState });
+    // 状态由 launchInstance 自己推进（它的并发保护依赖 status，不能在这里预写）
     void minecraft.launchInstance(instanceId, { accountId }).catch(err => {
       const message = err instanceof Error ? err.message : String(err);
       minecraft.launchState.status = 'idle';
