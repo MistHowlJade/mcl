@@ -292,14 +292,16 @@ export async function launchInstance(instanceId: string, options: LaunchOptions 
     launchState.message = message;
     launchEvents.emit('status', { ...launchState });
   };
+  // 校验顺序：先做实例与 unknown 版本检查，再做并发保护（避免两种错误叠加时给出错误提示）
+  const instance = getInstance(instanceId);
+  if (!instance) throw new Error('实例不存在');
+  if (instance.mcVersion === 'unknown') {
+    throw new Error('该实例未识别 MC 版本，请先在「实例」页设置版本后再启动。');
+  }
   // 并发保护：已有实例在启动/运行中时拒绝二次启动（防双进程、防误杀正在运行的游戏）
   const busyStates = ['preparing', 'downloading', 'launching', 'running'];
   if (busyStates.includes(launchState.status) && launchState.instanceId) {
     throw new Error('已有实例在启动/运行中，请等待其退出后再试。');
-  }
-  const instance = getInstance(instanceId);
-  if (instance && instance.mcVersion === 'unknown') {
-    throw new Error('该实例未识别 MC 版本，请先在「实例」页设置版本后再启动。');
   }
   const gameLogSafe = (s: string) => s.replace(/[^a-zA-Z0-9_-]/g, '');
   // 本次启动唯一日志文件（避免跨启动累积导致旧错误被当成本次错误，见 issue #9）
@@ -312,7 +314,6 @@ export async function launchInstance(instanceId: string, options: LaunchOptions 
     } catch { /* ignore */ }
   };
 
-  if (!instance) throw new Error('实例不存在');
   const settings = getSettings();
   const activeAccountId = options.accountId ?? authService.getActiveAccount()?.id ?? null;
   if (!activeAccountId) throw new Error('还没有选择账号。请先在「账号」页登录微软账号或创建离线账号。');
