@@ -93,56 +93,71 @@ export class DownloadManager extends EventEmitter {
     return m === task.url ? [task.url] : [m, task.url];
   }
 
-  private head(url: string): Promise<{ status: number; size: number; acceptsRanges: boolean }> {
-    return new Promise((resolve) => {
+  /**
+   * 统一 HTTP 请求：显式端口 + 最多 5 次 3xx 重定向
+   * 返回已开始消费的响应流（status>=400 时 body 可被 drain 或直接读取）
+   */
+  private requestWithRedirects(
+    url: string,
+    options: { method: string; headers?: Record<string, string> },
+    redirectDepth = 0,
+  ): Promise<{ status: number; headers: http.IncomingHttpHeaders; stream: import('stream').Readable }> {
+    return new Promise((resolve, reject) => {
       const client = url.startsWith('http:') ? http : https;
       const parsed = new URL(url);
       const req = client.request({
-        method: 'HEAD', hostname: parsed.hostname, path: parsed.pathname + parsed.search,
-        headers: { 'User-Agent': USER_AGENT }, timeout: this.opts.timeoutMs,
+        method: options.method,
+        hostname: parsed.hostname,
+        ...(parsed.port ? { port: parseInt(parsed.port, 10) } : {}),
+        path: parsed.pathname + parsed.search,
+        headers: { 'User-Agent': USER_AGENT, ...(options.headers ?? {}) },
+        timeout: this.opts.timeoutMs,
       }, (res) => {
-        res.resume();
-        const size = parseInt(res.headers['content-length'] ?? '0', 10) || 0;
-        const acceptsRanges = (res.headers['accept-ranges'] ?? '').includes('bytes');
-        resolve({ status: res.statusCode ?? 0, size, acceptsRanges });
+        const status = res.statusCode ?? 0;
+        if ([301, 302, 303, 307, 308].includes(status) && res.headers.location && redirectDepth < 5) {
+          res.resume();
+          const next = new URL(res.headers.location, url).toString();
+          resolve(this.requestWithRedirects(next, options, redirectDepth + 1));
+          return;
+        }
+        resolve({ status, headers: res.headers, stream: res });
       });
-      req.on('timeout', () => { req.destroy(); resolve({ status: 0, size: 0, acceptsRanges: false }); });
-      req.on('error', () => resolve({ status: 0, size: 0, acceptsRanges: false }));
+      req.on('timeout', () => { req.destroy(new Error(`请求超时（>${this.opts.timeoutMs}ms）：${url}`)); });
+      req.on('error', reject);
       req.end();
     });
+  }
+
+  private head(url: string): Promise<{ status: number; size: number; acceptsRanges: boolean }> {
+    return this.requestWithRedirects(url, { method: 'HEAD' }).then(({ status, headers, stream }) => {
+      stream.resume();
+      const size = parseInt((headers['content-length'] as string) ?? '0', 10) || 0;
+      const acceptsRanges = (headers['accept-ranges'] ?? '').toString().includes('bytes');
+      return { status, size, acceptsRanges };
+    }, () => ({ status: 0, size: 0, acceptsRanges: false }));
   }
 
   /** 单个文件下载（支持断点续传），完成后停留在 partFile，由上层统一 rename 到 dest */
   private async streamToFile(url: string, partFile: string, onChunk: (n: number) => void): Promise<void> {
     const existing = fs.existsSync(partFile) ? fs.statSync(partFile).size : 0;
+    const headers: Record<string, string> = {};
+    if (existing > 0) headers['Range'] = `bytes=${existing}-`;
+    const { status, stream } = await this.requestWithRedirects(url, { method: 'GET', headers });
     return new Promise((resolve, reject) => {
-      const client = url.startsWith('http:') ? http : https;
-      const parsed = new URL(url);
-      const headers: Record<string, string> = { 'User-Agent': USER_AGENT };
-      if (existing > 0) headers['Range'] = `bytes=${existing}-`;
-      const req = client.request({
-        method: 'GET', hostname: parsed.hostname, path: parsed.pathname + parsed.search,
-        headers, timeout: this.opts.timeoutMs,
-      }, (res) => {
-        const status = res.statusCode ?? 0;
-        if (status === 416) { res.resume(); resolve(); return; } // 已下完
-        if (status >= 400) {
-          res.resume();
-          reject(new Error(`HTTP ${status}：${url}`));
-          return;
-        }
-        const append = existing > 0 && status === 206;
-        fs.mkdirSync(path.dirname(partFile), { recursive: true });
-        const out = fs.createWriteStream(partFile, { flags: append ? 'a' : 'w' });
-        res.on('data', (chunk: Buffer) => { onChunk(chunk.length); });
-        res.pipe(out);
-        out.on('finish', () => { out.close(); resolve(); });
-        out.on('error', reject);
-        res.on('error', (e) => { out.destroy(); reject(e); });
-      });
-      req.on('timeout', () => { req.destroy(new Error(`下载超时（>${this.opts.timeoutMs}ms）`)); });
-      req.on('error', reject);
-      req.end();
+      if (status === 416) { stream.resume(); resolve(); return; } // 已下完
+      if (status >= 400) {
+        stream.resume();
+        reject(new Error(`HTTP ${status}：${url}`));
+        return;
+      }
+      const append = existing > 0 && status === 206;
+      fs.mkdirSync(path.dirname(partFile), { recursive: true });
+      const out = fs.createWriteStream(partFile, { flags: append ? 'a' : 'w' });
+      stream.on('data', (chunk: Buffer) => { onChunk(chunk.length); });
+      stream.pipe(out);
+      out.on('finish', () => { out.close(); resolve(); });
+      out.on('error', reject);
+      stream.on('error', (e) => { out.destroy(); reject(e); });
     });
   }
 
@@ -173,18 +188,27 @@ export class DownloadManager extends EventEmitter {
       const url = sources[attempt % sources.length];
       const isAlt = attempt >= sources.length;
       try {
-        // 分段阈值探测（只查主源，避免 HEAD 放大流量）
-        let total = task.size ?? 0;
+        // 一次 HEAD 探测：大小 + 是否支持 Range
         const threshold = this.opts.segmentSizeMB * 1024 * 1024;
+        const h = await this.head(url);
+        let total = task.size ?? 0;
         if (!total && fs.existsSync(partFile)) total = fs.statSync(partFile).size;
         if (total === 0) {
-          const h = await this.head(url);
           total = h.size;
-          this.bytesTotalAll += h.size;
+          if (total > 0) this.bytesTotalAll += h.size;
         }
 
-        if (total > threshold && !isAlt) {
-          await this.segmentedDownload(url, partFile, total, (n) => this.addProgress(task, n));
+        if (total > threshold && !isAlt && h.acceptsRanges) {
+          try {
+            await this.segmentedDownload(url, partFile, total, (n) => this.addProgress(task, n));
+          } catch (e) {
+            // 服务器返回 200（不支持 Range）→ 退化为单流下载，不浪费重试次数
+            if (e instanceof Error && e.message === 'RANGE_UNSUPPORTED') {
+              await this.streamToFile(url, partFile, (n) => this.addProgress(task, n));
+            } else {
+              throw e;
+            }
+          }
         } else {
           await this.streamToFile(url, partFile, (n) => this.addProgress(task, n));
         }
@@ -218,7 +242,7 @@ export class DownloadManager extends EventEmitter {
     return { id: task.id, name, ok: false, bytes: 0, error: lastError, fromCache: false };
   }
 
-  /** 分段下载：独立的 .seg 文件并发拉取，完成后拼接 */
+  /** 分段下载：独立的 .seg 文件并发拉取，完成后拼接；服务器不支持 Range（返回 200）时抛 RANGE_UNSUPPORTED */
   private async segmentedDownload(url: string, partFile: string, total: number, onChunk: (n: number) => void): Promise<void> {
     const segCount = Math.min(8, Math.max(2, Math.floor(total / (8 * 1024 * 1024)) || 2));
     const segSize = Math.ceil(total / segCount);
@@ -232,29 +256,35 @@ export class DownloadManager extends EventEmitter {
       segFiles.push(segFile);
       const existing = fs.existsSync(segFile) ? fs.statSync(segFile).size : 0;
       const actualStart = start + existing;
-      workers.push(new Promise<void>((resolve, reject) => {
-        const client = url.startsWith('http:') ? http : https;
-        const parsed = new URL(url);
-        const req = client.request({
-          method: 'GET', hostname: parsed.hostname, path: parsed.pathname + parsed.search,
-          headers: { 'User-Agent': USER_AGENT, Range: `bytes=${actualStart}-${end}` },
-          timeout: this.opts.timeoutMs,
-        }, (res) => {
-          const status = res.statusCode ?? 0;
-          if (status >= 400) { res.resume(); reject(new Error(`HTTP ${status}（分段 ${i}）`)); return; }
+      workers.push((async () => {
+        const { status, stream } = await this.requestWithRedirects(url, { method: 'GET', headers: { Range: `bytes=${actualStart}-${end}` } });
+        if (status === 200) {
+          stream.resume();
+          throw new Error('RANGE_UNSUPPORTED');
+        }
+        if (status !== 206 && status !== 200) {
+          stream.resume();
+          throw new Error(`HTTP ${status}（分段 ${i}）`);
+        }
+        await new Promise<void>((resolve, reject) => {
           const out = fs.createWriteStream(segFile, { flags: existing > 0 ? 'a' : 'w' });
-          res.on('data', (chunk: Buffer) => onChunk(chunk.length));
-          res.pipe(out);
+          stream.on('data', (chunk: Buffer) => onChunk(chunk.length));
+          stream.pipe(out);
           out.on('finish', () => { out.close(); resolve(); });
           out.on('error', reject);
-          res.on('error', (e) => { out.destroy(); reject(e); });
+          stream.on('error', (e) => { out.destroy(); reject(e); });
         });
-        req.on('timeout', () => { req.destroy(new Error(`分段 ${i} 下载超时`)); });
-        req.on('error', reject);
-        req.end();
-      }));
+      })());
     }
-    await Promise.all(workers);
+    try {
+      await Promise.all(workers);
+    } catch (e) {
+      if (e instanceof Error && e.message === 'RANGE_UNSUPPORTED') {
+        for (const seg of segFiles) fs.rmSync(seg, { force: true });
+        throw e;
+      }
+      throw e;
+    }
     // 拼接
     fs.mkdirSync(path.dirname(partFile), { recursive: true });
     const out = fs.createWriteStream(partFile);

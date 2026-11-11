@@ -48,6 +48,11 @@ function findPackRoot(entries: PackEntry[]): { format: ModpackFormat; prefix: st
 }
 
 const stripPrefix = (name: string, prefix: string) => name.replace(/\\/g, '/').slice(prefix.length);
+/** 远程文件名净化：去掉目录成分，杜绝 ../ 路径穿越 */
+const sanitizeRemoteName = (name: string): string => {
+  const base = String(name).replace(/\\/g, '/').split('/').filter(Boolean).pop() ?? '';
+  return base || `file-${Date.now()}`;
+};
 const safeTarget = (root: string, rel: string): string | null => {
   const target = path.resolve(root, rel);
   return target.startsWith(path.resolve(root) + path.sep) ? target : null;
@@ -99,23 +104,30 @@ export async function importModpack(zipPath: string, targetName?: string, onLog?
     else if (index?.dependencies?.neoforge) { loader = 'neoforge'; loaderVersion = String(index.dependencies.neoforge); }
     const instance = createInstance({ name: targetName ?? index.name ?? 'Modrinth 整合包', mcVersion, loader, loaderVersion, memoryPreset: 'heavy' });
     const game = paths.gameDir(instance.id);
-    // 下载 files
-    const files: Array<{ downloads: string[]; path: string; hashes?: { sha1?: string; sha512?: string }; size?: number }> = index.files ?? [];
-    log(`需要下载 ${files.length} 个文件…`);
-    const tasks = files.map((f, i) => ({
+    // 下载 files（跳过服务端专用文件 env.client === 'unsupported'）
+    const files: Array<{ downloads: string[]; path: string; hashes?: { sha1?: string; sha512?: string }; size?: number; env?: { client?: string } }> = index.files ?? [];
+    let skippedServer = 0;
+    const downloadable = files.filter(f => {
+      if (f?.env?.client === 'unsupported') { skippedServer++; return false; }
+      return true;
+    });
+    if (skippedServer > 0) warnings.push(`已跳过 ${skippedServer} 个服务端专用文件（env.client = unsupported）。`);
+    log(`需要下载 ${downloadable.length} 个文件（已过滤 ${skippedServer} 个服务端文件）…`);
+    const tasks = downloadable.map((f, i) => ({
       id: `packfile:${i}`,
       url: f.downloads[0],
       sha1: f.hashes?.sha1,
       size: f.size,
-      dest: safeTarget(game, f.path) ?? path.join(game, 'pack-files', path.basename(f.path)),
-      name: path.basename(f.path),
+      dest: safeTarget(game, f.path) ?? path.join(game, 'pack-files', sanitizeRemoteName(f.path.split('/').pop() ?? `file-${i}`)),
+      name: sanitizeRemoteName(f.path.split('/').pop() ?? `file-${i}`),
     }));
     const dl = new DownloadManager({ source: getSettings().download.source, maxThreads: getSettings().download.maxThreads, retries: 3, timeoutMs: getSettings().download.timeoutMs });
     const reports = await dl.run(tasks);
     const ok = reports.filter(r => r.ok).length;
     for (const r of reports) if (!r.ok) { skippedFiles.push(r.name); warnings.push(`下载失败：${r.name}（${r.error}）`); }
     const overridden = copyOverrides('overrides', game);
-    log(`完成：${ok}/${files.length} 个文件下载成功，overrides ${overridden} 个文件，实例已创建。`);
+    const clientOverridden = copyOverrides('client-overrides', game); // 客户端覆盖层：同名文件覆盖 overrides
+    log(`完成：${ok}/${downloadable.length} 个文件下载成功，overrides ${overridden} 个、client-overrides ${clientOverridden} 个文件，实例已创建。`);
     return { instanceId: instance.id, format, importedMods: ok, skippedFiles, warnings };
   }
 
@@ -142,8 +154,9 @@ export async function importModpack(zipPath: string, targetName?: string, onLog?
           const info = await fetchJson<{ data: { downloadUrl: string | null; fileName: string } }>(`https://api.curseforge.com/v1/mods/${f.projectID}/files/${f.fileID}`, { timeoutMs: 20000, headers: { 'x-api-key': apiKey, 'User-Agent': USER_AGENT } });
           const url = info?.data?.downloadUrl;
           if (!url) { manual.push({ name: `CF project ${f.projectID}`, url: `https://www.curseforge.com/projects/${f.projectID}/files/${f.fileID}` }); continue; }
+          const safeName = sanitizeRemoteName(info.data.fileName);
           const dl = new DownloadManager({ source: 'official', maxThreads: 2, retries: 2 });
-          const reports = await dl.run([{ id: `cf:${f.fileID}`, url, dest: path.join(game, 'mods', info.data.fileName), name: info.data.fileName }]);
+          const reports = await dl.run([{ id: `cf:${f.fileID}`, url, dest: path.join(game, 'mods', safeName), name: safeName }]);
           if (reports[0]?.ok) ok++; else manual.push({ name: info.data.fileName, url });
         } catch {
           manual.push({ name: `CF project ${f.projectID}`, url: `https://www.curseforge.com/projects/${f.projectID}/files/${f.fileID}` });
@@ -175,19 +188,27 @@ export async function importModpack(zipPath: string, targetName?: string, onLog?
       warnings.push('MultiMC 整合包已转换为 MCL 实例，加载器将在首次启动时安装。');
     }
   }
-  let copied = 0;
+  // MultiMC / Prism 导出包：真正的游戏目录是 minecraft/ 子目录（若有）
+  const hasMinecraftDir = entries.some(e => e.name.replace(/\\/g, '/').startsWith(prefix + 'minecraft/'));
+  const gamePrefix = prefix + (hasMinecraftDir ? 'minecraft/' : '');
+  const SKIP_META = new Set(['instance.cfg', 'mmc-pack.json', 'icon.png', 'instance.png', 'logo.png']);
+  let copied = 0, modsCopied = 0, savesCopied = 0;
   for (const entry of entries) {
     const norm = entry.name.replace(/\\/g, '/');
-    if (!norm.startsWith(prefix) || norm.endsWith('/')) continue;
-    const rel = stripPrefix(norm, prefix);
-    if (rel === 'mmc-pack.json') continue;
+    if (!norm.startsWith(gamePrefix) || norm.endsWith('/')) continue;
+    const rel = stripPrefix(norm, gamePrefix);
+    if (!rel) continue;
+    if (SKIP_META.has(rel.split('/')[0])) continue;   // 跳过实例元数据（instance.cfg 等）
     const target = safeTarget(game, rel);
     if (!target) { warnings.push(`已跳过可疑路径：${norm}`); continue; }
     fs.mkdirSync(path.dirname(target), { recursive: true });
     fs.writeFileSync(target, zipExtractEntry(buf, entry));
     copied++;
+    if (rel.startsWith('mods/')) modsCopied++;
+    else if (rel.startsWith('saves/')) savesCopied++;
   }
-  warnings.push(`MultiMC 格式：整包直接展开为实例目录（${copied} 个文件）。`);
+  log(`已复制 mods ${modsCopied} 个、saves ${savesCopied} 个、共 ${copied} 个文件${hasMinecraftDir ? '（minecraft/ 前缀已剥离）' : ''}`);
+  warnings.push(`MultiMC 格式：${hasMinecraftDir ? '已识别 minecraft/ 游戏目录，' : ''}整包展开为实例目录（${copied} 个文件：mods ${modsCopied}、saves ${savesCopied}）。`);
   return { instanceId: instance.id, format, importedMods: copied, skippedFiles, warnings };
 }
 

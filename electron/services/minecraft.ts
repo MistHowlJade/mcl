@@ -176,15 +176,23 @@ async function resolveLoaderProfile(base: Record<string, any>, loader: LoaderTyp
   if (loader === 'vanilla') return base;
   if (loader === 'fabric') {
     const lv = loaderVersion ?? (await latestFabricLoader(mcVersion));
-    const url = `https://meta.fabricmc.net/v2/versions/loader/${mcVersion}/${lv}/1.0.0/profile/json`;
-    const profile = await fetchJson<Record<string, any>>(url, { timeoutMs: 20000 });
-    return versionService.mergeProfile(base, profile);
+    const url = `https://meta.fabricmc.net/v2/versions/loader/${mcVersion}/${lv}/profile/json`;
+    try {
+      const profile = await fetchJson<Record<string, any>>(url, { timeoutMs: 20000 });
+      return versionService.mergeProfile(base, profile);
+    } catch (e) {
+      throw new Error(`Fabric 加载器 profile 获取失败：${url}\n${e instanceof Error ? e.message : e}\n请检查 loader 版本是否存在（如 fabric-loader 0.15.7 + MC 1.20.1）。`);
+    }
   }
   if (loader === 'quilt') {
     const lv = loaderVersion ?? (await latestQuiltLoader(mcVersion));
-    const url = `https://meta.quiltmc.org/v3/versions/loader/${mcVersion}/${lv}/latest/profile/json`;
-    const profile = await fetchJson<Record<string, any>>(url, { timeoutMs: 20000 });
-    return versionService.mergeProfile(base, profile);
+    const url = `https://meta.quiltmc.org/v3/versions/loader/${mcVersion}/${lv}/profile/json`;
+    try {
+      const profile = await fetchJson<Record<string, any>>(url, { timeoutMs: 20000 });
+      return versionService.mergeProfile(base, profile);
+    } catch (e) {
+      throw new Error(`Quilt 加载器 profile 获取失败：${url}\n${e instanceof Error ? e.message : e}\n请检查 loader 版本是否存在（如 quilt-loader 0.23.1 + MC 1.20.1）。`);
+    }
   }
   if (loader === 'forge' || loader === 'neoforge') {
     // Forge 系需要安装器生成版本 json；此处返回带 customVersionDir 标记的基础版本，
@@ -206,35 +214,62 @@ async function latestQuiltLoader(mcVersion: string): Promise<string> {
   return list[0].loader.version;
 }
 
+/** 解析 Maven maven-metadata.xml，返回全部 <version> 文本 */
+async function fetchMavenVersions(url: string): Promise<string[]> {
+  const { fetchWithTimeout } = await import('./net');
+  const res = await fetchWithTimeout(url, { timeoutMs: 20000 });
+  if (res.status >= 400) throw new Error(`Maven 元数据不可用（HTTP ${res.status}）：${url}`);
+  const xml = res.body.toString('utf8');
+  return Array.from(xml.matchAll(/<version>([^<]+)<\/version>/g)).map(m => m[1].trim());
+}
+
+/** NeoForge 版本号前缀：MC 1.20.1 → "20.1."；1.21 → "21."；1.21.4 → "21.4." */
+function neoForgePrefix(mcVersion: string): string {
+  return mcVersion.replace(/^1\./, '').replace(/\.0$/, '') + '.';
+}
+
 /** Forge/NeoForge：下载安装器并静默安装到实例目录（使用实例自己的 libraries 目录） */
 async function ensureForgeLikeInstalled(gameDir: string, loader: 'forge' | 'neoforge', mcVersion: string, loaderVersion: string | null | undefined, javaPath: string, emit: (line: string) => void): Promise<string> {
   const versionsDirRel = path.join(gameDir, 'versions');
-  const existing = fs.existsSync(versionsDirRel) ? fs.readdirSync(versionsDirRel).filter(d => loader === 'neoforge' ? /neoforge/i.test(d) : /forge/i.test(d)) : [];
+  const existingFilter = (d: string) => loader === 'neoforge' ? /neoforge/i.test(d) : /forge/i.test(d);
+  const existing = fs.existsSync(versionsDirRel) ? fs.readdirSync(versionsDirRel).filter(existingFilter) : [];
   if (existing.length > 0 && loaderVersion) {
     const hit = existing.find(d => d.includes(loaderVersion));
     if (hit) return path.join(versionsDirRel, hit, `${hit}.json`);
   }
-  let installerUrl: string;
+
   let forgeId: string;
-  if (loader === 'forge') {
-    const meta = await fetchJson<{ versions: string[] }>('https://maven.minecraftforge.net/net/minecraftforge/forge/maven-metadata.json', { timeoutMs: 20000 });
-    const id = loaderVersion ?? meta.versions.filter(v => v.startsWith(`${mcVersion}-`)).pop() ?? null;
-    if (!id) throw new Error(`无法确定适用于 ${mcVersion} 的 Forge 版本，请在创建实例时手动指定加载器版本。`);
-    forgeId = id.includes('-') && /^\d/.test(id) ? id : `${mcVersion}-${id}`;
+  let installerUrl: string;
+  if (loaderVersion) {
+    // 已指定版本：不请求元数据，直接下载安装器
+    if (loader === 'forge') {
+      forgeId = loaderVersion.includes('-') ? loaderVersion : `${mcVersion}-${loaderVersion}`;
+      installerUrl = `https://maven.minecraftforge.net/net/minecraftforge/forge/${forgeId}/forge-${forgeId}-installer.jar`;
+    } else {
+      forgeId = loaderVersion;
+      installerUrl = `https://maven.neoforged.net/releases/net/neoforged/neoforge/${forgeId}/neoforge-${forgeId}-installer.jar`;
+    }
+  } else if (loader === 'forge') {
+    const versions = await fetchMavenVersions('https://maven.minecraftforge.net/net/minecraftforge/forge/maven-metadata.xml');
+    const matching = versions.filter(v => v.startsWith(`${mcVersion}-`));
+    if (matching.length === 0) throw new Error(`Maven 中找不到适用于 ${mcVersion} 的 Forge 版本，请在创建实例时手动指定加载器版本。`);
+    forgeId = matching[matching.length - 1];
     installerUrl = `https://maven.minecraftforge.net/net/minecraftforge/forge/${forgeId}/forge-${forgeId}-installer.jar`;
   } else {
-    const id = loaderVersion ?? 'latest';
-    const meta = await fetchJson<{ versions: string[] }>('https://maven.neoforged.net/releases/net/neoforged/neoforge/maven-metadata.json', { timeoutMs: 20000 });
-    const resolved = id === 'latest' ? meta.versions[meta.versions.length - 1] : id;
-    forgeId = resolved;
-    installerUrl = `https://maven.neoforged.net/releases/net/neoforged/neoforge/${resolved}/neoforge-${resolved}-installer.jar`;
+    const versions = await fetchMavenVersions('https://maven.neoforged.net/releases/net/neoforged/neoforge/maven-metadata.xml');
+    const prefix = neoForgePrefix(mcVersion);
+    const matching = versions.filter(v => v.startsWith(prefix));
+    if (matching.length === 0) throw new Error(`NeoForge 中找不到适用于 ${mcVersion} 的版本（前缀 ${prefix}），请在创建实例时手动指定加载器版本。`);
+    forgeId = matching[matching.length - 1];
+    installerUrl = `https://maven.neoforged.net/releases/net/neoforged/neoforge/${forgeId}/neoforge-${forgeId}-installer.jar`;
   }
+
   const installerPath = path.join(gameDir, `.${loader}-installer.jar`);
-  emit(`正在下载 ${loader === 'neoforge' ? 'NeoForge' : 'Forge'} 安装器…`);
+  emit(`正在下载 ${loader === 'neoforge' ? 'NeoForge' : 'Forge'} 安装器（${forgeId}）…`);
   const { DownloadManager: DM } = await import('./downloader');
   const dl = new DM({ source: 'official', maxThreads: 1, retries: 2 });
   const reports = await dl.run([{ id: 'loader-installer', url: installerUrl, dest: installerPath, name: `${loader} 安装器` }]);
-  if (!reports[0]?.ok) throw new Error(`${loader} 安装器下载失败：${reports[0]?.error ?? '未知错误'}`);
+  if (!reports[0]?.ok) throw new Error(`${loader} 安装器下载失败：${reports[0]?.error ?? '未知错误'}\nURL：${installerUrl}`);
   emit('正在静默安装（可能需要 1–5 分钟，期间会打印安装日志）…');
   await new Promise<void>((resolve, reject) => {
     const child = spawn(javaPath, ['-jar', installerPath, '--installClient', gameDir], { cwd: gameDir, windowsHide: true });
@@ -257,14 +292,16 @@ export async function launchInstance(instanceId: string, options: LaunchOptions 
     launchState.message = message;
     launchEvents.emit('status', { ...launchState });
   };
+  const gameLogSafe = (s: string) => s.replace(/[^a-zA-Z0-9_-]/g, '');
+  // 本次启动唯一日志文件（避免跨启动累积导致旧错误被当成本次错误，见 issue #9）
+  const launchLogName = `launch-${gameLogSafe(instanceId)}-${startedAt}.log`;
   const emitLog = (line: string) => {
     launchEvents.emit('log', line);
     try {
-      fs.appendFileSync(path.join(logsDirForToday(), `launch-${gameLogSafe(instanceId)}.log`), line + '\n', 'utf8');
+      fs.mkdirSync(paths.logsDir(), { recursive: true });
+      fs.appendFileSync(path.join(paths.logsDir(), launchLogName), line + '\n', 'utf8');
     } catch { /* ignore */ }
   };
-  const logsDirForToday = () => { fs.mkdirSync(paths.logsDir(), { recursive: true }); return paths.logsDir(); };
-  const gameLogSafe = (s: string) => s.replace(/[^a-zA-Z0-9_-]/g, '');
 
   const instance = getInstance(instanceId);
   if (!instance) throw new Error('实例不存在');
@@ -388,7 +425,7 @@ export async function launchInstance(instanceId: string, options: LaunchOptions 
       if (fs.existsSync(shared)) return shared;
       return path.join(gameLibsDir, ...l.path.split('/'));
     }),
-  ].filter(p => fs.existsSync(p)).join(';');
+  ].filter(p => fs.existsSync(p)).join(path.delimiter);
 
   const mcArgs: string[] = [];
   const features = { is_demo_user: false, has_custom_resolution: !!instance.resolution };
@@ -405,7 +442,7 @@ export async function launchInstance(instanceId: string, options: LaunchOptions 
     natives_directory: nativesVar,
     launcher_name: 'MCL',
     launcher_version: '0.1.0',
-    classpath_separator: ';',
+    classpath_separator: path.delimiter,
     classpath,
     library_directory: paths.librariesDir(),
     resolution_width: String(instance.resolution?.width ?? 1280),
@@ -442,6 +479,13 @@ export async function launchInstance(instanceId: string, options: LaunchOptions 
     }
   } else {
     jvmArgs.push('-cp', classpath);
+  }
+  // natives 库路径兜底（1.12.2 及更早版本 json 没有 arguments.jvm，旧版分支必须显式设置）
+  if (!jvmArgs.some(a => a.includes('java.library.path'))) {
+    jvmArgs.push(`-Djava.library.path=${nativesVar}`);
+  }
+  if (!jvmArgs.some(a => a.includes('org.lwjgl.librarypath'))) {
+    jvmArgs.push(`-Dorg.lwjgl.librarypath=${nativesVar}`);
   }
 
   // 游戏参数（新格式）
@@ -490,8 +534,8 @@ export async function launchInstance(instanceId: string, options: LaunchOptions 
       launchEvents.emit('exit', { instanceId, code, crashed: false });
       return;
     }
-    // 崩溃：自动分析（痛点 #26/#27）
-    const diagnosis = analyzeCrash(instanceId, path.join(paths.logsDir(), `launch-${gameLogSafe(instanceId)}.log`));
+    // 崩溃：自动分析（痛点 #26/#27/#25），只分析本次启动产生的内容
+    const diagnosis = analyzeCrash(instanceId, path.join(paths.logsDir(), launchLogName), startedAt);
     launchState.status = 'crashed';
     launchEvents.emit('status', { ...launchState, message: diagnosis.title });
     launchEvents.emit('crash', diagnosis);

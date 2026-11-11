@@ -62,33 +62,61 @@ export async function getVersionManifest(source: DownloadSource, customMirror?: 
   return manifest;
 }
 
+/** auto 模式实际生效源：读最近测速缓存（无测速或过期则默认 BMCLAPI，mirror:test 可刷新） */
+export function getAutoSource(): 'bmclapi' | 'official' {
+  // 避免循环依赖：直接读 health 文件
+  try {
+    const healthPath = path.join(versionsDir(), '..', 'cache', 'mirror-health.json');
+    const health = readJson<{ at: number; latencies: { source: 'official' | 'bmclapi'; ok: boolean; latencyMs: number }[] } | null>(healthPath, null);
+    if (health && Date.now() - health.at < 10 * 60 * 1000) {
+      const okList = health.latencies.filter(l => l.ok);
+      if (okList.length === 2) return okList[0].latencyMs <= okList[1].latencyMs ? okList[0].source : okList[1].source;
+      if (okList.length === 1) return okList[0].source;
+    }
+  } catch { /* 缓存异常不阻塞 */ }
+  return 'bmclapi';
+}
+
 export function resolveSourceUrl(officialUrl: string, source: DownloadSource, customMirror?: string): string {
   if (source === 'official') return officialUrl;
-  if (source === 'auto') return mapToMirror(officialUrl, 'bmclapi') === officialUrl ? officialUrl : mapToMirror(officialUrl, 'bmclapi');
+  if (source === 'auto') return mapToMirror(officialUrl, getAutoSource());
   if (source === 'bmclapi') return mapToMirror(officialUrl, 'bmclapi');
   if (source === 'custom' && customMirror) return mapToMirror(officialUrl, 'custom', customMirror);
   return officialUrl;
 }
 
 /* ---------- 规则评估 ---------- */
+/**
+ * evalRule 语义 = "规则条件是否适用"（不是"是否允许启动"）：
+ *   - 条件匹配 → true（规则生效，由 evalRules 按 action 决定允许性）
+ *   - 条件不匹配 → false（规则不适用）
+ * 每条规则独立求值，互不依赖 action。
+ */
 export function evalRule(rule: Rule, features: Record<string, boolean> = {}): boolean {
-  let ok = rule.action === 'allow';
   if (rule.os) {
     const osName = process.platform === 'win32' ? 'windows' : process.platform === 'darwin' ? 'osx' : 'linux';
-    if (rule.os.name && rule.os.name !== osName) return rule.action !== 'allow';
+    if (rule.os.name && rule.os.name !== osName) return false;
     if (rule.os.arch) {
-      const arch = process.arch === 'x64' ? 'x86' : process.arch;
-      if (rule.os.arch === 'x86' && process.arch === 'x64') return rule.action !== 'allow';
-      if (rule.os.arch === 'arm64' && process.arch !== 'arm64') return rule.action !== 'allow';
-      void arch;
+      const arch = process.arch;
+      const want = rule.os.arch.toLowerCase();
+      if (want === 'x86') { if (arch !== 'ia32' && arch !== 'arm') return false; }
+      else if (want === 'x64' || want === 'x86_64' || want === 'amd64') { if (arch !== 'x64') return false; }
+      else if (want === 'arm64' || want === 'aarch64') { if (arch !== 'arm64') return false; }
+      // 未覆盖的 arch 不作判断（交给上层按不匹配处理见 MOJANG 规范需谨慎，但不拦截）
+    }
+    if (rule.os.version) {
+      try {
+        const sysVer = process.getSystemVersion ? process.getSystemVersion() : '';
+        if (sysVer && !new RegExp(rule.os.version).test(sysVer)) return false;
+      } catch { /* 正则非法时不拦截 */ }
     }
   }
   if (rule.features) {
     for (const key of Object.keys(rule.features)) {
-      if (!!features[key] !== !!rule.features[key]) return rule.action !== 'allow';
+      if (!!features[key] !== !!rule.features[key]) return false;
     }
   }
-  return ok;
+  return true;
 }
 
 export function evalRules(rules: Rule[] | undefined, features: Record<string, boolean> = {}): boolean {

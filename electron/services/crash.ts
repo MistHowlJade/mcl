@@ -22,14 +22,14 @@ const MAJOR_TO_JAVA: Record<number, number> = { 45: 1, 46: 2, 47: 3, 48: 4, 49: 
 const RULES: CrashRule[] = [
   {
     id: 'unsupported-class-version',
-    pattern: /UnsupportedClassVersionError.*?major version (\d+)|major version (\d+).*?UnsupportedClassVersionError|Class file major version (\d+)/is,
+    pattern: /UnsupportedClassVersionError[^0-9]*?(?:major|class file) version (\d+)|major version (\d+)|class file version (\d+)|(\d+)\.0.*?class file/is,
     title: 'Java 版本不匹配',
     summary: (m) => {
-      const major = parseInt(m[1] ?? m[2] ?? m[3] ?? '0', 10);
+      const major = parseInt(m[1] ?? m[2] ?? m[3] ?? m[4] ?? '0', 10);
       const need = MAJOR_TO_JAVA[major] ?? major;
       return `这个版本的 Minecraft / 模组需要 Java ${need}，而启动器选用的 Java 版本太老（或整合包自带的 Java 太新）。这是闪退最常见的原因之一。`;
     },
-    detail: 'UnsupportedClassVersionError 表示字节码版本高于当前 JVM 能识别的最大版本。Java 8 = 52，Java 17 = 61，Java 21 = 65。',
+    detail: 'UnsupportedClassVersionError 表示字节码版本高于当前 JVM 能识别的最大版本。Java 8 = 52，Java 17 = 61，Java 21 = 65。常见报文："class file version 61.0"。',
     severity: 'high',
     fixes: [
       { id: 'switch-java', label: '自动切换到正确版本的 Java', description: 'MCL 会按游戏版本自动选择（1.16.5 及以下用 Java 8；1.17–1.20.4 用 Java 17；1.20.5+ 用 Java 21），缺失会自动下载。', action: 'fix:switchJava', severity: 'high' },
@@ -161,12 +161,17 @@ const RULES: CrashRule[] = [
   },
 ];
 
-export function findLatestCrashReport(gameDir: string): string | null {
+export function findLatestCrashReport(gameDir: string, since?: number): string | null {
   const dir = path.join(gameDir, 'crash-reports');
   if (!fs.existsSync(dir)) return null;
-  const files = fs.readdirSync(dir).filter(f => f.endsWith('.txt')).map(f => path.join(dir, f));
-  if (files.length === 0) return null;
-  return files.sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs)[0];
+  let files = fs.readdirSync(dir).filter(f => f.endsWith('.txt')).map(f => path.join(dir, f));
+  if (since) {
+    // 只看本次启动期间产生的 crash report，避免旧报告覆盖本次错误归因
+    const threshold = since - 5000;
+    files = files.filter(f => { try { return fs.statSync(f).mtimeMs >= threshold; } catch { return false; } });
+    if (files.length === 0) return null;
+  }
+  return files.sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs)[0] ?? null;
 }
 
 function readTail(file: string, bytes = 512 * 1024): string {
@@ -179,10 +184,11 @@ function readTail(file: string, bytes = 512 * 1024): string {
   return buf.toString('utf8');
 }
 
-export function analyzeCrash(instanceId: string, logPath?: string): CrashDiagnosis {
+export function analyzeCrash(instanceId: string, logPath?: string, startedAt?: number): CrashDiagnosis {
   const game = paths.gameDir(instanceId);
-  const crashReport = findLatestCrashReport(game);
-  const sourceFile = crashReport ?? logPath ?? path.join(game, 'logs', 'latest.log');
+  const crashReport = findLatestCrashReport(game, startedAt);
+  const logFallback = logPath ?? path.join(game, 'logs', 'latest.log');
+  const sourceFile = crashReport ?? logFallback;
   let text = '';
   try { text = readTail(sourceFile); } catch {
     return {

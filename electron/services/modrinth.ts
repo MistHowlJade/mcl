@@ -49,6 +49,12 @@ export async function getProjectVersions(projectId: string, opts: { loader?: str
   return fetchJson<ModrinthVersion[]>(`${API}/project/${projectId}/version?${params.toString()}`, { timeoutMs: 20000, headers: HEADERS });
 }
 
+/** 远程文件名净化：去掉目录成分，杜绝 ../ 路径穿越 */
+const sanitizeRemoteName = (name: string): string => {
+  const base = String(name).replace(/\\/g, '/').split('/').filter(Boolean).pop() ?? '';
+  return base || `file-${Date.now()}.jar`;
+};
+
 const installedModsPath = (instanceId: string) => paths.installedModsFile(instanceId);
 
 export function readInstalledMods(instanceId: string): InstalledMod[] {
@@ -67,13 +73,14 @@ export async function installMod(instanceId: string, projectId: string, versionI
   if (!file) throw new Error('该版本没有可下载的文件。');
   const modsDir = path.join(paths.gameDir(instanceId), 'mods');
   fs.mkdirSync(modsDir, { recursive: true });
-  const dest = path.join(modsDir, file.filename);
+  const safeName = sanitizeRemoteName(file.filename);
+  const dest = path.join(modsDir, safeName);
   const dl = new DownloadManager({ source: 'official', maxThreads: 2, retries: 3 });
-  const reports = await dl.run([{ id: `modrinth:${file.filename}`, url: file.url, sha1: file.hashes?.sha1, size: file.size, dest, name: file.filename }]);
+  const reports = await dl.run([{ id: `modrinth:${safeName}`, url: file.url, sha1: file.hashes?.sha1, size: file.size, dest, name: safeName }]);
   if (!reports[0]?.ok) throw new Error(`下载失败：${reports[0]?.error ?? '未知错误'}`);
 
   const entry: InstalledMod = {
-    fileName: file.filename,
+    fileName: safeName,
     projectId,
     versionId: target.id,
     versionNumber: target.version_number,
@@ -121,12 +128,13 @@ export async function updateMod(instanceId: string, fileName: string): Promise<I
   if (!file) throw new Error('更新文件不存在');
   const modsDir = path.join(paths.gameDir(instanceId), 'mods');
   const old = path.join(modsDir, mod.fileName);
-  const dest = path.join(modsDir, file.filename);
+  const safeName = sanitizeRemoteName(file.filename);
+  const dest = path.join(modsDir, safeName);
   const dl = new DownloadManager({ source: 'official', maxThreads: 2, retries: 3 });
-  const reports = await dl.run([{ id: `modrinth:${file.filename}`, url: file.url, sha1: file.hashes?.sha1, size: file.size, dest, name: file.filename }]);
+  const reports = await dl.run([{ id: `modrinth:${safeName}`, url: file.url, sha1: file.hashes?.sha1, size: file.size, dest, name: safeName }]);
   if (!reports[0]?.ok) throw new Error(`更新下载失败：${reports[0]?.error}`);
   if (old !== dest && fs.existsSync(old)) fs.rmSync(old, { force: true });
-  const updated: InstalledMod = { ...mod, fileName: file.filename, versionId: target.id, versionNumber: target.version_number, installedAt: Date.now(), updateAvailable: null, sizeBytes: fs.statSync(dest).size };
+  const updated: InstalledMod = { ...mod, fileName: safeName, versionId: target.id, versionNumber: target.version_number, installedAt: Date.now(), updateAvailable: null, sizeBytes: fs.statSync(dest).size };
   writeInstalledMods(instanceId, all.map(m => m.fileName === fileName ? updated : m));
   return updated;
 }

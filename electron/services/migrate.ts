@@ -63,8 +63,10 @@ function scanInstances(root: string): FoundInstance[] {
       if (!e.isDirectory()) continue;
       const vdir = path.join(versionsDir, e.name);
       if (looksLikeGameDir(vdir)) {
-        const { mcVersion, loader, loaderVersion } = parseVersionName(e.name);
-        out.push({ name: e.name, gameDir: vdir, mcVersion, loader, loaderVersion });
+        const parsed = parseVersionName(e.name);
+        // 目录名拿不到 MC 版本时，读版本 json 的 inheritsFrom（Forge 等）兜底
+        const mcVersion = parsed.mcVersion ?? readMcVersionFromJson(vdir, e.name);
+        out.push({ name: e.name, gameDir: vdir, mcVersion, loader: parsed.loader, loaderVersion: parsed.loaderVersion });
       }
     }
   }
@@ -102,24 +104,75 @@ function readPackLoader(instDir: string): LoaderType {
   return 'vanilla';
 }
 
-/** 版本名里提取 MC 版本/加载器，如 "1.20.1-forge-47.2.0"、"fabric-loader-0.15.7-1.20.4" */
-function parseVersionName(name: string): { mcVersion: string | null; loader: LoaderType; loaderVersion: string | null } {
-  const mc = name.match(/(1\.\d+(?:\.\d+)?|\d+\.\d+(?:\.\d+)?)/);
-  const loader: LoaderType = /neoforge/i.test(name) ? 'neoforge' : /forge/i.test(name) ? 'forge' : /fabric/i.test(name) ? 'fabric' : /quilt/i.test(name) ? 'quilt' : 'vanilla';
-  const forgeMatch = name.match(/forge-([\d.]+)/i);
-  const fabricMatch = name.match(/fabric-loader-([\d.]+)/i);
-  const quiltMatch = name.match(/quilt-loader-([\d.]+)/i);
-  const neoforgeMatch = name.match(/neoforge-([\d.]+)/i);
-  const loaderVersion = forgeMatch?.[1] ?? fabricMatch?.[1] ?? quiltMatch?.[1] ?? neoforgeMatch?.[1] ?? null;
-  return { mcVersion: mc ? mc[1] : null, loader, loaderVersion };
+/** 按语义版本比较两个版本号（越大越新） */
+export function compareMcVersions(a: string, b: string): number {
+  const pa = String(a).split('.').map(x => parseInt(x, 10) || 0);
+  const pb = String(b).split('.').map(x => parseInt(x, 10) || 0);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const d = (pa[i] ?? 0) - (pb[i] ?? 0);
+    if (d !== 0) return d;
+  }
+  return 0;
+}
+
+/**
+ * 从目录名解析 MC 版本 / 加载器：
+ *   1.20.1                            → mc 1.20.1, vanilla
+ *   fabric-loader-0.15.7-1.20.4        → mc 1.20.4, fabric 0.15.7
+ *   quilt-loader-0.23.1-1.20.1         → mc 1.20.1, quilt 0.23.1
+ *   1.20.1-forge-47.2.0 / forge-1.20.1-47.2.0 → mc 1.20.1, forge 47.2.0
+ *   neoforge-21.1.73                   → mc 无法从名字确定（null），neoforge 21.1.73
+ */
+export function parseVersionName(name: string): { mcVersion: string | null; loader: LoaderType; loaderVersion: string | null } {
+  const lower = name.toLowerCase();
+  const loader: LoaderType =
+    lower.includes('neoforge') ? 'neoforge'
+    : lower.includes('forge') ? 'forge'
+    : lower.includes('fabric') ? 'fabric'
+    : lower.includes('quilt') ? 'quilt'
+    : 'vanilla';
+
+  const tokens = name.split(/[-_\s]/).filter(Boolean);
+  // MC 版本：1.x.y 或 1.x；排除 loader 版本（它们不以 1. 开头，除非恰好）
+  const mcToken = tokens.find(t => /^1\.\d+(\.\d+)?$/.test(t)) ?? null;
+
+  let loaderVersion: string | null = null;
+  const grab = (re: RegExp) => { const m = name.match(re); return m?.[1] ?? null; };
+  if (loader === 'forge') loaderVersion = grab(/forge-([\d.]+)/i) ?? grab(/-forge-([\d.]+)/i);
+  else if (loader === 'neoforge') loaderVersion = grab(/neoforge-([\d.]+)/i);
+  else if (loader === 'fabric') loaderVersion = grab(/fabric[-_]?loader[-_]([\d.]+)/i) ?? grab(/fabric[-_]([\d.]+)/i);
+  else if (loader === 'quilt') loaderVersion = grab(/quilt[-_]?loader[-_]([\d.]+)/i) ?? grab(/quilt[-_]([\d.]+)/i);
+
+  return { mcVersion: mcToken, loader, loaderVersion };
+}
+
+/** 从版本 json 精确读取 MC 版本（inheritsFrom 或 id），失败返回 null */
+function readMcVersionFromJson(versionDir: string, dirName: string): string | null {
+  const candidates = [`${dirName}.json`, dirName.endsWith('.json') ? dirName : `${dirName}-client.json`];
+  for (const c of candidates) {
+    try {
+      const file = path.join(versionDir, c);
+      if (!fs.existsSync(file)) continue;
+      const json = JSON.parse(fs.readFileSync(file, 'utf8'));
+      if (typeof json.inheritsFrom === 'string') return json.inheritsFrom;   // Forge 等：父版本就是 MC 版本
+      if (typeof json.id === 'string') {
+        const m = json.id.match(/^1\.\d+(\.\d+)?/);
+        if (m) return m[0];
+      }
+    } catch { /* 忽略损坏的 json */ }
+  }
+  return null;
 }
 
 function detectMcVersionFromLibraries(root: string): string | null {
+  // 语义版本取最高：先剥离 loader 前缀，再按数字比较（1.20.1 > 1.9）
   const versions = path.join(root, 'versions');
   try {
     if (fs.existsSync(versions)) {
-      const names = fs.readdirSync(versions).filter(n => /^(1\.\d+(\.\d+)?|\d+\.\d+)/.test(n));
-      if (names.length) return names.sort().pop()!.match(/^(1\.\d+(\.\d+)?|\d+\.\d+)/)![1];
+      const candidates = fs.readdirSync(versions)
+        .map(n => parseVersionName(n).mcVersion ?? readMcVersionFromJson(path.join(versions, n), n))
+        .filter((v): v is string => !!v);
+      if (candidates.length) return candidates.sort(compareMcVersions).pop()!;
     }
   } catch { /* ignore */ }
   return null;

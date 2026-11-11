@@ -1,10 +1,9 @@
 /**
  * 账号系统
- * 微软账号（设备码流程，无需本地回调服务器，国内网络也可用）+ 离线账号
+ * 微软账号（Live 设备码流程：00000000402b5328 是微软 Live 的公共客户端，国内网络可用）+ 离线账号
  * 痛点 #17（OAuth 各家实现参差）#18（错误码人话翻译）#20（系统时间错误检测）#22（多账号）#24（名字说明）
  *
- * 说明：微软没有为第三方启动器提供专属 client_id，本实现使用社区广泛使用的公共客户端
- * 00000000402b5328（与 HMCL 等开源启动器相同的做法），用户可在设置中自定义。
+ * 说明：设备码端点为 login.live.com 的 oauth20_*.srf（consumers 租户的 v2.0 端点不接受该 Live 客户端）。
  */
 import * as crypto from 'crypto';
 import { fetchWithTimeout } from './net';
@@ -13,8 +12,9 @@ import { Account } from '../shared/types';
 import { readJson, writeJson } from './store';
 
 const CLIENT_ID = '00000000402b5328';
-const DEVICE_CODE_URL = 'https://login.microsoftonline.com/consumers/oauth2/v2.0/devicecode';
-const TOKEN_URL = 'https://login.microsoftonline.com/consumers/oauth2/v2.0/token';
+const DEVICE_CODE_URL = 'https://login.live.com/oauth20_connect.srf';
+const TOKEN_URL = 'https://login.live.com/oauth20_token.srf';
+const LIVE_SCOPE = 'service::user.auth.xboxlive.com::MBI_SSL';
 
 export interface MicrosoftLoginSession {
   deviceCode: string;
@@ -110,7 +110,8 @@ export function createOfflineAccount(name: string, skinUrl?: string | null): Acc
 export async function beginMicrosoftLogin(): Promise<MicrosoftLoginSession> {
   const body = new URLSearchParams({
     client_id: CLIENT_ID,
-    scope: 'XboxLive.signin offline_access',
+    scope: LIVE_SCOPE,
+    response_type: 'device_code',
   }).toString();
   const res = await fetchWithTimeout(DEVICE_CODE_URL, {
     method: 'POST',
@@ -119,16 +120,21 @@ export async function beginMicrosoftLogin(): Promise<MicrosoftLoginSession> {
     body,
   });
   if (res.status >= 400) {
-    throw new Error(`无法启动微软登录（HTTP ${res.status}）。请检查网络，或稍后再试。`);
+    let detail = `HTTP ${res.status}`;
+    try {
+      const json = JSON.parse(res.body.toString('utf8'));
+      detail = json.error_description ?? json.error ?? detail;
+    } catch { /* 用默认描述 */ }
+    throw new Error(`无法启动微软登录：${detail}`);
   }
   const json = JSON.parse(res.body.toString('utf8'));
   return {
     deviceCode: json.device_code,
-    userCode: json.user_code,
-    verificationUri: json.verification_uri,
-    expiresIn: json.expires_in,
+    userCode: json.user_code ?? json.user_code,
+    verificationUri: json.verification_uri ?? 'https://microsoft.com/link',
+    expiresIn: json.expires_in ?? 900,
     interval: json.interval ?? 5,
-    message: json.message ?? `请在浏览器中打开 ${json.verification_uri} 并输入代码 ${json.user_code}`,
+    message: json.message ?? `请在浏览器中打开 ${json.verification_uri ?? 'https://microsoft.com/link'} 并输入代码 ${json.user_code}`,
   };
 }
 
@@ -308,7 +314,7 @@ async function refreshMicrosoftAccount(account: StoredAccount): Promise<StoredAc
       client_id: CLIENT_ID,
       grant_type: 'refresh_token',
       refresh_token: account.refreshToken,
-      scope: 'XboxLive.signin offline_access',
+      scope: LIVE_SCOPE,
     }).toString();
     const res = await fetchWithTimeout(TOKEN_URL, {
       method: 'POST',
