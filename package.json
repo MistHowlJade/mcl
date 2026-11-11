@@ -5,10 +5,14 @@
   "description": "MCL · 新一代我的世界启动器 —— 为解决第三方启动器痛点而生",
   "main": "electron-dist/main.js",
   "scripts": {
+    "predev": "node scripts/ensure-electron.js",
     "dev": "concurrently -k \"vite\" \"wait-on tcp:5173 && cross-env VITE_DEV_SERVER_URL=http://localhost:5173 electron .\"",
     "build": "tsc -p tsconfig.electron.json && vite build",
     "typecheck": "tsc -p tsconfig.electron.json --noEmit && tsc -p tsconfig.json --noEmit",
     "start": "electron ."
+  },
+  "engines": {
+    "node": ">=18"
   },
   "license": "MIT",
   "devDependencies": {

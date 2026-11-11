@@ -23,7 +23,7 @@
 
 ## 3. 已知环境坑（务必先读）
 
-1. **npm 拦截 postinstall**（npm v11 `allowScripts` 特性）：`npm install` 后 Electron 二进制**不会自动下载**。处理：
+1. **npm 拦截 postinstall**（npm v11 `allowScripts` 特性）：`npm install` 后 Electron 二进制**不会自动下载**。现在 `npm run dev` 会通过 `predev` 自动执行 `scripts/ensure-electron.js` 自愈（缺二进制时从 npmmirror 下载并解压，写 `path.txt`）；手动处理见下：
    ```powershell
    cd node_modules\electron
    $env:ELECTRON_MIRROR = "https://npmmirror.com/mirrors/electron/"   # 官方源超时时用镜像

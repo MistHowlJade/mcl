@@ -1,0 +1,50 @@
+{
+  "name": "Bug Report",
+  "description": "测试中发现的问题（崩溃/启动失败/下载失败/界面错乱…）",
+  "title": "[Bug] ",
+  "labels": ["bug"],
+  "body": [
+    {
+      "type": "markdown",
+      "attributes": {
+        "value": "感谢反馈！请尽量写清楚复现步骤——**崩溃问题请直接粘贴 `crash-reports/` 里的文件内容或「日志 → 导出诊断包」得到的 zip 内容**，这样修得最快。"
+      }
+    },
+    {
+      "type": "input",
+      "id": "version",
+      "attributes": { "label": "MCL 版本", "description": "启动台右上角/设置页可看到，如 0.1.0；dev 运行就写 dev", "placeholder": "0.1.0" },
+      "validations": { "required": true }
+    },
+    {
+      "type": "dropdown",
+      "id": "kind",
+      "attributes": { "label": "问题类型", "options": ["启动/进游戏失败", "游戏崩溃（crash-reports）", "下载失败/卡住", "模组/整合包", "存档/备份/迁移", "账号/登录", "界面/高 DPI", "其他"] },
+      "validations": { "required": true }
+    },
+    {
+      "type": "textarea",
+      "id": "steps",
+      "attributes": { "label": "复现步骤", "placeholder": "1. 打开启动台\n2. 点击「启动」\n3. 闪退，报错：…" },
+      "validations": { "required": true }
+    },
+    {
+      "type": "textarea",
+      "id": "expect",
+      "attributes": { "label": "预期行为 vs 实际行为", "placeholder": "预期：…\n实际：…" },
+      "validations": { "required": false }
+    },
+    {
+      "type": "textarea",
+      "id": "logs",
+      "attributes": { "label": "日志 / 崩溃报告（原文贴这里）", "description": "游戏目录 crash-reports/*.txt 内容，或 %APPDATA%/mcl/logs/ 下的 launch-*.log。MCL「日志」页可以搜索和导出", "render": "text" },
+      "validations": { "required": false }
+    },
+    {
+      "type": "textarea",
+      "id": "env",
+      "attributes": { "label": "环境信息", "description": "系统版本（Win10/11 + 版本号）、MC 版本、加载器（fabric/forge…）、错误当时 Java 版本（MCL 设置页 → Java 环境可见）", "placeholder": "Win11 23H2 / MC 1.20.1 / Fabric / Temurin 17" },
+      "validations": { "required": false }
+    }
+  ]
+}
