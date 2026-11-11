@@ -15,6 +15,7 @@ const dist = path.join(__dirname, '..', 'electron-dist', 'services');
 const version = require(path.join(dist, 'version.js'));
 const net = require(path.join(dist, 'net.js'));
 const migrate = require(path.join(dist, 'migrate.js'));
+const crash = require(path.join(dist, 'crash.js'));
 
 console.log('== evalRules / evalRule（issue #1）==');
 check('allow + disallow(osx) 在非 macOS 生效（应为 true）', () => {
@@ -97,6 +98,17 @@ check('语义版本比较：1.20.1 > 1.9', () => {
   assert.ok(migrate.compareMcVersions('1.20.1', '1.9') > 0);
   assert.ok(migrate.compareMcVersions('1.9', '1.20.1') < 0);
   assert.strictEqual(migrate.compareMcVersions('1.20.1', '1.20.1'), 0);
+});
+
+console.log('== 崩溃归因（issue #13）==');
+check('GLFW error 归因 opengl 而非 natives-lwjgl', () => {
+  assert.strictEqual(crash.analyzeLogText('GLFW error 65543: Failed to create OpenGL context').ruleId, 'opengl');
+});
+check('exit code 137 归因 killed-exit-137', () => {
+  assert.strictEqual(crash.analyzeLogText('Process finished with exit code 137').ruleId, 'killed-exit-137');
+});
+check('class file version 61.0 归因 unsupported-class-version', () => {
+  assert.strictEqual(crash.analyzeLogText('java.lang.UnsupportedClassVersionError: Foo has been compiled by a more recent version of the Java Runtime (class file version 61.0), this version of the Java Runtime only recognizes class file versions up to 52.0').ruleId, 'unsupported-class-version');
 });
 
 process.exit(fail === 0 ? 0 : 1);

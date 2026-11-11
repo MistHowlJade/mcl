@@ -208,13 +208,17 @@ export function importInstances(root: string, selectedNames?: string[]): Migrati
   const selected = selectedNames?.length ? found.filter(f => selectedNames.includes(f.name)) : found;
   const imported: string[] = [];
   const skipped: Array<{ name: string; reason: string }> = [];
+  const warnings: string[] = [];
   const copyInsteadOfMove = getSettings().migration.copyInsteadOfMove;
 
   for (const f of selected) {
     try {
+      if (!f.mcVersion) {
+        warnings.push(`实例「${f.name}」未识别 MC 版本（无版本 json），已按"未识别"导入——请在「实例」页手动选择版本后再启动。`);
+      }
       const cfg = createInstance({
         name: f.name.slice(0, 60),
-        mcVersion: f.mcVersion ?? '1.20.1',
+        mcVersion: f.mcVersion ?? 'unknown',
         loader: f.loader,
         loaderVersion: f.loaderVersion,
         memoryPreset: 'standard',
@@ -233,7 +237,7 @@ export function importInstances(root: string, selectedNames?: string[]): Migrati
       skipped.push({ name: f.name, reason: e instanceof Error ? e.message : String(e) });
     }
   }
-  return { imported, skipped };
+  return { imported, skipped, warnings };
 }
 
 function copyRecursive(src: string, dest: string, copy: boolean): void {

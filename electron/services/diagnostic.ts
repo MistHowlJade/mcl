@@ -39,6 +39,14 @@ export function environmentReport(): EnvironmentReportLite {
 }
 
 export async function exportDiagnostic(instanceId?: string | null): Promise<string | null> {
+  // 先弹保存对话框（用户取消就什么都不做，不白做全量打包）
+  const { canceled, filePath } = await dialog.showSaveDialog({
+    title: '导出诊断包',
+    defaultPath: `mcl-diagnostic-${new Date().toISOString().slice(0, 10)}.zip`,
+    filters: [{ name: 'ZIP 压缩包', extensions: ['zip'] }],
+  });
+  if (canceled || !filePath) return null;
+
   const files: Array<{ name: string; absPath: string }> = [];
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mcl-diag-'));
   const writeTmp = (name: string, content: string | Buffer): string => {
@@ -74,13 +82,7 @@ export async function exportDiagnostic(instanceId?: string | null): Promise<stri
   } catch { /* 检测失败也不阻塞导出 */ }
 
   const buffer = zipFromFiles(files);
-  const { canceled, filePath } = await dialog.showSaveDialog({
-    title: '导出诊断包',
-    defaultPath: `mcl-diagnostic-${new Date().toISOString().slice(0, 10)}.zip`,
-    filters: [{ name: 'ZIP 压缩包', extensions: ['zip'] }],
-  });
   fs.rmSync(tmpDir, { recursive: true, force: true });
-  if (canceled || !filePath) return null;
   fs.writeFileSync(filePath, buffer);
   shell.showItemInFolder(filePath);
   return filePath;

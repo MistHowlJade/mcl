@@ -71,8 +71,19 @@ const RULES: CrashRule[] = [
     ],
   },
   {
+    id: 'opengl',
+    pattern: /Pixel format not accelerated|OpenGLException|Failed to create (?:an? )?OpenGL|GLFW error|GLFWException|glGetError|no suitable pixel format|显卡/i,
+    title: '显卡 / 驱动不支持',
+    summary: '显卡无法创建游戏需要的图形环境。核显笔记本、驱动太旧、或开了不兼容的"加速渲染"时常见。',
+    detail: 'OpenGL 上下文创建失败通常与驱动有关：更新显卡驱动、关闭光影、或切换到独显运行。',
+    severity: 'high',
+    fixes: [
+      { id: 'open-mods-gl', label: '暂时移除光影并重启', description: '把 shaderpacks 里的光影包先移走试试；若恢复正常，说明是光影包本身的问题。', action: 'fix:openModsFolder', severity: 'medium' },
+    ],
+  },
+  {
     id: 'natives-lwjgl',
-    pattern: /UnsatisfiedLinkError|lwjgl|Failed to locate library|natives.*(failed|error)|找不到.*dll/i,
+    pattern: /UnsatisfiedLinkError[^\n]*|Failed to locate library[^\n]*|natives?[^\n]{0,80}(failed|error|unable|could not|找不到)[^\n]*|找不到[^\n]{0,40}dll/i,
     title: '原生库（natives）损坏或被占用',
     summary: '游戏依赖的本地库文件（如 lwjgl.dll）加载失败——可能是文件损坏，也可能是上一次游戏没退干净、文件被占用。',
     detail: 'LWJGL 提供 OpenGL/GLFW 绑定。UnsatisfiedLinkError 常见原因：natives 未解压 / 被安全软件拦截 / 文件被占用 / 32 位 natives 混入 64 位运行环境。',
@@ -102,17 +113,6 @@ const RULES: CrashRule[] = [
     severity: 'high',
     fixes: [
       { id: 'switch-java-tls', label: '切换到受支持的 Java', description: '升级 Java 8 到 8u291 以上，或让 MCL 自动选择更新的 Java。', action: 'fix:switchJava', severity: 'high' },
-    ],
-  },
-  {
-    id: 'opengl',
-    pattern: /Pixel format not accelerated|OpenGLException|Failed to create (?:an? )?OpenGL|GLFW error|glGetError|k9s: |no suitable pixel format|显卡/i,
-    title: '显卡 / 驱动不支持',
-    summary: '显卡无法创建游戏需要的图形环境。核显笔记本、驱动太旧、或开了不兼容的"加速渲染"时常见。',
-    detail: 'OpenGL 上下文创建失败通常与驱动有关：更新显卡驱动、关闭光影、或切换到独显运行。',
-    severity: 'high',
-    fixes: [
-      { id: 'open-mods-gl', label: '暂时移除光影并重启', description: '把 shaderpacks 里的光影包先移走试试；若恢复正常，说明是光影包本身的问题。', action: 'fix:openModsFolder', severity: 'medium' },
     ],
   },
   {
@@ -146,6 +146,18 @@ const RULES: CrashRule[] = [
     severity: 'medium',
     fixes: [
       { id: 'backup-restore', label: '先备份存档，再手动清除光影缓存', description: 'MCL 会立即创建一次完整备份。之后在游戏目录删除 .cache / shaderpacks 里对应的缓存文件夹即可。', action: 'fix:backupThenRestore', severity: 'medium' },
+    ],
+  },
+  {
+    id: 'killed-exit-137',
+    pattern: /(?:exit(?:ed)?\s*(?:code\s*)?[:|=]?\s*\(?\s*137|signal\s*9\b|SIGKILL\b)/i,
+    title: '游戏被系统强制结束',
+    summary: 'Minecraft 进程被操作系统强制终止（exit code 137 / SIGKILL）。最常见原因是内存不足被系统 OOM Killer 回收，其次是整机内存吃紧或被手动关闭。',
+    detail: 'Linux OOM Killer 在内存耗尽时按策略杀进程；Windows 也会强杀内存超限进程。表现为"日志直接中断、没有任何异常堆栈"。',
+    severity: 'high',
+    fixes: [
+      { id: 'memory-heavy', label: '切换到「大型整合包 / 光影」预设', description: '更多初始与最大内存，降低被 OOM 强杀的概率。', action: 'fix:setMemoryPreset', args: { preset: 'heavy' }, severity: 'high' },
+      { id: 'backup-137', label: '先备份存档', description: '修复前先创建一次完整备份，防止存档损坏。', action: 'fix:backupThenRestore', severity: 'medium' },
     ],
   },
   {

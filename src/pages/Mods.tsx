@@ -166,8 +166,12 @@ function SearchTab({ instance }: { instance: InstanceInfo }) {
   const install = async (r: ModSearchResult) => {
     setInstalling(r.projectId);
     try {
-      await api.modrinthInstall(instance.id, r.projectId, null, { loader, gameVersion: instance.mcVersion });
-      toast.toast(`已安装 ${r.title}`);
+      const result = await api.modrinthInstall(instance.id, r.projectId, null, { loader, gameVersion: instance.mcVersion });
+      const deps = result.installed.length - 1;
+      toast.toast(deps > 0 ? `已安装 ${r.title}（含 ${deps} 个前置依赖）` : `已安装 ${r.title}`);
+      if (result.optionalDependencies.length > 0) {
+        toast.toast(`可选前置未装：${result.optionalDependencies.map(d => d.title).join('、')}`, 'info');
+      }
     } catch (e) { toast.toast(String(e), 'error'); } finally { setInstalling(null); }
   };
 

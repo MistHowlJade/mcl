@@ -82,11 +82,12 @@ async function* walkCandidates(dir: string, depth = 0): AsyncGenerator<string> {
   if (depth > 3) return;
   let entries: fs.Dirent[] = [];
   try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
+  const exe = javaExeName();
   for (const e of entries) {
     const full = path.join(dir, e.name);
     if (e.isDirectory()) {
       yield* walkCandidates(full, depth + 1);
-    } else if (e.name.toLowerCase() === 'java.exe' && /bin/i.test(path.dirname(full))) {
+    } else if (e.name.toLowerCase() === exe.toLowerCase() && /bin/i.test(path.dirname(full))) {
       yield full;
     }
   }
@@ -115,19 +116,27 @@ export async function detectSystemJavas(): Promise<JavaInfo[]> {
   // 1) MCL 自带
   for await (const exe of walkCandidates(javaDir())) await push(exe);
   // 2) JAVA_HOME / PATH
-  if (process.env.JAVA_HOME) await push(path.join(process.env.JAVA_HOME, 'bin', 'java.exe'));
+  if (process.env.JAVA_HOME) await push(path.join(process.env.JAVA_HOME, 'bin', javaExeName()));
   const pathDirs = (process.env.PATH ?? '').split(path.delimiter);
   for (const d of pathDirs) {
-    const exe = path.join(d, 'java.exe');
+    const exe = path.join(d, javaExeName());
     if (fs.existsSync(exe)) await push(exe);
   }
   // 3) 常见安装位置
-  const programFiles = [process.env['ProgramFiles'], process.env['ProgramFiles(x86)'], process.env['ProgramW6432']].filter(Boolean) as string[];
-  const roots = ['Java', 'Eclipse Adoptium', 'Temurin', 'Microsoft', 'Zulu', 'Amazon Corretto', 'BellSoft'];
-  for (const pf of programFiles) {
-    for (const root of roots) {
-      const base = path.join(pf, root);
-      for await (const exe of walkCandidates(base)) await push(exe);
+  if (isWinPlatform) {
+    const programFiles = [process.env['ProgramFiles'], process.env['ProgramFiles(x86)'], process.env['ProgramW6432']].filter(Boolean) as string[];
+    const roots = ['Java', 'Eclipse Adoptium', 'Temurin', 'Microsoft', 'Zulu', 'Amazon Corretto', 'BellSoft'];
+    for (const pf of programFiles) {
+      for (const root of roots) {
+        for await (const exe of walkCandidates(path.join(pf, root))) await push(exe);
+      }
+    }
+  } else {
+    const unixRoots = process.platform === 'darwin'
+      ? ['/Library/Java/JavaVirtualMachines', '/opt/homebrew/opt', '/usr/local/opt']
+      : ['/usr/lib/jvm', '/usr/lib/jdk', '/opt/java', '/opt/jdk', '/opt/openjdk', '/usr/local/lib/jvm'];
+    for (const root of unixRoots) {
+      for await (const exe of walkCandidates(root)) await push(exe);
     }
   }
   // 去重同一安装（避免太多噪音）：以 major+version+path 排序
@@ -158,15 +167,20 @@ export async function pickJavaFor(mcVersion: string, overridePath?: string | nul
   return { java: null, recommendedMajor };
 }
 
-export interface AdoptiumBinary { link: string; size: number; packageName: string }
+export interface AdoptiumBinary { link: string; size: number; packageName: string; isTarGz: boolean }
 
-/** 查询 Adoptium 最新 Temurin JRE（Windows x64） */
+const isWinPlatform = process.platform === 'win32';
+const javaExeName = () => (isWinPlatform ? 'java.exe' : 'java');
+const adoptiumOS = () => (isWinPlatform ? 'windows' : process.platform === 'darwin' ? 'mac' : 'linux');
+const adoptiumArch = () => (process.arch === 'arm64' ? 'aarch64' : 'x64');
+
+/** 查询 Adoptium 最新 Temurin JRE（当前平台） */
 export async function getAdoptiumJreUrl(major: number): Promise<AdoptiumBinary | null> {
-  const url = `https://api.adoptium.net/v3/assets/latest/${major}/hotspot?architecture=x64&image_type=jre&os=windows&vendor=eclipse`;
+  const url = `https://api.adoptium.net/v3/assets/latest/${major}/hotspot?architecture=${adoptiumArch()}&image_type=jre&os=${adoptiumOS()}&vendor=eclipse`;
   try {
     const assets = await fetchJson<Array<{ binary: { package: { link: string; size: number; name: string } } }>>(url, { timeoutMs: 15000 });
     const pkg = assets[0]?.binary?.package;
-    if (pkg) return { link: pkg.link, size: pkg.size, packageName: pkg.name };
+    if (pkg) return { link: pkg.link, size: pkg.size, packageName: pkg.name, isTarGz: /\.tar\.gz$|\.tgz$/i.test(pkg.name ?? pkg.link ?? '') };
     return null;
   } catch {
     return null;
@@ -203,25 +217,34 @@ async function downloadToFile(url: string, dest: string, onProgress?: (n: number
   });
 }
 
-/** 下载并安装 Temurin JRE，返回 java.exe 路径 */
+/** 下载并安装 Temurin JRE，返回 java 可执行文件路径 */
 export async function installJava(major: number, onProgress?: (stage: 'fetch' | 'downloading' | 'extracting', received?: number, total?: number) => void): Promise<string> {
   onProgress?.('fetch');
   const info = await getAdoptiumJreUrl(major);
   if (!info) throw new Error(`无法从 Adoptium 获取 Java ${major} 的下载地址`);
-  const tmp = path.join(javaDir(), `temurin-${major}-${Date.now()}.zip`);
   fs.mkdirSync(javaDir(), { recursive: true });
+  const ext = info.isTarGz ? '.tar.gz' : '.zip';
+  const tmp = path.join(javaDir(), `temurin-${major}-${Date.now()}${ext}`);
   await downloadToFile(info.link, tmp, (r, t) => onProgress?.('downloading', r, t));
   onProgress?.('extracting');
   const destDir = path.join(javaDir(), `temurin-${major}`);
   fs.rmSync(destDir, { recursive: true, force: true });
   fs.mkdirSync(destDir, { recursive: true });
-  const buf = fs.readFileSync(tmp);
-  zipExtractAll(buf, destDir);
+  if (info.isTarGz) {
+    // Linux/macOS 的 Temurin 发行包是 tar.gz，用系统 tar 解压（保留可执行位）
+    await new Promise<void>((resolve, reject) => {
+      execFile('tar', ['-xzf', tmp, '-C', destDir], { timeout: 120000 }, (err) => err ? reject(new Error(`tar 解压失败：${err.message}`)) : resolve());
+    });
+  } else {
+    const buf = fs.readFileSync(tmp);
+    zipExtractAll(buf, destDir);
+  }
   fs.rmSync(tmp, { force: true });
-  // Temurin zip 内层为 jdk-xx/ 或 jre-xx/ 目录
+  // Temurin 包内层为 jdk-xx/ 或 jre-xx/ 目录
   const inner = fs.readdirSync(destDir).find(d => fs.statSync(path.join(destDir, d)).isDirectory());
   const home = inner ? path.join(destDir, inner) : destDir;
-  const exe = path.join(home, 'bin', 'java.exe');
-  if (!fs.existsSync(exe)) throw new Error('Java 安装包结构异常：找不到 bin/java.exe');
+  const exe = path.join(home, 'bin', javaExeName());
+  if (!fs.existsSync(exe)) throw new Error(`Java 安装包结构异常：找不到 bin/${javaExeName()}`);
+  try { fs.chmodSync(exe, 0o755); } catch { /* Windows 无需 chmod */ }
   return exe;
 }

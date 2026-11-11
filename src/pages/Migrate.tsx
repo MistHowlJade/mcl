@@ -99,6 +99,12 @@ export default function Migrate() {
         <div className="panel">
           <div className="panel-title">迁移结果</div>
           {result.imported.length > 0 && <div className="tag green" style={{ marginRight: 6 }}>成功 {result.imported.length} 个：{result.imported.join('、')}</div>}
+          {result.warnings && result.warnings.length > 0 && (
+            <div className="mt" style={{ border: '1px solid var(--amber-soft)', background: 'var(--amber-soft)', borderRadius: 8, padding: '8px 12px' }}>
+              <div style={{ fontWeight: 700, marginBottom: 4 }}>⚠ 需要注意</div>
+              <ul className="faint" style={{ paddingLeft: 18, margin: 0 }}>{result.warnings.map((w, i) => <li key={i}>{w}</li>)}</ul>
+            </div>
+          )}
           {result.skipped.length > 0 && (
             <ul className="faint mt" style={{ paddingLeft: 18 }}>
               {result.skipped.map(s => <li key={s.name}>{s.name}：{s.reason}</li>)}

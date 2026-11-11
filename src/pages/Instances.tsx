@@ -38,36 +38,7 @@ export default function Instances() {
 
       <div className="grid cols-2">
         {instances.map(inst => (
-          <div key={inst.id} className="panel">
-            <div className="row spread" style={{ marginBottom: 10 }}>
-              <div className="row">
-                <div className="mc-icon" style={{ width: 46, height: 46, borderRadius: 10, display: 'grid', placeItems: 'center', background: 'linear-gradient(140deg,#3b4a3f,#222c26)', fontSize: 22 }}>🧱</div>
-                <div>
-                  <div style={{ fontWeight: 750 }}>{inst.name}</div>
-                  <div className="faint">{inst.mcVersion} · {inst.loader}{inst.loaderVersion ? ` ${inst.loaderVersion}` : ''}</div>
-                </div>
-              </div>
-              <span className="tag blue">{PRESET_INFO[inst.memoryPreset ?? 'standard'].badge} 内存</span>
-            </div>
-            <div className="row faint" style={{ gap: 14 }}>
-              <span>🧩 {inst.modsCount} 模组</span>
-              <span>🌍 {inst.savesCount} 存档</span>
-              <span>🕐 {timeAgo(inst.lastPlayedAt)}</span>
-            </div>
-            <div className="row spread mt">
-              <div className="row" style={{ gap: 8 }}>
-                <span className="faint">禁止 Mod 自动更新</span>
-                <Tip text="开启后，此实例不会提示任何模组可更新。适合整合包玩家避免随手更新导致版本错乱（大坑，官方没有这个开关时只能服主口头叮嘱）。" />
-                <Toggle checked={!!inst.noModUpdate} onChange={v => api.instanceUpdate(inst.id, { noModUpdate: v }).then(reload)} label="禁止 Mod 自动更新" />
-              </div>
-            </div>
-            <div className="row mt" style={{ gap: 8, flexWrap: 'wrap' }}>
-              <button className="btn small" onClick={() => api.instanceOpenGameDir(inst.id)}>打开游戏目录</button>
-              <button className="btn small" onClick={() => api.instanceOpenDir(inst.id)}>实例文件夹</button>
-              <button className="btn small" onClick={() => diskUsage(inst.id)}>磁盘占用</button>
-              <button className="btn small danger" onClick={() => setDeleteTarget(inst)}>删除…</button>
-            </div>
-          </div>
+          <InstanceCard key={inst.id} inst={inst} onReload={reload} onDiskUsage={diskUsage} onDelete={setDeleteTarget} />
         ))}
       </div>
 
@@ -88,6 +59,88 @@ export default function Instances() {
           }}
         />
       )}
+    </div>
+  );
+}
+
+export function InstanceCard({ inst, onReload, onDiskUsage, onDelete }: { inst: InstanceInfo; onReload: () => void; onDiskUsage: (id: string) => void; onDelete: (inst: InstanceInfo) => void }) {
+  const [editing, setEditing] = useState(false);
+  const [name, setName] = useState(inst.name);
+  const [mcVersion, setMcVersion] = useState(inst.mcVersion === 'unknown' ? '' : inst.mcVersion);
+  const toast = useToast();
+
+  const save = async () => {
+    const patch: Record<string, string> = {};
+    const n = name.trim();
+    if (n && n !== inst.name) patch.name = n;
+    if (inst.mcVersion === 'unknown' && mcVersion.trim()) patch.mcVersion = mcVersion.trim();
+    if (Object.keys(patch).length > 0) {
+      await api.instanceUpdate(inst.id, patch);
+      toast.toast('已保存');
+      onReload();
+    }
+    setEditing(false);
+  };
+
+  return (
+    <div className="panel">
+      <div className="row spread" style={{ marginBottom: 10 }}>
+        <div className="row">
+          <div className="mc-icon" style={{ width: 46, height: 46, borderRadius: 10, display: 'grid', placeItems: 'center', background: 'linear-gradient(140deg,#3b4a3f,#222c26)', fontSize: 22 }}>🧱</div>
+          <div>
+            {editing ? (
+              <input className="input" style={{ maxWidth: 200, padding: '4px 8px' }} value={name} onChange={e => setName(e.target.value)} autoFocus onKeyDown={e => e.key === 'Enter' && save()} />
+            ) : (
+              <div style={{ fontWeight: 750 }}>{inst.name}</div>
+            )}
+            <div className="faint">
+              {inst.mcVersion === 'unknown'
+                ? <span className="tag amber">MC 版本未识别</span>
+                : `${inst.mcVersion}`} · {inst.loader}{inst.loaderVersion ? ` ${inst.loaderVersion}` : ''}
+            </div>
+          </div>
+        </div>
+        <span className="tag blue">{PRESET_INFO[inst.memoryPreset ?? 'standard'].badge} 内存</span>
+      </div>
+      {inst.mcVersion === 'unknown' && (
+        <div className="row mt" style={{ gap: 8 }}>
+          <span className="faint">设置版本后才能启动</span>
+          <input className="input" style={{ width: 120, padding: '4px 8px' }} placeholder="如 1.20.1" value={mcVersion} onChange={e => setMcVersion(e.target.value)} onKeyDown={e => e.key === 'Enter' && save()} />
+          <button className="btn small primary" onClick={save}>保存</button>
+        </div>
+      )}
+      <div className="row faint" style={{ gap: 14 }}>
+        <span>🧩 {inst.modsCount} 模组</span>
+        <span>🌍 {inst.savesCount} 存档</span>
+        <span>🕐 {timeAgo(inst.lastPlayedAt)}</span>
+      </div>
+      <div className="row spread mt">
+        <div className="row" style={{ gap: 8 }}>
+          <span className="faint">禁止 Mod 自动更新</span>
+          <Tip text="开启后，此实例不会提示任何模组可更新。适合整合包玩家避免随手更新导致版本错乱（大坑，官方没有这个开关时只能服主口头叮嘱）。" />
+          <Toggle checked={!!inst.noModUpdate} onChange={v => api.instanceUpdate(inst.id, { noModUpdate: v }).then(onReload)} label="禁止 Mod 自动更新" />
+        </div>
+        <div className="row" style={{ gap: 6 }}>
+          <span className="faint">内存</span>
+          <select className="input" style={{ width: 110, padding: '4px 8px' }} value={inst.memoryPreset ?? 'standard'} onChange={e => api.instanceUpdate(inst.id, { memoryPreset: e.target.value }).then(onReload)}>
+            {(Object.keys(PRESET_INFO) as MemoryPreset[]).map(k => <option key={k} value={k}>{PRESET_INFO[k].label}</option>)}
+          </select>
+        </div>
+      </div>
+      <div className="row mt" style={{ gap: 8, flexWrap: 'wrap' }}>
+        {editing ? (
+          <>
+            <button className="btn small primary" onClick={save}>保存</button>
+            <button className="btn small ghost" onClick={() => { setEditing(false); setName(inst.name); setMcVersion(inst.mcVersion === 'unknown' ? '' : inst.mcVersion); }}>取消</button>
+          </>
+        ) : (
+          <button className="btn small" onClick={() => setEditing(true)}>重命名</button>
+        )}
+        <button className="btn small" onClick={() => api.instanceOpenGameDir(inst.id)}>打开游戏目录</button>
+        <button className="btn small" onClick={() => api.instanceOpenDir(inst.id)}>实例文件夹</button>
+        <button className="btn small" onClick={() => onDiskUsage(inst.id)}>磁盘占用</button>
+        <button className="btn small danger" onClick={() => onDelete(inst)}>删除…</button>
+      </div>
     </div>
   );
 }

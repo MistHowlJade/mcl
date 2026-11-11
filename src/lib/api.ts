@@ -68,7 +68,7 @@ export const api = {
     invoke<ModSearchResult[]>('modrinth:search', query, opts),
   modrinthInstalled: (instanceId: string) => invoke<InstalledMod[]>('modrinth:installed', instanceId),
   modrinthInstall: (instanceId: string, projectId: string, versionId: string | null, opts: { loader?: string; gameVersion?: string }) =>
-    invoke<InstalledMod>('modrinth:install', instanceId, projectId, versionId, opts),
+    invoke<{ primary: InstalledMod; installed: InstalledMod[]; optionalDependencies: Array<{ projectId: string; title: string }> }>('modrinth:install', instanceId, projectId, versionId, opts),
   modrinthCheckUpdates: (instanceId: string, mcVersion: string, loader?: string) => invoke<InstalledMod[]>('modrinth:checkUpdates', instanceId, mcVersion, loader),
   modrinthUpdateMod: (instanceId: string, fileName: string) => invoke<InstalledMod>('modrinth:updateMod', instanceId, fileName),
   modrinthToggle: (instanceId: string, fileName: string) => invoke<boolean>('modrinth:toggle', instanceId, fileName),

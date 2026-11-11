@@ -259,19 +259,31 @@ export async function fetchAssetIndex(resolved: Record<string, any>, source: Dow
   objects: AssetObject[];
 }> {
   const ai = resolved.assetIndex ?? resolved.assets;
-  let indexJson: { objects: Record<string, { hash: string; size: number }> };
   if (typeof ai === 'string' || !ai.url) {
     // 旧版：assetIndex 字段是名字，需要自行从 launchermeta 拿？兜底：按名字走缓存或报错
     const indexId = typeof ai === 'string' ? ai : ai?.id;
     const localIndex = path.join(assetsIndexDir(), `${indexId}.json`);
     if (fs.existsSync(localIndex)) {
-      indexJson = readJson(localIndex, { objects: {} });
-      return { indexId, objects: mapAssets(indexJson) };
+      const cached = readJson(localIndex, { objects: {} as Record<string, { hash: string; size: number }> });
+      return { indexId, objects: mapAssets(cached) };
     }
     throw new Error(`该版本使用旧式资源索引（${indexId}），首次导入请连接网络`);
   }
   const url = resolveSourceUrl(ai.url, source, customMirror);
-  indexJson = await fetchJson(url, { timeoutMs: 30000 });
+  const fallbackUrl = ai.url; // 官方源兜底
+  let indexJson: { objects: Record<string, { hash: string; size: number }> } | null = null;
+  let lastError: unknown = null;
+  for (const candidate of [url, fallbackUrl]) {
+    try {
+      indexJson = await fetchJson(candidate, { timeoutMs: 30000 });
+      break;
+    } catch (e) {
+      lastError = e;
+    }
+  }
+  if (!indexJson) {
+    throw new Error(`资源索引下载失败（镜像与官方源均失败）：${lastError instanceof Error ? lastError.message : lastError}`);
+  }
   try {
     fs.mkdirSync(assetsIndexDir(), { recursive: true });
     writeJson(path.join(assetsIndexDir(), `${ai.id}.json`), indexJson);

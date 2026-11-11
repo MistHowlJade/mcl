@@ -292,6 +292,15 @@ export async function launchInstance(instanceId: string, options: LaunchOptions 
     launchState.message = message;
     launchEvents.emit('status', { ...launchState });
   };
+  // 并发保护：已有实例在启动/运行中时拒绝二次启动（防双进程、防误杀正在运行的游戏）
+  const busyStates = ['preparing', 'downloading', 'launching', 'running'];
+  if (busyStates.includes(launchState.status) && launchState.instanceId) {
+    throw new Error('已有实例在启动/运行中，请等待其退出后再试。');
+  }
+  const instance = getInstance(instanceId);
+  if (instance && instance.mcVersion === 'unknown') {
+    throw new Error('该实例未识别 MC 版本，请先在「实例」页设置版本后再启动。');
+  }
   const gameLogSafe = (s: string) => s.replace(/[^a-zA-Z0-9_-]/g, '');
   // 本次启动唯一日志文件（避免跨启动累积导致旧错误被当成本次错误，见 issue #9）
   const launchLogName = `launch-${gameLogSafe(instanceId)}-${startedAt}.log`;
@@ -303,7 +312,6 @@ export async function launchInstance(instanceId: string, options: LaunchOptions 
     } catch { /* ignore */ }
   };
 
-  const instance = getInstance(instanceId);
   if (!instance) throw new Error('实例不存在');
   const settings = getSettings();
   const activeAccountId = options.accountId ?? authService.getActiveAccount()?.id ?? null;

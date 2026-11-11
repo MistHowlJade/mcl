@@ -15,6 +15,7 @@ export default function Home({ onNavigate, onLaunchFail }: { onNavigate: (p: Pag
   const [logs, setLogs] = useState<string[]>([]);
   const [crash, setCrash] = useState<CrashDiagnosis | null>(null);
   const [loading, setLoading] = useState(true);
+  const [showFullLog, setShowFullLog] = useState(false);
   const logRef = useRef<HTMLDivElement>(null);
   const toast = useToast();
 
@@ -26,7 +27,12 @@ export default function Home({ onNavigate, onLaunchFail }: { onNavigate: (p: Pag
     setLoading(false);
   };
 
-  useEffect(() => { void reload(); /* eslint-disable-next-line */ }, []);
+  useEffect(() => {
+    // 挂载时恢复主进程里的启动状态（切走再切回来也能看到"游戏运行中"）
+    api.launchState().then(s => { if (s) setLaunchState(s); }).catch(() => undefined);
+    void reload();
+    /* eslint-disable-next-line */
+  }, []);
 
   useEffect(() => {
     if (selectedId) localStorage.setItem('mcl:selectedInstance', selectedId);
@@ -48,6 +54,7 @@ export default function Home({ onNavigate, onLaunchFail }: { onNavigate: (p: Pag
     });
     const offFail = on('launch:failed', (e: { instanceId: string; error: string }) => {
       onLaunchFail(e.error);
+      setProgress(null);
       setLogs(prev => [...prev, `[mcl] 启动失败：${e.error}`]);
       setLaunchState(prev => ({ ...prev, status: 'idle', message: e.error }));
     });
@@ -106,12 +113,18 @@ export default function Home({ onNavigate, onLaunchFail }: { onNavigate: (p: Pag
           </div>
         )}
         {logs.length > 0 && (
-          <div className="log-strip" ref={logRef}>
-            {logs.map((line, i) => {
-              const cls = line.startsWith('[mcl]') ? 'mcl' : /error|exception|failed|错误/i.test(line) ? 'err' : /warn|警告/i.test(line) ? 'warn' : '';
-              return <div key={i} className={`line ${cls}`}>{line}</div>;
-            })}
-          </div>
+          <>
+            <div className="row" style={{ marginTop: 10, marginBottom: 6 }}>
+              <span className="faint">启动日志</span>
+              <button className="btn small ghost" onClick={() => setShowFullLog(v => !v)}>{showFullLog ? '只看 MCL 消息' : '显示全部日志'}</button>
+            </div>
+            <div className="log-strip" ref={logRef}>
+              {logs.filter(l => showFullLog || l.startsWith('[mcl]')).map((line, i) => {
+                const cls = line.startsWith('[mcl]') ? 'mcl' : /error|exception|failed|错误/i.test(line) ? 'err' : /warn|警告/i.test(line) ? 'warn' : '';
+                return <div key={i} className={`line ${cls}`}>{line}</div>;
+              })}
+            </div>
+          </>
         )}
         {crash && (
           <div className="mt" style={{ border: '1px solid rgba(242,104,104,.4)', background: 'var(--red-soft)', borderRadius: 10, padding: '10px 14px' }}>

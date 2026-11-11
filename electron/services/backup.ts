@@ -74,6 +74,7 @@ export async function createBackup(instanceId: string, kind: BackupInfo['kind'],
     if (fs.statSync(abs).isDirectory()) walkAdd(abs, inc);
     else files.push({ name: inc, data: fs.readFileSync(abs), mtime: fs.statSync(abs).mtime });
   }
+  if (files.length === 0) return null; // 空目录（如只有一个空 saves/）不产生空备份
 
   const ts = Date.now();
   const id = `${kind}-${ts}`;

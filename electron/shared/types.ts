@@ -212,6 +212,8 @@ export interface MigrationPreview {
 export interface MigrationResult {
   imported: string[];
   skipped: Array<{ name: string; reason: string }>;
+  /** 非致命但需要用户注意的事项（如实例未识别 MC 版本） */
+  warnings?: string[];
 }
 
 export interface LaunchState {

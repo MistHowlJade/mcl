@@ -124,8 +124,16 @@ export function registerIpcHandlers(): void {
   /* ---------- 启动 ---------- */
   ipcMain.handle('launch:start', async (_e, instanceId: string, accountId?: string | null) => {
     minecraft.launchState.instanceId = instanceId;
+    minecraft.launchState.status = 'preparing';
+    minecraft.launchState.message = '正在准备游戏…';
+    sendToAll('launch:status', { ...minecraft.launchState });
     void minecraft.launchInstance(instanceId, { accountId }).catch(err => {
-      sendToAll('launch:failed', { instanceId, error: err instanceof Error ? err.message : String(err) });
+      const message = err instanceof Error ? err.message : String(err);
+      minecraft.launchState.status = 'idle';
+      minecraft.launchState.message = message;
+      minecraft.launchState.progress = null;
+      sendToAll('launch:status', { ...minecraft.launchState });
+      sendToAll('launch:failed', { instanceId, error: message });
     });
     return { started: true };
   });
@@ -283,7 +291,30 @@ export function registerIpcHandlers(): void {
         return { ok: true, message: '已添加模块开放参数，下次启动生效。' };
       }
       case 'fix:disableMod': {
-        return { ok: false, message: '请到 mods 文件夹手动禁用对应模组（把 .jar 重命名为 .jar.disabled）。' };
+        const instance = instances.getInstance(instanceId);
+        if (!instance) throw new Error('实例不存在');
+        const modsDir = path.join(instance.gameDir, 'mods');
+        const target = fix.args?.file;
+        if (target) {
+          const enabled = path.join(modsDir, path.basename(target));
+          if (fs.existsSync(enabled)) {
+            const disabled = enabled + '.disabled';
+            fs.renameSync(enabled, disabled);
+            return { ok: true, message: `已将 ${path.basename(target)} 重命名为 .disabled，下次启动生效。` };
+          }
+          if (fs.existsSync(enabled + '.disabled')) {
+            return { ok: true, message: `${path.basename(target)} 已经是 .disabled。` };
+          }
+          return { ok: false, message: `在 mods 中找不到 ${target}` };
+        }
+        // 未指定具体模组：列出当前 mods 目录里全部条目，引导到体检处理
+        const files = fs.existsSync(modsDir) ? fs.readdirSync(modsDir).filter(f => f.endsWith('.jar') || f.endsWith('.disabled')) : [];
+        return {
+          ok: true,
+          message: files.length > 0
+            ? `mods 目录当前 ${files.length} 个文件：${files.slice(0, 8).join('、')}${files.length > 8 ? '…' : ''}。请用「模组 → 体检」定位问题模组，或告诉 MCL 具体是哪个文件并传参 fix:disableMod + file=<文件名>。`
+            : 'mods 目录为空。',
+        };
       }
       default:
         return { ok: false, message: '未知的修复动作。' };
