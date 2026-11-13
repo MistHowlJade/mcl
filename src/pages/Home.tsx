@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { api, on } from '../lib/api';
 import { useToast } from '../components/Toast';
-import { formatBytes, timeAgo } from '../components/Modal';
-import type { CrashDiagnosis, InstanceInfo, LaunchState } from '../../electron/shared/types';
+import { ConfirmModal, formatBytes, timeAgo } from '../components/Modal';
+import type { AppSettings, CrashDiagnosis, InstanceInfo, LaunchState } from '../../electron/shared/types';
 
 type Page = 'home' | 'instances' | 'servers' | 'mods' | 'content' | 'backups' | 'crash' | 'migrate' | 'accounts' | 'cloud' | 'logs' | 'settings';
 
@@ -16,6 +16,9 @@ export default function Home({ onNavigate, onLaunchFail }: { onNavigate: (p: Pag
   const [crash, setCrash] = useState<CrashDiagnosis | null>(null);
   const [loading, setLoading] = useState(true);
   const [showFullLog, setShowFullLog] = useState(false);
+  const [settings, setSettings] = useState<AppSettings | null>(null);
+  const [confirmLaunch, setConfirmLaunch] = useState<InstanceInfo | null>(null);
+  const settingsRef = useRef<AppSettings | null>(null);
   const logRef = useRef<HTMLDivElement>(null);
   const toast = useToast();
 
@@ -30,6 +33,7 @@ export default function Home({ onNavigate, onLaunchFail }: { onNavigate: (p: Pag
   useEffect(() => {
     // 挂载时恢复主进程里的启动状态（切走再切回来也能看到"游戏运行中"）
     api.launchState().then(s => { if (s) setLaunchState(s); }).catch(() => undefined);
+    api.settingsGet().then(s => { setSettings(s); settingsRef.current = s; }).catch(() => undefined);
     void reload();
     /* eslint-disable-next-line */
   }, []);
@@ -45,6 +49,8 @@ export default function Home({ onNavigate, onLaunchFail }: { onNavigate: (p: Pag
     const offCrash = on('launch:crash', (d: CrashDiagnosis) => {
       setCrash(d);
       onLaunchFail(`游戏崩溃：${d.title}`);
+      // 崩溃时按设置自动跳到崩溃分析页（日志、人话解释、一键修复都在那里）
+      if (settingsRef.current?.launch.showLogOnCrash !== false) onNavigate('crash');
       void reload();
     });
     const offExit = on('launch:exit', (e: { instanceId: string }) => {
@@ -71,13 +77,21 @@ export default function Home({ onNavigate, onLaunchFail }: { onNavigate: (p: Pag
   const totalMods = instances.reduce((a, i) => a + i.modsCount, 0);
   const totalPlaySeconds = instances.reduce((a, i) => a + (i.playTimeSeconds ?? 0), 0);
 
-  const doLaunch = async () => {
-    if (!selected) return;
+  const startLaunch = async (instance: InstanceInfo) => {
     setCrash(null);
     setLogs([]);
     setProgress(null);
-    setLaunchState({ instanceId: selected.id, status: 'preparing', message: '正在准备…' });
-    await api.launchStart(selected.id);
+    setLaunchState({ instanceId: instance.id, status: 'preparing', message: '正在准备…' });
+    await api.launchStart(instance.id);
+  };
+
+  const doLaunch = async () => {
+    if (!selected) return;
+    if (settings?.general.confirmBeforeLaunch) {
+      setConfirmLaunch(selected);
+      return;
+    }
+    await startLaunch(selected);
   };
 
   const busy = launchState.status === 'preparing' || launchState.status === 'downloading' || launchState.status === 'launching' || launchState.status === 'running';
@@ -186,6 +200,16 @@ export default function Home({ onNavigate, onLaunchFail }: { onNavigate: (p: Pag
         <button className="btn" onClick={() => selected && api.instanceOpenGameDir(selected.id)}>📂 打开游戏目录</button>
         <button className="btn" onClick={() => { api.launchKillResidual().then(r => toast.toast(`已清理 ${r.killed.length} 个残余进程`, 'info')); }}>🧹 清理残余进程</button>
       </div>
+
+      {confirmLaunch && (
+        <ConfirmModal
+          title="确认启动"
+          message={`即将启动实例「${confirmLaunch.name}」\n\n版本：${confirmLaunch.mcVersion} · ${confirmLaunch.loader}\n账号：${accountName ?? '未登录'}\n内存预设：${confirmLaunch.memoryPreset === 'heavy' ? '大型整合包（8G）' : confirmLaunch.memoryPreset === 'low' ? '低配（2G）' : '标准（4G）'}\n\n确认开始启动？`}
+          confirmText="启动"
+          onCancel={() => setConfirmLaunch(null)}
+          onConfirm={() => { const target = confirmLaunch; setConfirmLaunch(null); void startLaunch(target); }}
+        />
+      )}
     </div>
   );
 }

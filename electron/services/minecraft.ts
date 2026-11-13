@@ -14,6 +14,7 @@ import * as versionService from './version';
 import { DownloadManager, sha1File } from './downloader';
 import { zipExtractEntry, zipList } from './zip';
 import { getSettings } from './settings';
+import { proxyJvmArgs } from './proxy';
 import { getInstance, touchPlayed, updateInstance } from './instances';
 import { analyzeCrash } from './crash';
 import { EventEmitter } from 'events';
@@ -483,6 +484,8 @@ export async function launchInstance(instanceId: string, options: LaunchOptions 
       jvmArgs.push(piece);
     }
   }
+  // 代理（设置 → 网络 → 游戏走代理）
+  for (const piece of proxyJvmArgs()) jvmArgs.push(piece);
 
   // 来自版本 json 的 jvm 参数（过滤掉旧版的 -Xmx，使用我们的预设）
   if (Array.isArray(resolved.arguments?.jvm)) {

@@ -2,9 +2,10 @@
  * 类型安全的窗口桥（对应 electron/preload.ts 暴露的 window.mcl）
  */
 import type {
-  Account, AppSettings, BackupInfo, CloudSnapshotInfo, ContentKind, ContentList,
+  Account, AppSettings, BackupInfo, CloudSnapshotInfo, ContentInstallResult, ContentKind, ContentList,
+  ContentProjectType,
   CrashDiagnosis, CrashFix, EnvironmentReport, ExportFormat, ExportResult, InstanceConfig,
-  InstanceInfo, InstalledMod, JavaInfo, LaunchState, MigrationCandidate, MigrationPreview,
+  InstanceInfo, InstalledMod, JavaInfo, LanWorld, LaunchState, MigrationCandidate, MigrationPreview,
   MigrationResult, ModHealthIssue, ModSearchResult, ServerBackupInfo, ServerConfig, ServerInfo,
   ServerLoader, ServerProperties, UpdateInfo, VersionManifestEntry,
 } from '../../electron/shared/types';
@@ -36,6 +37,8 @@ export interface CloudApplyResult {
 export const api = {
   appInfo: () => invoke<{ name: string; version: string; dataDir: string; platform: string; arch: string }>('app:info'),
   appUpdateCheck: () => invoke<UpdateInfo>('app:updateCheck'),
+  appUpdateDownload: () => invoke<{ filePath: string; fileName: string; sizeBytes: number }>('app:updateDownload'),
+  appRevealFile: (filePath: string) => invoke<boolean>('app:revealFile', filePath),
   appCacheInfo: () => invoke<{ dir: string; sizeBytes: number; files: number }>('app:cacheInfo'),
   appClearCache: () => invoke<{ freedBytes: number; removedFiles: number }>('app:clearCache'),
 
@@ -51,6 +54,7 @@ export const api = {
 
   openPath: (p: string) => invoke<string>('shell:openPath', p),
   openExternal: (url: string) => invoke('shell:openExternal', url),
+  copyText: (text: string) => invoke<boolean>('clipboard:write', text),
   pickFolder: () => invoke<string | null>('dialog:pickFolder'),
   pickFile: (filters: Array<{ name: string; extensions: string[] }>) => invoke<string | null>('dialog:pickFile', filters),
 
@@ -66,6 +70,7 @@ export const api = {
     invoke<InstanceConfig>('instances:create', input),
   instanceUpdate: (id: string, patch: any) => invoke<InstanceConfig | null>('instances:update', id, patch),
   instanceDelete: (id: string) => invoke<{ ok: boolean; backupPath?: string }>('instances:delete', id),
+  instanceDuplicate: (id: string) => invoke<InstanceConfig>('instances:duplicate', id),
   instanceDiskUsage: (id: string) => invoke<{ instance: number; shared: number }>('instances:diskUsage', id),
   instanceOpenGameDir: (id: string) => invoke('instances:openGameDir', id),
   instanceOpenDir: (id: string) => invoke('instances:openInstanceDir', id),
@@ -90,6 +95,10 @@ export const api = {
 
   modrinthSearch: (query: string, opts: { loader?: string; gameVersion?: string; projectType?: 'mod' | 'modpack'; index?: 'relevance' | 'downloads' | 'follows' | 'updated' }) =>
     invoke<ModSearchResult[]>('modrinth:search', query, opts),
+  modrinthSearchContent: (query: string, opts: { projectType: ContentProjectType; loader?: string; gameVersion?: string; limit?: number; index?: 'relevance' | 'downloads' | 'follows' | 'updated' }) =>
+    invoke<ModSearchResult[]>('modrinth:searchContent', query, opts),
+  modrinthInstallContent: (instanceId: string, projectId: string, versionId: string | null, kind: 'resourcepacks' | 'shaderpacks' | 'worlds', opts: { gameVersion?: string; loader?: string } = {}) =>
+    invoke<ContentInstallResult>('modrinth:installContent', instanceId, projectId, versionId, kind, opts),
   modrinthInstalled: (instanceId: string) => invoke<InstalledMod[]>('modrinth:installed', instanceId),
   modrinthInstall: (instanceId: string, projectId: string, versionId: string | null, opts: { loader?: string; gameVersion?: string }) =>
     invoke<{ primary: InstalledMod; installed: InstalledMod[]; optionalDependencies: Array<{ projectId: string; title: string }> }>('modrinth:install', instanceId, projectId, versionId, opts),
@@ -159,8 +168,12 @@ export const api = {
   contentDelete: (instanceId: string, kind: ContentKind, fileName: string) => invoke<{ deleted: boolean; backupPath?: string }>('content:delete', instanceId, kind, fileName),
   contentBackupWorld: (instanceId: string, worldName: string, displayName?: string) => invoke<string>('content:backupWorld', instanceId, worldName, displayName),
   contentImportDialog: (instanceId: string, kind: ContentKind, mode?: 'file' | 'folder') => invoke<{ imported: number; skipped: string[] } | null>('content:importDialog', instanceId, kind, mode),
+  contentExportWorld: (instanceId: string, worldName: string) => invoke<{ filePath: string; sizeBytes: number } | null>('content:exportWorld', instanceId, worldName),
   contentOpenItem: (path: string) => invoke('content:openItem', path),
   contentOpenFolder: (instanceId: string, kind: ContentKind) => invoke('content:openFolder', instanceId, kind),
+
+  /* ---------- 局域网世界 ---------- */
+  lanScan: (timeoutMs?: number) => invoke<LanWorld[]>('lan:scan', timeoutMs),
 };
 
 /* 事件订阅（返回取消函数） */

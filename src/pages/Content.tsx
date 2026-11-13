@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { api, mediaUrl } from '../lib/api';
 import { useToast } from '../components/Toast';
-import { ConfirmModal, formatBytes, timeAgo } from '../components/Modal';
-import type { ContentItem, ContentKind, ContentList, InstanceInfo } from '../../electron/shared/types';
+import { ConfirmModal, Modal, formatBytes, timeAgo } from '../components/Modal';
+import type { ContentItem, ContentKind, ContentList, InstanceInfo, ModSearchResult } from '../../electron/shared/types';
 
 const TABS: Array<{ id: ContentKind; label: string; icon: string; empty: string; tip: string }> = [
   { id: 'resourcepacks', label: '资源包', icon: '🎨', empty: '还没有资源包。把 ZIP 拖进来或点「导入 ZIP」。', tip: '资源包会改变材质、声音与界面。启用状态直接写入 options.txt，进游戏立即生效。' },
@@ -18,6 +18,7 @@ export default function Content() {
   const [tab, setTab] = useState<ContentKind>('resourcepacks');
   const [loading, setLoading] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<{ kind: ContentKind; item: ContentItem } | null>(null);
+  const [onlineOpen, setOnlineOpen] = useState(false);
   const toast = useToast();
 
   useEffect(() => {
@@ -88,6 +89,14 @@ export default function Content() {
     } catch (e) { toast.toast(e instanceof Error ? e.message : String(e), 'error'); }
   };
 
+  const exportWorld = async (item: ContentItem) => {
+    if (!instanceId) return;
+    try {
+      const r = await api.contentExportWorld(instanceId, item.fileName);
+      if (r) toast.toast(`世界已导出为 ZIP：${r.filePath}（${formatBytes(r.sizeBytes)}）`, 'ok');
+    } catch (e) { toast.toast(e instanceof Error ? e.message : String(e), 'error'); }
+  };
+
   if (instances.length === 0) {
     return (
       <div>
@@ -125,11 +134,23 @@ export default function Content() {
             </button>
           ))}
           <span className="spacer" style={{ flex: 1 }} />
-          <button className="btn" onClick={() => importItem('file')} disabled={!instanceId}>
-            {tab === 'worlds' ? '＋ 导入世界' : tab === 'screenshots' ? '＋ 导入图片' : '＋ 导入 ZIP'}
-          </button>
-          {tab !== 'worlds' && tab !== 'screenshots' && (
-            <button className="btn" onClick={() => importItem('folder')} disabled={!instanceId}>＋ 导入文件夹</button>
+          {(tab === 'resourcepacks' || tab === 'shaderpacks' || tab === 'worlds') && (
+            <button className="btn primary" onClick={() => setOnlineOpen(true)} disabled={!instanceId}>
+              ☁️ 在线下载
+            </button>
+          )}
+          {tab === 'worlds' ? (
+            <>
+              <button className="btn" onClick={() => importItem('folder')} disabled={!instanceId}>＋ 导入世界文件夹</button>
+              <button className="btn" onClick={() => importItem('file')} disabled={!instanceId}>＋ 导入世界 ZIP</button>
+            </>
+          ) : tab === 'screenshots' ? (
+            <button className="btn" onClick={() => importItem('file')} disabled={!instanceId}>＋ 导入图片</button>
+          ) : (
+            <>
+              <button className="btn" onClick={() => importItem('file')} disabled={!instanceId}>＋ 导入 ZIP</button>
+              <button className="btn" onClick={() => importItem('folder')} disabled={!instanceId}>＋ 导入文件夹</button>
+            </>
           )}
         </div>
         <p className="faint mt">{currentTab.tip}</p>
@@ -192,6 +213,7 @@ export default function Content() {
                   {tab === 'worlds' && (
                     <>
                       <button className="btn small" onClick={() => backupWorld(item)}>备份世界</button>
+                      <button className="btn small" onClick={() => exportWorld(item)}>导出 ZIP</button>
                       <button className="btn small" onClick={() => api.contentOpenItem(item.path)}>打开</button>
                     </>
                   )}
@@ -201,6 +223,15 @@ export default function Content() {
             ))}
           </div>
         </div>
+      )}
+
+      {onlineOpen && instance && (tab === 'resourcepacks' || tab === 'shaderpacks' || tab === 'worlds') && (
+        <OnlineContentModal
+          instance={instance}
+          kind={tab}
+          onClose={() => setOnlineOpen(false)}
+          onInstalled={() => { setOnlineOpen(false); void reload(); }}
+        />
       )}
 
       {deleteTarget && (
@@ -216,5 +247,113 @@ export default function Content() {
         />
       )}
     </div>
+  );
+}
+
+const ONLINE_KIND_INFO: Record<'resourcepacks' | 'shaderpacks' | 'worlds', { projectType: 'resourcepack' | 'shader' | 'world'; label: string; hint: string }> = {
+  resourcepacks: { projectType: 'resourcepack', label: '资源包', hint: '来自 Modrinth，下载后直接放进实例的 resourcepacks 目录，可在列表里启用。' },
+  shaderpacks: { projectType: 'shader', label: '光影包', hint: '来自 Modrinth。需要实例已安装 Iris 或 OptiFine 才能生效。' },
+  worlds: { projectType: 'world', label: '世界', hint: '来自 Modrinth。下载后自动解压到实例的 saves 目录（ZIP 内嵌目录会自动识别）。' },
+};
+
+function OnlineContentModal({ instance, kind, onClose, onInstalled }: {
+  instance: InstanceInfo;
+  kind: 'resourcepacks' | 'shaderpacks' | 'worlds';
+  onClose: () => void;
+  onInstalled: () => void;
+}) {
+  const info = ONLINE_KIND_INFO[kind];
+  const [query, setQuery] = useState('');
+  const [gameVersion, setGameVersion] = useState(instance.mcVersion === 'unknown' ? '' : instance.mcVersion);
+  const [results, setResults] = useState<ModSearchResult[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [installingId, setInstallingId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const toast = useToast();
+
+  const search = async (q: string, gv: string) => {
+    setSearching(true);
+    setError(null);
+    try {
+      const list = await api.modrinthSearchContent(q, {
+        projectType: info.projectType,
+        gameVersion: gv.trim() || undefined,
+        index: q.trim() ? 'relevance' : 'downloads',
+        limit: 30,
+      });
+      setResults(list);
+      if (list.length === 0) setError('没有找到匹配的内容。试试换个关键词，或清空游戏版本过滤。');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+      setResults([]);
+    } finally { setSearching(false); }
+  };
+
+  useEffect(() => { void search('', instance.mcVersion === 'unknown' ? '' : instance.mcVersion); /* eslint-disable-next-line */ }, []);
+
+  const install = async (item: ModSearchResult) => {
+    setInstallingId(item.projectId);
+    try {
+      const r = await api.modrinthInstallContent(instance.id, item.projectId, null, kind, {
+        gameVersion: gameVersion.trim() || undefined,
+        loader: instance.loader,
+      });
+      toast.toast(kind === 'worlds'
+        ? `世界已安装：${r.worldName ?? r.fileName}（可在世界列表看到）`
+        : `已安装 ${r.fileName}（${formatBytes(r.sizeBytes)}）`, 'ok');
+      onInstalled();
+    } catch (e) { toast.toast(e instanceof Error ? e.message : String(e), 'error'); }
+    finally { setInstallingId(null); }
+  };
+
+  return (
+    <Modal title={`在线下载${info.label}`} onClose={onClose} footer={<button className="btn ghost" onClick={onClose}>关闭</button>}>
+      <p className="faint" style={{ marginTop: 0 }}>{info.hint}</p>
+      <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+        <input
+          className="input"
+          style={{ flex: 1, minWidth: 220 }}
+          placeholder={`搜索${info.label}，留空 = 按下载量浏览热门`}
+          value={query}
+          onChange={e => setQuery(e.target.value)}
+          onKeyDown={e => e.key === 'Enter' && void search(query, gameVersion)}
+        />
+        <input className="input" style={{ width: 120 }} placeholder="游戏版本" value={gameVersion} onChange={e => setGameVersion(e.target.value)} />
+        <button className="btn primary" onClick={() => void search(query, gameVersion)} disabled={searching}>{searching ? '搜索中…' : '搜索'}</button>
+      </div>
+      <div className="faint mt">目标实例：{instance.name} · {instance.mcVersion} · {instance.loader}</div>
+
+      {searching && <div className="empty" style={{ padding: 30 }}><div className="big">⏳</div>正在向 Modrinth 查询…</div>}
+      {!searching && error && <div className="empty" style={{ padding: 26 }}>{error}</div>}
+      {!searching && !error && (
+        <div className="list mt" style={{ maxHeight: 430, overflowY: 'auto' }}>
+          {results.map(item => (
+            <div key={item.projectId} className="list-row" style={{ alignItems: 'flex-start' }}>
+              <div style={{ width: 42, height: 42, borderRadius: 9, background: 'var(--panel-3)', overflow: 'hidden', display: 'grid', placeItems: 'center', flexShrink: 0 }}>
+                {item.iconUrl ? <img src={item.iconUrl} alt="" style={{ width: 42, height: 42, objectFit: 'cover' }} /> : '📦'}
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+                  <strong>{item.title}</strong>
+                  <span className="tag">{item.author || '未知作者'}</span>
+                  {item.gameVersions.includes(gameVersion) && <span className="tag green">兼容 {gameVersion}</span>}
+                </div>
+                <div className="faint" style={{ marginTop: 2 }}>{item.description}</div>
+                <div className="faint" style={{ marginTop: 4 }}>
+                  ⬇ {item.downloads.toLocaleString()} · ❤ {item.follows.toLocaleString()}
+                  {item.gameVersions.length > 0 && ` · 支持 ${item.gameVersions.slice(-4).join(' / ')}`}
+                </div>
+              </div>
+              <div className="row" style={{ gap: 6, flexShrink: 0 }}>
+                <button className="btn small" onClick={() => api.openExternal(`https://modrinth.com/project/${item.slug}`)}>详情 ↗</button>
+                <button className="btn small primary" onClick={() => install(item)} disabled={installingId !== null}>
+                  {installingId === item.projectId ? '安装中…' : '安装'}
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </Modal>
   );
 }

@@ -26,7 +26,7 @@
 | 内存/性能 | 16% | P1 | 内存三预设（低配 2G / 标准 4G / 大型整合包·光影 8G + Aikar G1GC 参数） |
 | 启动失败 | 13% | P0 | 启动前校验 + 库完整性修复 + 人话报错 |
 | 登录/账号 | 10% | P2（低频高伤） | 微软设备码登录（国内网络可用）、离线账号、令牌过期自动刷新、XErr 错误码人话翻译、系统时间偏移检测 |
-| 网络/代理 | 10% | P2 | 镜像测速选择器、超时可调、失败自动换源 |
+| 网络/代理 | 10% | P2 | HTTP/HTTPS 代理（下载/API/登录）、镜像测速选择器、超时可调、失败自动换源 |
 | 多语言/本地化 | 6% | P1 | 简体中文 UI、全部设置带中文解释 |
 | 皮肤/披风 | 6% | P2 | 离线账号本地皮肤/披风预览（64×64 PNG）；微软账号一键上传/恢复官方皮肤（Mojang API） |
 | 杀软/误报 | 2% | P2（低频高伤） | 完全开源（MIT）、可审计、零遥测、只下载官方游戏文件、不捆绑任何东西 |
@@ -102,17 +102,17 @@
 ## 二、功能总览
 
 - 🚀 **启动台**：当前账号、实例卡片、一键启动、实时日志、崩溃直达修复
-- 📦 **实例管理**：创建/删除（先备份）、磁盘占用统计、禁止 Mod 更新开关、高级设置（Java 路径 / 实例 JVM 参数 / 独立分辨率）、**实例导出**（MultiMC/Prism、Modrinth `.mrpack`、MCL 完整 ZIP）
-- 🖥️ **服务器管理**：原版 / Fabric / Quilt / Forge / NeoForge 一键安装，启停、实时控制台与命令、server.properties 可视化编辑、端口检测、EULA 门禁、世界备份/恢复，退出启动器自动结束服务端
+- 📦 **实例管理**：创建/复制/删除（先备份）、磁盘占用统计、禁止 Mod 更新开关、高级设置（Java 路径 / 实例 JVM 参数 / 独立分辨率）、**实例导出**（MultiMC/Prism、Modrinth `.mrpack`、MCL 完整 ZIP）
+- 🖥️ **服务器管理**：原版 / Fabric / Quilt / Forge / NeoForge 一键安装，启停、实时控制台与命令、server.properties 可视化编辑、端口检测、EULA 门禁、世界备份/恢复，退出启动器自动结束服务端；**局域网世界扫描**（224.0.2.60:4445，一键复制连接地址）
 - 🧩 **模组中心**：Modrinth 搜索直装（按实例版本/加载器过滤）、已安装列表、更新检查、**模组体检**（解析 jar 元数据，发现重复/损坏/异加载器模组并一键隔离）、整合包导入
-- 🎨 **内容管理**：资源包 / 光影包 / 截图 / 世界集中管理；启用状态直接写入 `options.txt`、`iris.properties`、`optionsshaders.txt`；删除世界前自动打包备份
+- 🎨 **内容管理**：资源包 / 光影包 / 截图 / 世界集中管理；**Modrinth 在线下载**资源包/光影/世界；世界支持文件夹导入、**ZIP 导入/导出**；启用状态直接写入 `options.txt`、`iris.properties`、`optionsshaders.txt`；删除世界前自动打包备份
 - 💾 **存档备份**：启动前自动备份、手动备份、恢复前自动再备份、保留份数可配
 - 🩺 **崩溃分析**：已知错误模式库（OOM / Java 版本 / Mixin / 缺前置 / natives / OpenGL / TLS / 模块化）→ 人话解释 + 一键修复；粘贴日志即可分析任意文本
 - 🚚 **迁移中心**：自动发现 HMCL / PCL2 / Prism / MultiMC / .minecraft，预览后批量导入存档/模组/配置/资源包（库与资源不复制，共享目录按需下载）
 - ☁️ **云同步**：WebDAV（完整快照，可选存档）或 GitHub Gist（仅配置）；账号令牌、CurseForge 密钥、云同步凭据永不进入快照
 - 👤 **账号**：微软设备码登录（含 XErr 人话翻译与系统时间偏移检测）、离线账号、本地皮肤/披风预览、微软账号官方皮肤上传与恢复
 - 📜 **日志**：启动器日志 + 游戏 latest.log，可搜索（error/mixin/OOM 直筛）
-- ⚙️ **设置**：每个选项带人话解释（界面 DPI / 默认分辨率 / 全局 JVM 参数 / 镜像源测速 / Java 检测 / 内存 / 云同步 / 更新检查 / 缓存清理）
+- ⚙️ **设置**：每个选项带人话解释（界面 DPI / 默认分辨率 / 启动确认 / 崩溃日志 / 全局 JVM 参数 / 镜像源测速 / Java 检测 / 内存 / HTTP 代理 / 云同步 / 更新下载 / 缓存清理）
 
 ---
 
@@ -124,9 +124,10 @@ npm run dev        # 开发模式（Vite HMR + Electron）
 npm run typecheck  # 类型检查
 npm run build      # 产物：dist/（渲染进程）+ electron-dist/（主进程）
 npm run start      # 运行构建产物
+npm run package    # 零依赖打包：release/MCL-<版本>-<平台>-<架构>/ + .zip
 ```
 
-打包分发建议：[electron-builder](https://www.electron.build/) 或 [electron-packager](https://github.com/electron/electron-packager)，输出 Windows NSIS 安装包 / 便携版（便携模式：exe 同级放 `portable.txt`，数据写入 `mcl-data/`）。
+`npm run package` 直接复用已安装的 Electron 运行时（不新增依赖），生成免安装目录与便携 ZIP；在 exe 同级放一个空的 `portable.txt` 即可让数据写入旁边的 `mcl-data/`。默认不生成 NSIS/MSI 安装器（避免签名与提权问题），需要安装器可自行接入 electron-builder。
 
 ### 目录结构
 
@@ -144,9 +145,11 @@ electron/
     server.ts        服务端生命周期（Vanilla/Fabric/Quilt/Forge/NeoForge 安装、控制台、备份）
     cloud.ts         云同步（WebDAV 快照 / GitHub Gist 配置，快照脱敏）
     exporter.ts      实例导出（MultiMC/Prism、mrpack、完整 ZIP）
-    content.ts       资源包/光影/截图/世界管理（开关写入 options.txt 等）
-    update.ts        启动器更新检查（GitHub Release，只提示不自动安装）
-    modrinth.ts      Modrinth API（搜索/安装/更新检查）
+    content.ts       资源包/光影/截图/世界管理（开关写入 options.txt；世界 ZIP 导入/导出）
+    update.ts        启动器更新检查 + 安装包下载（GitHub Release，不自动替换程序）
+    modrinth.ts      Modrinth API（模组/整合包/资源包/光影/世界 搜索、安装、更新检查）
+    proxy.ts         HTTP/HTTPS 代理（CONNECT 隧道，零依赖，游戏 JVM 参数注入）
+    lan.ts           局域网世界扫描（UDP 224.0.2.60:4445）
     modpack.ts       整合包导入（modrinth/curseforge/mmc，嵌套剥离）
     modhealth.ts     模组体检（jar 元数据解析）
     backup.ts        存档备份（zip 读写，零依赖）
@@ -164,7 +167,7 @@ src/                 React 渲染进程（启动台/实例/服务器/模组/内�
 3. **游戏本体仅从 Mojang 官方渠道下载**（或你自己选择的社区镜像，失败自动切换官方）——MCL 不修改、不重新分发游戏文件。
 4. **微软登录全程在官方页完成**，MCL 不接触你的密码；令牌只存本机 `accounts.json`。
 5. **无捆绑**：没有全家桶、没有赞助解锁、没有"金山毒霸"式安装器。
-6. 诊断包导出会自动剔除 API 密钥等敏感信息（CurseForge Key、WebDAV 地址/账号/密码、GitHub Token/Gist ID）。
+6. 诊断包导出会自动剔除 API 密钥等敏感信息（CurseForge Key、WebDAV 地址/账号/密码、GitHub Token/Gist ID、代理地址/账号/密码）。
 7. 云同步只使用你自己的 WebDAV / GitHub 账号，MCL 没有中间服务器；快照绝不包含 `accounts.json`、微软令牌与任何密钥。
 
 ## 五、路线图
@@ -173,6 +176,10 @@ src/                 React 渲染进程（启动台/实例/服务器/模组/内�
 - ✅ 双向导出（MCL → MultiMC/Prism、Modrinth `.mrpack`、完整实例 ZIP）
 - ✅ 服务端管理：一键开服、加载器安装、控制台、server.properties、世界备份
 - ✅ 微软账号皮肤上传/恢复；离线皮肤与披风预览
+- ✅ HTTP/HTTPS 代理（下载 / API / 微软登录 / 云同步 + 游戏 JVM 参数）
+- ✅ Modrinth 在线下载资源包 / 光影 / 世界；世界 ZIP 导入导出；实例复制
+- ✅ 局域网世界扫描（224.0.2.60:4445）与一键复制连接地址
+- ✅ 零依赖便携打包 `npm run package`（免安装目录 + ZIP）
 - ⬜ 离线模式下经材质包注入他人可见的皮肤（社区方案，存在兼容性风险）
 - ⬜ macOS / Linux 体验打磨（开发环境即 Windows，当前优先 Windows）
 - ⬜ 代码签名（需要证书，当前开发版未签名，Defender 可能提示，请核对签名与源码一致）

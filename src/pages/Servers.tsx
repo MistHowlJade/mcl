@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { api, on } from '../lib/api';
 import { useToast } from '../components/Toast';
 import { ConfirmModal, Modal, Tip, Toggle, formatBytes, timeAgo } from '../components/Modal';
-import type { ServerBackupInfo, ServerInfo, ServerLoader, ServerProperties, ServerStatus } from '../../electron/shared/types';
+import type { LanWorld, ServerBackupInfo, ServerInfo, ServerLoader, ServerProperties, ServerStatus } from '../../electron/shared/types';
 
 type Tab = 'console' | 'settings' | 'properties' | 'backups';
 
@@ -54,6 +54,8 @@ export default function Servers() {
   const [killTarget, setKillTarget] = useState<ServerInfo | null>(null);
   const [restoreTarget, setRestoreTarget] = useState<ServerBackupInfo | null>(null);
   const [backupDeleteTarget, setBackupDeleteTarget] = useState<ServerBackupInfo | null>(null);
+  const [lanWorlds, setLanWorlds] = useState<LanWorld[]>([]);
+  const [lanScanning, setLanScanning] = useState(false);
   const logRef = useRef<HTMLDivElement>(null);
   const selectedIdRef = useRef<string | null>(null);
   const toast = useToast();
@@ -204,6 +206,16 @@ export default function Servers() {
   const busyNow = !!busy;
   const status = server ? STATUS_INFO[server.status] : null;
 
+  const scanLan = async () => {
+    setLanScanning(true);
+    try {
+      const list = await api.lanScan();
+      setLanWorlds(list);
+      toast.toast(list.length > 0 ? `发现 ${list.length} 个局域网世界` : '没有发现局域网世界。确认房主已在游戏里「对局域网开放」，且在同一网络。', list.length > 0 ? 'ok' : 'info');
+    } catch (e) { toast.toast(e instanceof Error ? e.message : String(e), 'error'); }
+    finally { setLanScanning(false); }
+  };
+
   return (
     <div>
       <div className="page-header">
@@ -212,6 +224,37 @@ export default function Servers() {
           <div className="sub">原版 / Fabric / Quilt / Forge / NeoForge，一键安装、启停、改配置、备份世界</div>
         </div>
         <button className="btn primary" onClick={() => setCreating(true)}>＋ 创建服务器</button>
+      </div>
+
+      {/* 局域网世界：房主在游戏里「对局域网开放」后，这里能直接发现 */}
+      <div className="panel">
+        <div className="row spread" style={{ flexWrap: 'wrap', gap: 10 }}>
+          <div>
+            <div className="row" style={{ gap: 8 }}>
+              <strong>🔍 局域网联机</strong>
+              <span className="tag">224.0.2.60:4445</span>
+            </div>
+            <div className="faint mt">扫描同一网络里「对局域网开放」的世界。MCL 不需要你手动问房主 IP；发现后复制地址，在游戏「多人游戏 → 直接连接」里粘贴即可。</div>
+          </div>
+          <button className="btn" onClick={scanLan} disabled={lanScanning}>{lanScanning ? '扫描中…（约 5 秒）' : '扫描局域网世界'}</button>
+        </div>
+        {lanWorlds.length > 0 && (
+          <div className="list mt">
+            {lanWorlds.map(w => (
+              <div key={`${w.address}:${w.port}`} className="list-row">
+                <span className="tag green">{w.local ? '本机' : '局域网'}</span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <strong>{w.motd}</strong>
+                  <div className="faint mono">{w.address}:{w.port}</div>
+                </div>
+                <button className="btn small" onClick={() => api.copyText(`${w.address}:${w.port}`).then(() => toast.toast('地址已复制，去游戏里「直接连接」粘贴')).catch(e => toast.toast(String(e), 'error'))}>复制地址</button>
+              </div>
+            ))}
+          </div>
+        )}
+        {!lanScanning && lanWorlds.length === 0 && (
+          <p className="faint mt">提示：Windows 防火墙可能会拦截 UDP 4445 的局域网广播；扫描不到时先确认双方在同一 Wi-Fi/网段，或让房主直接告诉你「局域网端口」。</p>
+        )}
       </div>
 
       {servers.length === 0 ? (

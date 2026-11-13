@@ -2,7 +2,7 @@
  * IPC 总线：渲染进程 ↔ 主进程
  * 所有 handle 包装统一错误边界（异常 → 标准 { ok:false, error } 之外的抛出由 renderer catch）
  */
-import { BrowserWindow, dialog, ipcMain, shell, app } from 'electron';
+import { BrowserWindow, dialog, ipcMain, shell, app, clipboard } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as paths from './paths';
@@ -25,6 +25,7 @@ import * as cloudService from './cloud';
 import * as contentService from './content';
 import * as exporter from './exporter';
 import * as updateService from './update';
+import * as lanService from './lan';
 import { getVersionManifest } from './version';
 import { CrashFix, LoaderType, MemoryPreset } from '../shared/types';
 
@@ -87,6 +88,10 @@ export function registerIpcHandlers(): void {
     if (!isSafeExternal(url)) return;
     return shell.openExternal(url);
   });
+  ipcMain.handle('clipboard:write', (_e, text: string) => {
+    clipboard.writeText(String(text ?? ''));
+    return true;
+  });
   ipcMain.handle('dialog:pickFolder', async () => {
     const win = BrowserWindow.getFocusedWindow();
     const result = await dialog.showOpenDialog(win!, { properties: ['openDirectory'], title: '选择数据目录' });
@@ -120,6 +125,7 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('instances:get', (_e, id: string) => instances.getInstance(id));
   ipcMain.handle('instances:create', (_e, input: { name: string; mcVersion: string; loader: LoaderType; loaderVersion?: string | null; memoryPreset?: MemoryPreset; javaPath?: string | null }) => instances.createInstance(input));
   ipcMain.handle('instances:update', (_e, id: string, patch: any) => instances.updateInstance(id, patch));
+  ipcMain.handle('instances:duplicate', (_e, id: string) => instances.duplicateInstance(id));
   ipcMain.handle('instances:delete', async (_e, id: string) => {
     const backupDir = path.join(paths.backupsDir(), 'deleted-instances');
     return instances.deleteInstance(id, backupDir);
@@ -194,6 +200,10 @@ export function registerIpcHandlers(): void {
   /* ---------- 模组（Modrinth） ---------- */
   ipcMain.handle('modrinth:search', (_e, query: string, opts: { loader?: string; gameVersion?: string; projectType?: 'mod' | 'modpack'; index?: 'relevance' | 'downloads' | 'follows' | 'updated' }) =>
     modrinth.searchMods(query, opts));
+  ipcMain.handle('modrinth:searchContent', (_e, query: string, opts: { projectType: any; loader?: string; gameVersion?: string; limit?: number; index?: 'relevance' | 'downloads' | 'follows' | 'updated' }) =>
+    modrinth.searchContent(query, opts));
+  ipcMain.handle('modrinth:installContent', (_e, instanceId: string, projectId: string, versionId: string | null, kind: 'resourcepacks' | 'shaderpacks' | 'worlds', opts: { gameVersion?: string; loader?: string }) =>
+    modrinth.installContent(instanceId, projectId, versionId, kind, opts));
   ipcMain.handle('modrinth:installed', (_e, instanceId: string) => {
     const tracked = modrinth.readInstalledMods(instanceId);
     const files = modrinth.listModFiles(instanceId);
@@ -409,7 +419,8 @@ export function registerIpcHandlers(): void {
     const win = BrowserWindow.getFocusedWindow();
     if (!win) throw new Error('窗口不可用');
     const isWorld = kind === 'worlds';
-    const wantFolder = isWorld || mode === 'folder';
+    // 世界默认选文件夹；传 'file' 则选世界 ZIP
+    const wantFolder = mode === 'folder' || (isWorld && mode !== 'file');
     if (wantFolder) {
       const result = await dialog.showOpenDialog(win, {
         properties: ['openDirectory', 'multiSelections'],
@@ -420,14 +431,28 @@ export function registerIpcHandlers(): void {
     }
     const filters = kind === 'screenshots'
       ? [{ name: '图片', extensions: ['png', 'jpg', 'jpeg'] }]
-      : [{ name: kind === 'shaderpacks' ? '光影包 ZIP' : '资源包 ZIP', extensions: ['zip'] }];
+      : isWorld
+        ? [{ name: '世界存档 ZIP', extensions: ['zip'] }]
+        : [{ name: kind === 'shaderpacks' ? '光影包 ZIP' : '资源包 ZIP', extensions: ['zip'] }];
     const result = await dialog.showOpenDialog(win, {
       properties: ['openFile', 'multiSelections'],
-      title: kind === 'screenshots' ? '选择要导入的截图' : '选择要导入的 ZIP',
+      title: kind === 'screenshots' ? '选择要导入的截图' : isWorld ? '选择要导入的世界 ZIP' : '选择要导入的 ZIP',
       filters,
     });
     if (result.canceled || result.filePaths.length === 0) return null;
     return contentService.importContent(instanceId, kind, result.filePaths);
+  });
+  ipcMain.handle('content:exportWorld', async (_e, instanceId: string, worldName: string) => {
+    const win = BrowserWindow.getFocusedWindow();
+    if (!win) throw new Error('窗口不可用');
+    const safe = String(worldName).replace(/[<>:"/\\|?*]/g, '_');
+    const result = await dialog.showSaveDialog(win, {
+      title: '导出世界为 ZIP',
+      defaultPath: path.join(app.getPath('downloads'), `${safe}.zip`),
+      filters: [{ name: '世界存档 ZIP', extensions: ['zip'] }],
+    });
+    if (result.canceled || !result.filePath) return null;
+    return contentService.exportWorldZip(instanceId, worldName, result.filePath);
   });
 
   /* ---------- 实例导出 ---------- */
@@ -451,6 +476,18 @@ export function registerIpcHandlers(): void {
 
   /* ---------- 启动器更新 ---------- */
   ipcMain.handle('app:updateCheck', () => updateService.checkUpdate());
+  ipcMain.handle('app:updateDownload', async () => {
+    const result = await updateService.downloadUpdate((done, total) => sendToAll('app:updateProgress', { done, total }));
+    return result;
+  });
+  ipcMain.handle('app:revealFile', (_e, filePath: string) => {
+    if (typeof filePath !== 'string' || !filePath) return false;
+    shell.showItemInFolder(path.resolve(filePath));
+    return true;
+  });
+
+  /* ---------- 局域网世界 ---------- */
+  ipcMain.handle('lan:scan', (_e, timeoutMs?: number) => lanService.scanLanWorlds(timeoutMs));
 
   /* ---------- 缓存清理 ---------- */
   const measureDir = (dir: string): { sizeBytes: number; files: number } => {

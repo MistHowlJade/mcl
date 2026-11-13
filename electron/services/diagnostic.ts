@@ -23,6 +23,9 @@ function sanitizeSettings(settings: AppSettings): AppSettings {
   clone.cloud.webdavPassword = clone.cloud.webdavPassword ? '<已隐藏>' : '';
   clone.cloud.gistToken = clone.cloud.gistToken ? '<已隐藏>' : '';
   clone.cloud.gistId = clone.cloud.gistId ? '<已隐藏>' : '';
+  clone.network.proxyUrl = clone.network.proxyUrl ? '<已隐藏>' : '';
+  clone.network.proxyUsername = clone.network.proxyUsername ? '<已隐藏>' : '';
+  clone.network.proxyPassword = clone.network.proxyPassword ? '<已隐藏>' : '';
   return clone;
 }
 

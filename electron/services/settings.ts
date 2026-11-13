@@ -37,6 +37,14 @@ export const DEFAULT_SETTINGS: AppSettings = {
   migration: {
     copyInsteadOfMove: true,
   },
+  network: {
+    proxyMode: 'off',
+    proxyUrl: '',
+    proxyUsername: '',
+    proxyPassword: '',
+    applyToDownloads: true,
+    applyToGame: false,
+  },
   cloud: {
     provider: 'off',
     webdavUrl: '',

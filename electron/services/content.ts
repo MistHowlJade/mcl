@@ -8,7 +8,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as paths from './paths';
 import { getInstance } from './instances';
-import { zipFromDir } from './zip';
+import { zipFromDir, zipList, zipExtractAll } from './zip';
 import { ContentItem, ContentKind, ContentList } from '../shared/types';
 
 function walkBytes(dir: string): number {
@@ -208,6 +208,56 @@ function uniqueTarget(dir: string, name: string): string {
   return target;
 }
 
+function uniqueDir(dir: string, name: string): string {
+  let target = path.join(dir, name);
+  let i = 1;
+  while (fs.existsSync(target)) target = path.join(dir, `${name} (${i++})`);
+  return target;
+}
+
+/** 导入世界 ZIP：自动识别/剥离世界根目录，校验 level.dat，返回实际世界名 */
+export function importWorldZip(instanceId: string, zipPath: string): { worldName: string; path: string; files: number } {
+  const instance = getInstance(instanceId);
+  if (!instance) throw new Error('实例不存在');
+  const buf = fs.readFileSync(zipPath);
+  let entries;
+  try { entries = zipList(buf); } catch { throw new Error('世界 ZIP 已损坏或不是有效的 ZIP 文件'); }
+  const normalized = entries.filter(e => !e.name.endsWith('/')).map(e => e.name.replace(/\\/g, '/'));
+  if (normalized.length === 0) throw new Error('世界 ZIP 是空的');
+  // 找到 level.dat，把它所在的目录作为世界根（兼容 zip 里再套一层文件夹）
+  const levelEntry = normalized.find(n => n === 'level.dat')
+    ?? normalized.find(n => n.endsWith('/level.dat') && n.split('/').length === 2)
+    ?? normalized.find(n => n.endsWith('/level.dat'));
+  if (!levelEntry) throw new Error('这不是一个有效的世界存档（ZIP 里找不到 level.dat）');
+  const prefix = levelEntry.includes('/') ? levelEntry.slice(0, levelEntry.lastIndexOf('/') + 1) : '';
+  const suggested = prefix
+    ? prefix.replace(/\/$/, '').split('/').filter(Boolean).pop() ?? '导入的世界'
+    : path.basename(zipPath, path.extname(zipPath));
+  const savesDir = path.join(instance.gameDir, 'saves');
+  fs.mkdirSync(savesDir, { recursive: true });
+  const worldPath = uniqueDir(savesDir, safeName(suggested));
+  fs.mkdirSync(worldPath, { recursive: true });
+  try {
+    const written = zipExtractAll(buf, worldPath, prefix);
+    if (!written.some(p => path.basename(p) === 'level.dat')) throw new Error('解压后没有找到 level.dat');
+    return { worldName: path.basename(worldPath), path: worldPath, files: written.length };
+  } catch (e) {
+    fs.rmSync(worldPath, { recursive: true, force: true });
+    throw e;
+  }
+}
+
+/** 把世界导出为 ZIP（用于分享或手动备份） */
+export function exportWorldZip(instanceId: string, worldName: string, destPath: string): { filePath: string; sizeBytes: number } {
+  const instance = getInstance(instanceId);
+  if (!instance) throw new Error('实例不存在');
+  const worldDir = path.join(instance.gameDir, 'saves', path.basename(worldName));
+  if (!fs.existsSync(worldDir)) throw new Error('世界不存在');
+  fs.mkdirSync(path.dirname(destPath), { recursive: true });
+  fs.writeFileSync(destPath, zipFromDir(worldDir));
+  return { filePath: destPath, sizeBytes: fs.statSync(destPath).size };
+}
+
 export function importContent(instanceId: string, kind: ContentKind, sourcePaths: string[]): { imported: number; skipped: string[] } {
   const instance = getInstance(instanceId);
   if (!instance) throw new Error('实例不存在');
@@ -225,7 +275,11 @@ export function importContent(instanceId: string, kind: ContentKind, sourcePaths
     try {
       if (!fs.existsSync(src)) { skipped.push(src); continue; }
       const stat = fs.statSync(src);
-      if (kind === 'worlds' && !stat.isDirectory()) { skipped.push(src); continue; }
+      if (kind === 'worlds' && !stat.isDirectory()) {
+        if (/\.zip$/i.test(src)) { importWorldZip(instanceId, src); imported++; }
+        else skipped.push(src);
+        continue;
+      }
       if (kind !== 'worlds' && stat.isDirectory()) {
         // 资源包/光影包目录：整体复制
         const dest = uniqueTarget(destDir, safeName(path.basename(src)));

@@ -83,6 +83,27 @@ export function updateInstance(id: string, patch: Partial<InstanceConfig>): Inst
   return merged;
 }
 
+/** 复制实例（模组、存档、配置全部保留），返回新实例 */
+export function duplicateInstance(id: string): InstanceConfig {
+  const source = getInstance(id);
+  if (!source) throw new Error('实例不存在');
+  const copyId = newId();
+  const srcDir = paths.instanceDir(id);
+  const destDir = paths.instanceDir(copyId);
+  if (!fs.existsSync(srcDir)) throw new Error('实例目录不存在');
+  fs.cpSync(srcDir, destDir, { recursive: true });
+  const cfg: InstanceConfig = {
+    ...source,
+    id: copyId,
+    name: `${source.name} 副本`,
+    createdAt: Date.now(),
+    lastPlayedAt: null,
+    playTimeSeconds: 0,
+  };
+  writeJson(paths.instanceFile(copyId), cfg);
+  return cfg;
+}
+
 export function touchPlayed(id: string, seconds: number): void {
   updateInstance(id, { lastPlayedAt: Date.now(), playTimeSeconds: (readJson<InstanceConfig | null>(paths.instanceFile(id), null)?.playTimeSeconds ?? 0) + seconds });
 }

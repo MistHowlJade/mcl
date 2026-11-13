@@ -49,6 +49,19 @@ export interface Account {
 
 export type DownloadSource = 'auto' | 'bmclapi' | 'official' | 'custom';
 
+/** 启动器网络代理（仅支持 HTTP/HTTPS 代理，不支持 SOCKS5） */
+export interface NetworkSettings {
+  proxyMode: 'off' | 'manual';
+  /** 例如 http://127.0.0.1:7890，也可以只填 127.0.0.1:7890 */
+  proxyUrl: string;
+  proxyUsername: string;
+  proxyPassword: string;
+  /** 下载游戏/模组/整合包时走代理 */
+  applyToDownloads: boolean;
+  /** 启动游戏/服务端时注入 JVM 代理参数 */
+  applyToGame: boolean;
+}
+
 export interface AppSettings {
   general: {
     zoomFactor: number;          // 界面缩放 1 = 100%
@@ -84,6 +97,7 @@ export interface AppSettings {
   migration: {
     copyInsteadOfMove: boolean;
   };
+  network: NetworkSettings;
   cloud: CloudSettings;
 }
 
@@ -190,6 +204,12 @@ export interface ExportResult {
 }
 
 /* ---------- 启动器更新 ---------- */
+export interface UpdateAsset {
+  name: string;
+  url: string;
+  sizeBytes: number | null;
+}
+
 export interface UpdateInfo {
   current: string;
   latest: string | null;
@@ -197,6 +217,28 @@ export interface UpdateInfo {
   url: string | null;
   notes: string | null;
   publishedAt: string | null;
+  /** Release 附件（安装包 / 便携 ZIP），用于应用内下载 */
+  assets: UpdateAsset[];
+}
+
+/* ---------- 局域网世界 ---------- */
+export interface LanWorld {
+  motd: string;
+  address: string;
+  port: number;
+  /** 是否为本机开放的局域网世界 */
+  local: boolean;
+}
+
+/* ---------- Modrinth 内容下载 ---------- */
+export type ContentProjectType = 'mod' | 'modpack' | 'resourcepack' | 'shader' | 'datapack' | 'world';
+
+export interface ContentInstallResult {
+  fileName: string;
+  path: string;
+  sizeBytes: number;
+  /** 世界：解压后的世界文件夹名 */
+  worldName?: string;
 }
 
 export interface VersionManifestEntry {

@@ -2,11 +2,11 @@
  * 网络层：超时控制、重试、镜像映射、镜像测速
  * 痛点 #9/#12/#14/#15/#16 的核心改造点
  */
-import * as https from 'https';
 import * as http from 'http';
 import { URL } from 'url';
 import { readJson, writeJson } from './store';
 import { dataRoot } from './paths';
+import { createProxiedRequest } from './proxy';
 import * as path from 'path';
 
 export const OFFICIAL = {
@@ -29,24 +29,19 @@ export async function fetchWithTimeout(
   options: { method?: string; headers?: Record<string, string>; body?: string | Buffer; timeoutMs?: number } = {},
 ): Promise<{ status: number; headers: http.IncomingHttpHeaders; body: Buffer }> {
   const timeoutMs = options.timeoutMs ?? 15000;
+  const req = await createProxiedRequest(url, {
+    method: options.method ?? 'GET',
+    headers: { 'User-Agent': USER_AGENT, ...(options.headers ?? {}) },
+    timeoutMs,
+  });
   return new Promise((resolve, reject) => {
-    let parsed: URL;
-    try { parsed = new URL(url); } catch { reject(new Error(`无法解析的 URL：${url}`)); return; }
-    const client = parsed.protocol === 'http:' ? http : https;
-    const req = client.request({
-      method: options.method ?? 'GET',
-      hostname: parsed.hostname,
-      port: parsed.port || (parsed.protocol === 'http:' ? 80 : 443),
-      path: parsed.pathname + parsed.search,
-      headers: { 'User-Agent': USER_AGENT, ...(options.headers ?? {}) },
-      timeout: timeoutMs,
-    }, (res) => {
+    req.on('response', (res) => {
       // 重定向（GET/HEAD 跟随；下载器自行处理断点）
       const status = res.statusCode ?? 0;
       if ([301, 302, 303, 307, 308].includes(status) && res.headers.location) {
         res.resume();
         const next = new URL(res.headers.location, url).toString();
-        fetchWithTimeout(next, { ...options, timeoutMs: options.timeoutMs ? Math.max(1000, timeoutMs - 0) : timeoutMs })
+        fetchWithTimeout(next, { ...options, timeoutMs })
           .then(resolve, reject);
         return;
       }
@@ -55,7 +50,6 @@ export async function fetchWithTimeout(
       res.on('end', () => resolve({ status, headers: res.headers, body: Buffer.concat(chunks) }));
       res.on('error', reject);
     });
-    req.on('timeout', () => { req.destroy(new Error(`请求超时（>${timeoutMs}ms）：${url}`)); });
     req.on('error', reject);
     if (options.body) req.write(options.body);
     req.end();

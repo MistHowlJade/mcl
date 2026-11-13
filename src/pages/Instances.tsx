@@ -68,9 +68,20 @@ export default function Instances() {
 export function InstanceCard({ inst, onReload, onDiskUsage, onDelete, onExport }: { inst: InstanceInfo; onReload: () => void; onDiskUsage: (id: string) => void; onDelete: (inst: InstanceInfo) => void; onExport: (inst: InstanceInfo) => void }) {
   const [editing, setEditing] = useState(false);
   const [advanced, setAdvanced] = useState(false);
+  const [duplicating, setDuplicating] = useState(false);
   const [name, setName] = useState(inst.name);
   const [mcVersion, setMcVersion] = useState(inst.mcVersion === 'unknown' ? '' : inst.mcVersion);
   const toast = useToast();
+
+  const duplicate = async () => {
+    setDuplicating(true);
+    try {
+      const created = await api.instanceDuplicate(inst.id);
+      toast.toast(`已复制为「${created.name}」`, 'ok');
+      onReload();
+    } catch (e) { toast.toast(e instanceof Error ? e.message : String(e), 'error'); }
+    finally { setDuplicating(false); }
+  };
 
   const save = async () => {
     const patch: Record<string, string> = {};
@@ -143,6 +154,9 @@ export function InstanceCard({ inst, onReload, onDiskUsage, onDelete, onExport }
         <button className="btn small" onClick={() => api.instanceOpenDir(inst.id)}>实例文件夹</button>
         <button className="btn small" onClick={() => onDiskUsage(inst.id)}>磁盘占用</button>
         <button className="btn small" onClick={() => setAdvanced(true)}>高级设置</button>
+        <button className="btn small" onClick={duplicate} disabled={duplicating} title="完整复制模组、存档与配置，适合开新档或测试模组">
+          {duplicating ? '复制中…' : '复制实例'}
+        </button>
         <button className="btn small" onClick={() => onExport(inst)}>导出…</button>
         <button className="btn small danger" onClick={() => onDelete(inst)}>删除…</button>
       </div>

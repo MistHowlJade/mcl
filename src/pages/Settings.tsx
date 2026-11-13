@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { api } from '../lib/api';
+import { api, on } from '../lib/api';
 import { useToast } from '../components/Toast';
 import { ConfirmModal, Tip, Toggle, formatBytes } from '../components/Modal';
 import type { AppSettings, JavaInfo, UpdateInfo } from '../../electron/shared/types';
@@ -15,6 +15,9 @@ export default function Settings({ onNavigate }: { onNavigate?: (page: 'cloud') 
   const [dataDir, setDataDir] = useState('');
   const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
   const [updateChecking, setUpdateChecking] = useState(false);
+  const [updateDownloading, setUpdateDownloading] = useState(false);
+  const [updateProgress, setUpdateProgress] = useState<{ done: number; total: number } | null>(null);
+  const [downloadedUpdate, setDownloadedUpdate] = useState<{ filePath: string; fileName: string; sizeBytes: number } | null>(null);
   const [cacheInfo, setCacheInfo] = useState<{ sizeBytes: number; files: number } | null>(null);
   const [cacheClearing, setCacheClearing] = useState(false);
   const [confirmClearCache, setConfirmClearCache] = useState(false);
@@ -25,6 +28,8 @@ export default function Settings({ onNavigate }: { onNavigate?: (page: 'cloud') 
     api.appInfo().then(info => { setAppVersion(info.version); setDataDir(info.dataDir); }).catch(() => undefined);
     api.appCacheInfo().then(setCacheInfo).catch(() => undefined);
     scanJava();
+    const off = on('app:updateProgress', (p: { done: number; total: number }) => setUpdateProgress(p));
+    return off;
     /* eslint-disable-next-line */
   }, []);
 
@@ -51,12 +56,25 @@ export default function Settings({ onNavigate }: { onNavigate?: (page: 'cloud') 
   const checkUpdate = async () => {
     setUpdateChecking(true);
     setUpdateInfo(null);
+    setDownloadedUpdate(null);
+    setUpdateProgress(null);
     try {
       const info = await api.appUpdateCheck();
       setUpdateInfo(info);
       toast.toast(info.hasUpdate ? `发现新版本 ${info.latest}` : '当前已是最新版本', info.hasUpdate ? 'ok' : 'info');
     } catch (e) { toast.toast(e instanceof Error ? e.message : String(e), 'error'); }
     finally { setUpdateChecking(false); }
+  };
+
+  const downloadUpdate = async () => {
+    setUpdateDownloading(true);
+    setUpdateProgress({ done: 0, total: 0 });
+    try {
+      const result = await api.appUpdateDownload();
+      setDownloadedUpdate(result);
+      toast.toast(`更新包已下载：${result.fileName}（${formatBytes(result.sizeBytes)}）`, 'ok');
+    } catch (e) { toast.toast(e instanceof Error ? e.message : String(e), 'error'); }
+    finally { setUpdateDownloading(false); setUpdateProgress(null); }
   };
 
   const clearCache = async () => {
@@ -198,6 +216,44 @@ export default function Settings({ onNavigate }: { onNavigate?: (page: 'cloud') 
         </div>
       </div>
 
+      {/* ========== 网络代理 ========== */}
+      <div className="panel">
+        <div className="panel-title">网络代理</div>
+        <div className="setting-row">
+          <div className="label">代理模式<Tip text="连接 GitHub / Modrinth / Mojang 等服务不稳定时，可让 MCL 通过你自己的 HTTP/HTTPS 代理联网（如 Clash、V2RayN 的 HTTP 端口）。MCL 不支持 SOCKS5，请填 HTTP 代理端口。" /></div>
+          <div className="control">
+            <select className="input" style={{ width: 180 }} value={settings.network.proxyMode} onChange={e => patch({ network: { proxyMode: e.target.value } })}>
+              <option value="off">不使用代理（直连）</option>
+              <option value="manual">手动配置代理</option>
+            </select>
+          </div>
+        </div>
+        {settings.network.proxyMode === 'manual' && (
+          <>
+            <div className="setting-row">
+              <div className="label">代理地址<Tip text="格式：http://127.0.0.1:7890，也可以省略 http:// 直接填 127.0.0.1:7890。请确认代理软件允许局域网连接且端口正确。" /></div>
+              <div className="control"><input className="input" style={{ maxWidth: 360 }} placeholder="http://127.0.0.1:7890" value={settings.network.proxyUrl} onChange={e => patch({ network: { proxyUrl: e.target.value } })} /></div>
+            </div>
+            <div className="setting-row">
+              <div className="label">代理认证（可选）<Tip text="只有代理要求用户名密码时才需要填。凭据只保存在本机设置里，不会进入云同步、诊断包或日志。" /></div>
+              <div className="control">
+                <input className="input" style={{ maxWidth: 160 }} placeholder="用户名" value={settings.network.proxyUsername} onChange={e => patch({ network: { proxyUsername: e.target.value } })} autoComplete="off" />
+                <input className="input" style={{ maxWidth: 160 }} type="password" placeholder="密码" value={settings.network.proxyPassword} onChange={e => patch({ network: { proxyPassword: e.target.value } })} autoComplete="off" />
+              </div>
+            </div>
+            <div className="setting-row">
+              <div className="label">启动器网络请求走代理<Tip text="游戏下载、模组搜索、整合包导入、微软登录与云同步都通过代理。关闭后只有游戏内网络走代理。" /></div>
+              <div className="control"><Toggle checked={settings.network.applyToDownloads} onChange={v => patch({ network: { applyToDownloads: v } })} label="下载与 API 走代理" /></div>
+            </div>
+            <div className="setting-row">
+              <div className="label">游戏 / 服务端走代理<Tip text="给 Java 进程加上 -Dhttp.proxyHost 等参数，让游戏内资源下载也走代理。只影响 MCL 启动的游戏与服务端，不会修改系统代理。" /></div>
+              <div className="control"><Toggle checked={settings.network.applyToGame} onChange={v => patch({ network: { applyToGame: v } })} label="游戏走代理" /></div>
+            </div>
+            <p className="faint">提示：代理只影响 MCL 自己发起的请求与它启动的 Java 进程，不会改动 Windows 系统代理。若代理需要 TUN 模式，请直接在代理软件里开启。</p>
+          </>
+        )}
+      </div>
+
       {/* ========== Java ========== */}
       <div className="panel">
         <div className="panel-title">Java 环境<span className="spacer" /><button className="btn small" onClick={scanJava} disabled={javaScanning}>{javaScanning ? '检测中…' : '重新检测'}</button></div>
@@ -242,6 +298,14 @@ export default function Settings({ onNavigate }: { onNavigate?: (page: 'cloud') 
         <div className="setting-row">
           <div className="label">强制 UTF-8 文件编码<Tip text="加上 -Dfile.encoding=UTF-8 -Dsun.jnu.encoding=UTF-8。非 UTF-8 区域设置的 Windows（中文系统常见）经常因此乱码甚至闪退。" /></div>
           <div className="control"><Toggle checked={settings.launch.utf8Encoding} onChange={v => patch({ launch: { utf8Encoding: v } })} label="UTF-8 编码" /></div>
+        </div>
+        <div className="setting-row">
+          <div className="label">启动前二次确认<Tip text="点击启动后先弹窗确认版本、账号与内存，避免手滑启动错实例或误点。适合多实例/直播场景。" /></div>
+          <div className="control"><Toggle checked={settings.general.confirmBeforeLaunch} onChange={v => patch({ general: { confirmBeforeLaunch: v } })} label="启动前确认" /></div>
+        </div>
+        <div className="setting-row">
+          <div className="label">崩溃时自动打开日志<Tip text="游戏崩溃后自动切到日志/崩溃分析页面，省去手动翻 latest.log 的步骤。关闭后仍可在「崩溃分析」页手动查看。" /></div>
+          <div className="control"><Toggle checked={settings.launch.showLogOnCrash} onChange={v => patch({ launch: { showLogOnCrash: v } })} label="崩溃时显示日志" /></div>
         </div>
         <div className="setting-row">
           <div className="label">全局 JVM 参数<Tip text="对所有实例与服务端生效，每行一条或空格分隔。会追加在实例参数之后。例如 -XX:+UseG1GC 或代理参数。不确定就不要填；填错可能导致游戏无法启动。" /></div>
@@ -291,12 +355,34 @@ export default function Settings({ onNavigate }: { onNavigate?: (page: 'cloud') 
           <div className="mt" style={{ maxHeight: 180, overflowY: 'auto', background: 'var(--panel-2)', borderRadius: 8, padding: '10px 12px', whiteSpace: 'pre-wrap', fontSize: 12 }}>{updateInfo.notes}</div>
         )}
         {updateInfo?.url && (
-          <div className="row mt" style={{ gap: 8 }}>
+          <div className="row mt" style={{ gap: 8, flexWrap: 'wrap' }}>
             <button className="btn" onClick={() => api.openExternal(updateInfo.url!)}>打开 Release 页面 ↗</button>
+            {updateInfo.hasUpdate && updateInfo.assets.length > 0 && (
+              <button className="btn primary" onClick={downloadUpdate} disabled={updateDownloading}>
+                {updateDownloading ? '下载中…' : '下载更新包'}
+              </button>
+            )}
             {updateInfo.publishedAt && <span className="faint">发布于 {new Date(updateInfo.publishedAt).toLocaleDateString()}</span>}
           </div>
         )}
-        <p className="faint mt">MCL 不会自动下载更新，也不会在后台偷偷替换程序文件——只提示版本并交给你决定。</p>
+        {updateDownloading && (
+          <div className="mt">
+            <div className="faint">
+              正在下载更新包{updateProgress && updateProgress.total > 0 ? `：${formatBytes(updateProgress.done)} / ${formatBytes(updateProgress.total)}（${Math.min(100, Math.round(updateProgress.done / updateProgress.total * 100))}%）` : '…'}
+            </div>
+            <div style={{ height: 6, background: 'var(--panel-2)', borderRadius: 3, marginTop: 6, overflow: 'hidden' }}>
+              <div style={{ height: '100%', width: `${updateProgress && updateProgress.total > 0 ? Math.min(100, updateProgress.done / updateProgress.total * 100) : 5}%`, background: 'var(--accent)', transition: 'width .2s' }} />
+            </div>
+          </div>
+        )}
+        {downloadedUpdate && (
+          <div className="row mt" style={{ gap: 8 }}>
+            <span className="tag green">已下载</span>
+            <span className="mono" style={{ fontSize: 12 }}>{downloadedUpdate.fileName}</span>
+            <button className="btn small" onClick={() => api.appRevealFile(downloadedUpdate.filePath)}>在文件夹中显示</button>
+          </div>
+        )}
+        <p className="faint mt">MCL 只把更新包下载到系统「下载」文件夹，不会自动替换程序文件、也不会静默安装——安装与否由你决定。</p>
       </div>
 
       {/* ========== 缓存 ========== */}

@@ -5,13 +5,13 @@
  */
 import * as fs from 'fs';
 import * as path from 'path';
-import * as https from 'https';
 import * as http from 'http';
 import * as crypto from 'crypto';
 import { URL } from 'url';
 import { EventEmitter } from 'events';
 import { cacheDir } from './paths';
 import { mapToMirror, USER_AGENT } from './net';
+import { createProxiedRequest } from './proxy';
 
 export interface DownloadTask {
   id: string;
@@ -97,32 +97,27 @@ export class DownloadManager extends EventEmitter {
    * 统一 HTTP 请求：显式端口 + 最多 5 次 3xx 重定向
    * 返回已开始消费的响应流（status>=400 时 body 可被 drain 或直接读取）
    */
-  private requestWithRedirects(
+  private async requestWithRedirects(
     url: string,
     options: { method: string; headers?: Record<string, string> },
     redirectDepth = 0,
   ): Promise<{ status: number; headers: http.IncomingHttpHeaders; stream: import('stream').Readable }> {
+    const req = await createProxiedRequest(url, {
+      method: options.method,
+      headers: { 'User-Agent': USER_AGENT, ...(options.headers ?? {}) },
+      timeoutMs: this.opts.timeoutMs,
+    });
     return new Promise((resolve, reject) => {
-      const client = url.startsWith('http:') ? http : https;
-      const parsed = new URL(url);
-      const req = client.request({
-        method: options.method,
-        hostname: parsed.hostname,
-        ...(parsed.port ? { port: parseInt(parsed.port, 10) } : {}),
-        path: parsed.pathname + parsed.search,
-        headers: { 'User-Agent': USER_AGENT, ...(options.headers ?? {}) },
-        timeout: this.opts.timeoutMs,
-      }, (res) => {
+      req.on('response', (res) => {
         const status = res.statusCode ?? 0;
         if ([301, 302, 303, 307, 308].includes(status) && res.headers.location && redirectDepth < 5) {
           res.resume();
           const next = new URL(res.headers.location, url).toString();
-          resolve(this.requestWithRedirects(next, options, redirectDepth + 1));
+          this.requestWithRedirects(next, options, redirectDepth + 1).then(resolve, reject);
           return;
         }
         resolve({ status, headers: res.headers, stream: res });
       });
-      req.on('timeout', () => { req.destroy(new Error(`请求超时（>${this.opts.timeoutMs}ms）：${url}`)); });
       req.on('error', reject);
       req.end();
     });

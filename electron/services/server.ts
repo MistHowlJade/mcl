@@ -16,6 +16,7 @@ import { EventEmitter } from 'events';
 import * as paths from './paths';
 import { readJson, writeJson } from './store';
 import { getSettings } from './settings';
+import { proxyJvmArgs } from './proxy';
 import * as javaService from './java';
 import * as versionService from './version';
 import { DownloadManager } from './downloader';
@@ -507,6 +508,7 @@ function jvmArgsFor(cfg: ServerConfig): string[] {
   if (settings.launch.log4jFix && /^1\.([0-9]|1[0-6])\./.test(cfg.mcVersion)) args.push('-Dlog4j2.formatMsgNoLookups=true');
   for (const piece of (settings.launch.globalJvmArgs || '').split(/\s+|\n+/).map(s => s.trim()).filter(Boolean)) args.push(piece);
   for (const piece of (cfg.jvmArgsExtra || '').split(/\s+|\n+/).map(s => s.trim()).filter(Boolean)) args.push(piece);
+  for (const piece of proxyJvmArgs()) args.push(piece);
   return args;
 }
 

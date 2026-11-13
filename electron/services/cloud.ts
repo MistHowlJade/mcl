@@ -56,6 +56,13 @@ function sanitizeSettings(settings: AppSettings): AppSettings {
     lastSyncDirection: null,
   };
   clone.curseforge.apiKey = '';
+  clone.network = {
+    ...clone.network,
+    proxyMode: 'off',
+    proxyUrl: '',
+    proxyUsername: '',
+    proxyPassword: '',
+  };
   return clone;
 }
 
@@ -157,6 +164,7 @@ function mergeSettings(incoming: AppSettings): void {
     launch: { ...local.launch, ...safeIncoming.launch },
     curseforge: { ...local.curseforge, apiKey: local.curseforge.apiKey },
     migration: { ...local.migration, ...safeIncoming.migration },
+    network: local.network,
     cloud: local.cloud,
   };
   updateSettings(next as any);

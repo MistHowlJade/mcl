@@ -6,17 +6,28 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { fetchJson, USER_AGENT } from './net';
 import * as paths from './paths';
-import { InstalledMod, ModSearchResult } from '../shared/types';
+import { ContentInstallResult, ContentProjectType, InstalledMod, ModSearchResult } from '../shared/types';
 import { readJson, writeJson } from './store';
 import { DownloadManager } from './downloader';
+import { importWorldZip } from './content';
 
 const API = 'https://api.modrinth.com/v2';
 const HEADERS = { 'User-Agent': USER_AGENT, Accept: 'application/json' };
 
 export async function searchMods(query: string, opts: { loader?: string; gameVersion?: string; projectType?: 'mod' | 'modpack'; limit?: number; index?: 'relevance' | 'downloads' | 'follows' | 'updated' } = {}): Promise<ModSearchResult[]> {
-  const facets: string[][] = [[`project_type:${opts.projectType ?? 'mod'}`]];
-  if (opts.loader) facets.push([`categories:${opts.loader}`]);
-  if (opts.gameVersion) facets.push([`versions:${opts.gameVersion}`]);
+  return searchContent(query, { ...opts, projectType: opts.projectType ?? 'mod' });
+}
+
+/** 通用 Modrinth 搜索：模组 / 整合包 / 资源包 / 光影 / 数据包 / 世界 */
+export async function searchContent(
+  query: string,
+  opts: { projectType: ContentProjectType; loader?: string; gameVersion?: string; limit?: number; index?: 'relevance' | 'downloads' | 'follows' | 'updated' } = { projectType: 'mod' },
+): Promise<ModSearchResult[]> {
+  const facets: string[][] = [[`project_type:${opts.projectType}`]];
+  // 只有模组/整合包有加载器概念；资源包/光影/世界/数据包不加 categories 过滤
+  if (opts.loader && (opts.projectType === 'mod' || opts.projectType === 'modpack')) facets.push([`categories:${opts.loader}`]);
+  // 世界存档通常不标注游戏版本，强行过滤会漏掉大量结果
+  if (opts.gameVersion && opts.projectType !== 'world') facets.push([`versions:${opts.gameVersion}`]);
   const params = new URLSearchParams({
     query,
     facets: JSON.stringify(facets),
@@ -154,6 +165,51 @@ export async function installMod(instanceId: string, projectId: string, versionI
     optionalDependencies.push({ projectId: projectId2, title });
   }
   return { primary: primary!, installed, optionalDependencies };
+}
+
+/** 下载并安装资源包 / 光影 / 世界（世界会解压到 saves 下） */
+export async function installContent(
+  instanceId: string,
+  projectId: string,
+  versionId: string | null,
+  kind: 'resourcepacks' | 'shaderpacks' | 'worlds',
+  opts: { gameVersion?: string; loader?: string } = {},
+): Promise<ContentInstallResult> {
+  const versions = await getProjectVersions(projectId, {
+    // 世界存档通常不标注游戏版本
+    gameVersion: kind === 'worlds' ? undefined : opts.gameVersion,
+    // 资源包/光影/世界没有加载器筛选
+    loader: kind === 'worlds' || kind === 'resourcepacks' || kind === 'shaderpacks' ? undefined : opts.loader,
+  });
+  const target = versionId ? versions.find(v => v.id === versionId) : versions[0];
+  if (!target) throw new Error('没有找到兼容该 Minecraft 版本的文件。');
+  const file = target.files.find(f => f.primary) ?? target.files[0];
+  if (!file) throw new Error('该版本没有可下载的文件。');
+  const safeName = sanitizeRemoteName(file.filename);
+
+  const downloadTo = async (dest: string) => {
+    const dl = new DownloadManager({ source: 'official', maxThreads: 2, retries: 3, timeoutMs: 30000 });
+    const reports = await dl.run([{ id: `modrinth-content:${safeName}`, url: file.url, sha1: file.hashes?.sha1, size: file.size, dest, name: safeName }]);
+    if (!reports[0]?.ok) throw new Error(`下载失败（${safeName}）：${reports[0]?.error ?? '未知错误'}`);
+    return fs.statSync(dest).size;
+  };
+
+  if (kind === 'worlds') {
+    const temp = path.join(paths.cacheDir(), `mcl-world-${Date.now()}-${safeName}`);
+    try {
+      const sizeBytes = await downloadTo(temp);
+      const imported = importWorldZip(instanceId, temp);
+      return { fileName: safeName, path: imported.path, sizeBytes, worldName: imported.worldName };
+    } finally {
+      try { fs.rmSync(temp, { force: true }); } catch { /* ignore */ }
+    }
+  }
+
+  const dir = path.join(paths.gameDir(instanceId), kind);
+  fs.mkdirSync(dir, { recursive: true });
+  const dest = path.join(dir, safeName);
+  const sizeBytes = await downloadTo(dest);
+  return { fileName: safeName, path: dest, sizeBytes };
 }
 
 /** 检查已安装模组的更新（尊重该实例"禁止 Mod 更新"开关，痛点 #41） */

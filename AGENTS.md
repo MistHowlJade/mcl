@@ -53,8 +53,10 @@ electron/                 主进程（TS → CJS，rootDir electron）
     server.ts             服务端生命周期（Vanilla/Fabric/Quilt/Forge/NeoForge 安装、控制台、属性、备份）
     cloud.ts              云同步（WebDAV 完整快照 / GitHub Gist 仅配置；快照脱敏）
     exporter.ts           实例导出（MultiMC/Prism、Modrinth .mrpack、完整 ZIP）
-    content.ts            资源包/光影/截图/世界管理（开关写 options.txt / iris.properties）
-    update.ts             启动器更新检查（GitHub Release，只提示不自动安装）
+    content.ts            资源包/光影/截图/世界管理（开关写 options.txt / iris.properties；世界 ZIP 导入导出）
+    update.ts             启动器更新检查 + 更新包下载（GitHub Release，只下载不自动安装）
+    proxy.ts              HTTP/HTTPS 代理（零依赖 CONNECT 隧道，下载走代理 + 游戏 JVM 参数）
+    lan.ts                局域网世界扫描（UDP 224.0.2.60:4445）
     crash.ts backup.ts modrinth.ts modpack.ts modhealth.ts migrate.ts diagnostic.ts logs.ts settings.ts
     ipc.ts                全部 IPC 通道注册（唯一对外接口）
 src/                      渲染进程（React 18 + Vite）
@@ -120,5 +122,5 @@ git add -A && git commit -m "feat: ..."   # 或 fix: / docs: / refactor:
 - 离线皮肤：仅启动器界面可见，其他玩家看不到（离线模式设计）；披风没有公开上传 API，MCL 只做本地预览。微软账号皮肤上传走官方 Mojang API。
 - Forge 系客户端启动未统一进共享库布局（安装到实例 `game/libraries` 后按 `versions/` 读取）；服务端 Forge 系使用官方 `run.sh/run.bat` 参数文件方式启动。
 - 云同步：WebDAV 兼容性取决于服务商（坚果云/Nextcloud 已按标准实现，未实测）；Gist 只同步配置，不传存档与模组。
-- 无代码签名、Windows 优先；构建产物未附带安装器（需自行 electron-builder）。
+- 无代码签名、Windows 优先；`npm run package` 生成免安装目录 + 便携 ZIP（复用已安装 Electron 运行时，零新增依赖），不生成 NSIS/MSI 安装器。
 - `npm run dev` 依赖手动修好的 electron 二进制（见 §3.1）。
