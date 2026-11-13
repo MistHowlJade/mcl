@@ -225,6 +225,8 @@ async function fetchMavenVersions(url: string): Promise<string[]> {
 
 /** NeoForge 版本号前缀：MC 1.20.1 → "20.1."；1.21 → "21."；1.21.4 → "21.4." */
 function neoForgePrefix(mcVersion: string): string {
+  // NeoForge 1.20.1 沿用 Forge 的 47.x 版本号
+  if (mcVersion === '1.20.1') return '47.';
   return mcVersion.replace(/^1\./, '').replace(/\.0$/, '') + '.';
 }
 
@@ -437,7 +439,8 @@ export async function launchInstance(instanceId: string, options: LaunchOptions 
   ].filter(p => fs.existsSync(p)).join(path.delimiter);
 
   const mcArgs: string[] = [];
-  const features = { is_demo_user: false, has_custom_resolution: !!instance.resolution };
+  const effectiveResolution = instance.resolution ?? settings.general.defaultResolution ?? null;
+  const features = { is_demo_user: false, has_custom_resolution: !!effectiveResolution };
   const vars: Record<string, string> = {
     auth_player_name: token.name,
     version_name: entry.id,
@@ -454,8 +457,8 @@ export async function launchInstance(instanceId: string, options: LaunchOptions 
     classpath_separator: path.delimiter,
     classpath,
     library_directory: paths.librariesDir(),
-    resolution_width: String(instance.resolution?.width ?? 1280),
-    resolution_height: String(instance.resolution?.height ?? 720),
+    resolution_width: String(effectiveResolution?.width ?? 1280),
+    resolution_height: String(effectiveResolution?.height ?? 720),
   };
 
   const preset = MEMORY_PRESETS[instance.memoryPreset ?? 'standard'];
@@ -471,6 +474,12 @@ export async function launchInstance(instanceId: string, options: LaunchOptions 
   // 用户额外参数
   if (instance.jvmArgsExtra) {
     for (const piece of instance.jvmArgsExtra.split(/\s+|\n+/).map(s => s.trim()).filter(Boolean)) {
+      jvmArgs.push(piece);
+    }
+  }
+  // 全局附加参数（实例之后，方便统一加代理 / 优化参数）
+  if (settings.launch.globalJvmArgs) {
+    for (const piece of settings.launch.globalJvmArgs.split(/\s+|\n+/).map(s => s.trim()).filter(Boolean)) {
       jvmArgs.push(piece);
     }
   }

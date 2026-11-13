@@ -38,6 +38,10 @@ export interface Account {
   name: string;
   uuid: string;
   skinUrl?: string | null;
+  /** 本地披风贴图（仅离线账号，仅本机可见） */
+  capeUrl?: string | null;
+  /** 微软账号皮肤模型：classic（4 格手臂）/ slim（3 格手臂） */
+  skinModel?: 'classic' | 'slim' | null;
   /** 仅微软账号：令牌（仅存本机） */
   expiresAt?: number | null;
   lastUsedAt: number;
@@ -51,6 +55,8 @@ export interface AppSettings {
     autoBackupBeforeLaunch: boolean;
     backupKeep: number;
     confirmBeforeLaunch: boolean;
+    /** 未单独设置分辨率的实例使用的默认窗口尺寸 */
+    defaultResolution: { width: number; height: number } | null;
   };
   download: {
     source: DownloadSource;
@@ -69,6 +75,8 @@ export interface AppSettings {
     log4jFix: boolean;           // 1.17 以下自动附加 log4j 缓解参数
     utf8Encoding: boolean;       // 强制 UTF-8 文件编码
     showLogOnCrash: boolean;
+    /** 全局附加 JVM 参数（实例参数之后追加） */
+    globalJvmArgs: string;
   };
   curseforge: {
     apiKey: string;              // 可选：导入 CurseForge 整合包时用
@@ -76,6 +84,119 @@ export interface AppSettings {
   migration: {
     copyInsteadOfMove: boolean;
   };
+  cloud: CloudSettings;
+}
+
+/* ---------- 云同步 ---------- */
+export type CloudProvider = 'off' | 'webdav' | 'gist';
+
+export interface CloudSettings {
+  provider: CloudProvider;
+  /** WebDAV 目录 URL，如 https://dav.example.com/mcl/ */
+  webdavUrl: string;
+  webdavUsername: string;
+  webdavPassword: string;
+  /** GitHub PAT（只需 gist 权限） */
+  gistToken: string;
+  /** 已有 Gist ID；留空首次上传会自动创建 */
+  gistId: string;
+  /** 是否把存档一并同步（WebDAV 完整快照） */
+  includeSaves: boolean;
+  lastSyncAt?: number | null;
+  lastSyncDirection?: 'upload' | 'download' | null;
+}
+
+export interface CloudSnapshotInfo {
+  exists: boolean;
+  updatedAt: number | null;
+  sizeBytes: number | null;
+  /** WebDAV 地址或 Gist ID */
+  location: string;
+  note: string;
+}
+
+/* ---------- 服务器 ---------- */
+export type ServerLoader = 'vanilla' | 'fabric' | 'quilt' | 'forge' | 'neoforge';
+export type ServerStatus = 'stopped' | 'preparing' | 'starting' | 'running' | 'stopping' | 'crashed';
+
+export interface ServerConfig {
+  id: string;
+  name: string;
+  mcVersion: string;
+  loader: ServerLoader;
+  loaderVersion?: string | null;
+  port: number;
+  memoryMB: number;
+  javaPath?: string | null;
+  jvmArgsExtra?: string;
+  eulaAccepted: boolean;
+  prepared: boolean;
+  createdAt: number;
+  lastStartedAt?: number | null;
+}
+
+export interface ServerInfo extends ServerConfig {
+  dir: string;
+  status: ServerStatus;
+  pid?: number | null;
+  startedAt?: number | null;
+  players: string[];
+  online: boolean;
+  diskBytes: number;
+  logTail: string[];
+}
+
+export interface ServerProperties {
+  [key: string]: string;
+}
+
+export interface ServerBackupInfo {
+  name: string;
+  filePath: string;
+  sizeBytes: number;
+  createdAt: number;
+}
+
+/* ---------- 内容管理 ---------- */
+export type ContentKind = 'resourcepacks' | 'shaderpacks' | 'screenshots' | 'worlds';
+
+export interface ContentItem {
+  name: string;
+  fileName: string;
+  path: string;
+  sizeBytes: number;
+  mtime: number;
+  enabled?: boolean;
+  /** 世界图标 / 截图缩略图（通过 mcl-media:// 协议） */
+  previewPath?: string | null;
+}
+
+export interface ContentList {
+  resourcepacks: ContentItem[];
+  shaderpacks: ContentItem[];
+  screenshots: ContentItem[];
+  worlds: ContentItem[];
+}
+
+/* ---------- 导出 ---------- */
+export type ExportFormat = 'mmc' | 'mrpack' | 'zip';
+
+export interface ExportResult {
+  filePath: string;
+  format: ExportFormat;
+  sizeBytes: number;
+  files: number;
+  warnings?: string[];
+}
+
+/* ---------- 启动器更新 ---------- */
+export interface UpdateInfo {
+  current: string;
+  latest: string | null;
+  hasUpdate: boolean;
+  url: string | null;
+  notes: string | null;
+  publishedAt: string | null;
 }
 
 export interface VersionManifestEntry {

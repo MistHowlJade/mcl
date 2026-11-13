@@ -1,20 +1,29 @@
 import React, { useEffect, useState } from 'react';
 import { api } from '../lib/api';
 import { useToast } from '../components/Toast';
-import { ConfirmModal, Tip, Toggle } from '../components/Modal';
-import type { AppSettings, JavaInfo } from '../../electron/shared/types';
+import { ConfirmModal, Tip, Toggle, formatBytes } from '../components/Modal';
+import type { AppSettings, JavaInfo, UpdateInfo } from '../../electron/shared/types';
 
-export default function Settings() {
+export default function Settings({ onNavigate }: { onNavigate?: (page: 'cloud') => void }) {
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [javas, setJavas] = useState<JavaInfo[]>([]);
   const [javaScanning, setJavaScanning] = useState(false);
   const [mirrorLatency, setMirrorLatency] = useState<Array<{ source: string; latencyMs: number; ok: boolean }> | null>(null);
   const [mirrorTesting, setMirrorTesting] = useState(false);
   const [confirmReset, setConfirmReset] = useState(false);
+  const [appVersion, setAppVersion] = useState('0.1.0');
+  const [dataDir, setDataDir] = useState('');
+  const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
+  const [updateChecking, setUpdateChecking] = useState(false);
+  const [cacheInfo, setCacheInfo] = useState<{ sizeBytes: number; files: number } | null>(null);
+  const [cacheClearing, setCacheClearing] = useState(false);
+  const [confirmClearCache, setConfirmClearCache] = useState(false);
   const toast = useToast();
 
   useEffect(() => {
     api.settingsGet().then(setSettings).catch(e => toast.toast(String(e), 'error'));
+    api.appInfo().then(info => { setAppVersion(info.version); setDataDir(info.dataDir); }).catch(() => undefined);
+    api.appCacheInfo().then(setCacheInfo).catch(() => undefined);
     scanJava();
     /* eslint-disable-next-line */
   }, []);
@@ -39,6 +48,28 @@ export default function Settings() {
     } catch (e) { toast.toast(String(e), 'error'); } finally { setMirrorTesting(false); }
   };
 
+  const checkUpdate = async () => {
+    setUpdateChecking(true);
+    setUpdateInfo(null);
+    try {
+      const info = await api.appUpdateCheck();
+      setUpdateInfo(info);
+      toast.toast(info.hasUpdate ? `发现新版本 ${info.latest}` : '当前已是最新版本', info.hasUpdate ? 'ok' : 'info');
+    } catch (e) { toast.toast(e instanceof Error ? e.message : String(e), 'error'); }
+    finally { setUpdateChecking(false); }
+  };
+
+  const clearCache = async () => {
+    setConfirmClearCache(false);
+    setCacheClearing(true);
+    try {
+      const r = await api.appClearCache();
+      setCacheInfo(await api.appCacheInfo());
+      toast.toast(`已清理 ${formatBytes(r.freedBytes)}（${r.removedFiles} 个临时文件）`, 'ok');
+    } catch (e) { toast.toast(e instanceof Error ? e.message : String(e), 'error'); }
+    finally { setCacheClearing(false); }
+  };
+
   return (
     <div>
       <div className="page-header">
@@ -56,6 +87,28 @@ export default function Settings() {
           <div className="control">
             <select className="input" style={{ width: 130 }} value={settings.general.zoomFactor} onChange={e => { const v = parseFloat(e.target.value); patch({ general: { zoomFactor: v } }); api.windowSetZoom(v); }}>
               {[0.75, 1, 1.25, 1.5, 1.75, 2].map(z => <option key={z} value={z}>{Math.round(z * 100)}%</option>)}
+            </select>
+          </div>
+        </div>
+        <div className="setting-row">
+          <div className="label">默认游戏分辨率<Tip text="实例没有单独设置分辨率时使用。MCL 会把 --width/--height 传给游戏；全屏玩家可以保持默认。实例可在「高级设置」里覆盖。" /></div>
+          <div className="control">
+            <select
+              className="input"
+              style={{ width: 180 }}
+              value={settings.general.defaultResolution ? `${settings.general.defaultResolution.width}x${settings.general.defaultResolution.height}` : 'auto'}
+              onChange={e => {
+                if (e.target.value === 'auto') { patch({ general: { defaultResolution: null } }); return; }
+                const [w, h] = e.target.value.split('x').map(n => parseInt(n, 10));
+                patch({ general: { defaultResolution: { width: w, height: h } } });
+              }}
+            >
+              <option value="auto">不指定（交给游戏）</option>
+              <option value="854x480">854 × 480</option>
+              <option value="1280x720">1280 × 720（默认）</option>
+              <option value="1600x900">1600 × 900</option>
+              <option value="1920x1080">1920 × 1080</option>
+              <option value="2560x1440">2560 × 1440</option>
             </select>
           </div>
         </div>
@@ -190,6 +243,30 @@ export default function Settings() {
           <div className="label">强制 UTF-8 文件编码<Tip text="加上 -Dfile.encoding=UTF-8 -Dsun.jnu.encoding=UTF-8。非 UTF-8 区域设置的 Windows（中文系统常见）经常因此乱码甚至闪退。" /></div>
           <div className="control"><Toggle checked={settings.launch.utf8Encoding} onChange={v => patch({ launch: { utf8Encoding: v } })} label="UTF-8 编码" /></div>
         </div>
+        <div className="setting-row">
+          <div className="label">全局 JVM 参数<Tip text="对所有实例与服务端生效，每行一条或空格分隔。会追加在实例参数之后。例如 -XX:+UseG1GC 或代理参数。不确定就不要填；填错可能导致游戏无法启动。" /></div>
+          <div className="control"><textarea className="input" style={{ width: '100%', maxWidth: 520, minHeight: 70 }} placeholder="例如：-XX:+UseG1GC" value={settings.launch.globalJvmArgs} onChange={e => patch({ launch: { globalJvmArgs: e.target.value } })} /></div>
+        </div>
+      </div>
+
+      {/* ========== 云同步 ========== */}
+      <div className="panel">
+        <div className="panel-title">云同步</div>
+        <div className="setting-row">
+          <div className="label">当前方式<Tip text="MCL 不提供官方云服务器：用你自己的 WebDAV 或 GitHub Gist。绝不上传微软令牌、CurseForge 密钥与云同步密码。" /></div>
+          <div className="control">
+            <span className={`tag ${settings.cloud.provider === 'off' ? '' : 'green'}`}>
+              {settings.cloud.provider === 'off' ? '未启用' : settings.cloud.provider === 'webdav' ? 'WebDAV 完整快照' : 'GitHub Gist（仅配置）'}
+            </span>
+            {onNavigate && <button className="btn" onClick={() => onNavigate('cloud')}>打开云同步中心 →</button>}
+          </div>
+        </div>
+        <div className="setting-row">
+          <div className="label">上次同步<Tip text="上传 / 下载的方向与时间。换电脑时：先在新电脑填同样的 WebDAV 地址或 Gist ID，再点「从云端下载」。" /></div>
+          <div className="control">
+            <span className="faint">{settings.cloud.lastSyncAt ? `${new Date(settings.cloud.lastSyncAt).toLocaleString()}（${settings.cloud.lastSyncDirection === 'download' ? '下载' : '上传'}）` : '还没有同步过'}</span>
+          </div>
+        </div>
       </div>
 
       {/* ========== CurseForge ========== */}
@@ -202,11 +279,50 @@ export default function Settings() {
         <p className="faint">没有密钥也能导入：MCL 会创建好实例并复制 overrides，缺的模组给逐个手动下载链接，绝不静默失败。</p>
       </div>
 
+      {/* ========== 更新检查 ========== */}
+      <div className="panel">
+        <div className="panel-title">启动器更新<span className="spacer" /><button className="btn small" onClick={checkUpdate} disabled={updateChecking}>{updateChecking ? '检查中…' : '检查更新'}</button></div>
+        <div className="row" style={{ gap: 28, flexWrap: 'wrap' }}>
+          <div><div className="faint">当前版本</div><div style={{ fontWeight: 800, fontSize: 18 }}>{appVersion}</div></div>
+          <div><div className="faint">最新版本</div><div style={{ fontWeight: 700 }}>{updateInfo?.latest ?? '—'}</div></div>
+          <div><div className="faint">状态</div><div style={{ fontWeight: 700, color: updateInfo?.hasUpdate ? 'var(--accent)' : undefined }}>{updateInfo ? (updateInfo.hasUpdate ? '有新版本可用' : '已是最新') : '尚未检查'}</div></div>
+        </div>
+        {updateInfo?.notes && (
+          <div className="mt" style={{ maxHeight: 180, overflowY: 'auto', background: 'var(--panel-2)', borderRadius: 8, padding: '10px 12px', whiteSpace: 'pre-wrap', fontSize: 12 }}>{updateInfo.notes}</div>
+        )}
+        {updateInfo?.url && (
+          <div className="row mt" style={{ gap: 8 }}>
+            <button className="btn" onClick={() => api.openExternal(updateInfo.url!)}>打开 Release 页面 ↗</button>
+            {updateInfo.publishedAt && <span className="faint">发布于 {new Date(updateInfo.publishedAt).toLocaleDateString()}</span>}
+          </div>
+        )}
+        <p className="faint mt">MCL 不会自动下载更新，也不会在后台偷偷替换程序文件——只提示版本并交给你决定。</p>
+      </div>
+
+      {/* ========== 缓存 ========== */}
+      <div className="panel">
+        <div className="panel-title">存储与缓存</div>
+        <div className="setting-row">
+          <div className="label">数据目录<Tip text="实例、共享库、Java、备份与日志都在这里。便携模式：exe 同目录放 portable.txt 后数据会放到 exe 旁的 mcl-data/。" /></div>
+          <div className="control">
+            <span className="mono" style={{ maxWidth: 420, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={dataDir}>{dataDir || '…'}</span>
+            {dataDir && <button className="btn small" onClick={() => api.openPath(dataDir)}>打开</button>}
+          </div>
+        </div>
+        <div className="setting-row">
+          <div className="label">下载缓存<Tip text="下载过程中的 .part 断点续传文件与临时数据。清理不会删除已安装的游戏、模组或存档，只会让未完成的下载重新开始。" /></div>
+          <div className="control">
+            <span className="faint">{cacheInfo ? `${formatBytes(cacheInfo.sizeBytes)} · ${cacheInfo.files} 个文件` : '统计中…'}</span>
+            <button className="btn small danger" disabled={cacheClearing || !cacheInfo || cacheInfo.sizeBytes === 0} onClick={() => setConfirmClearCache(true)}>{cacheClearing ? '清理中…' : '清理缓存'}</button>
+          </div>
+        </div>
+      </div>
+
       {/* ========== 关于 ========== */}
       <div className="panel">
         <div className="panel-title">关于 MCL</div>
         <div className="row" style={{ gap: 32, flexWrap: 'wrap' }}>
-          <div><div className="faint">版本</div><div style={{ fontWeight: 800, fontSize: 18 }}>0.1.0</div></div>
+          <div><div className="faint">版本</div><div style={{ fontWeight: 800, fontSize: 18 }}>{appVersion}</div></div>
           <div><div className="faint">协议</div><div style={{ fontWeight: 700 }}>MIT 开源</div></div>
           <div><div className="faint">遥测</div><div style={{ fontWeight: 700, color: 'var(--accent)' }}>无 · 不收集任何数据</div></div>
           <div><div className="faint">游戏本体</div><div style={{ fontWeight: 700 }}>Mojang 官方渠道（可切换镜像）</div></div>
@@ -227,6 +343,17 @@ export default function Settings() {
           danger
           onCancel={() => setConfirmReset(false)}
           onConfirm={() => { api.settingsReset().then(setSettings).then(() => toast.toast('设置已重置')); setConfirmReset(false); }}
+        />
+      )}
+
+      {confirmClearCache && (
+        <ConfirmModal
+          title="清理下载缓存"
+          message={`将删除数据目录 cache/ 下的 ${cacheInfo?.files ?? 0} 个临时文件（${formatBytes(cacheInfo?.sizeBytes ?? 0)}）。\n\n已安装的游戏、模组、存档、Java 不受影响；未完成的下载会需要重新开始。确定继续？`}
+          confirmText="清理"
+          danger
+          onCancel={() => setConfirmClearCache(false)}
+          onConfirm={clearCache}
         />
       )}
     </div>

@@ -6,6 +6,7 @@
  * 说明：设备码端点为 login.live.com 的 oauth20_*.srf（consumers 租户的 v2.0 端点不接受该 Live 客户端）。
  */
 import * as crypto from 'crypto';
+import * as fs from 'fs';
 import { fetchWithTimeout } from './net';
 import * as paths from './paths';
 import { Account } from '../shared/types';
@@ -46,6 +47,8 @@ const publicView = (a: StoredAccount): Account => ({
   name: a.name,
   uuid: a.uuid,
   skinUrl: a.skinUrl ?? null,
+  capeUrl: a.capeUrl ?? null,
+  skinModel: a.skinModel ?? null,
   expiresAt: a.expiresAt ?? null,
   lastUsedAt: a.lastUsedAt,
 });
@@ -96,6 +99,8 @@ export function createOfflineAccount(name: string, skinUrl?: string | null): Acc
     name: trimmed,
     uuid: offlineUuid(trimmed),
     skinUrl: skinUrl ?? null,
+    capeUrl: null,
+    skinModel: null,
     expiresAt: null,
     lastUsedAt: Date.now(),
   };
@@ -206,7 +211,7 @@ export interface MicrosoftLoginResult {
 }
 
 /** 用 MS access_token 走完 Xbox → XSTS → Minecraft 链路，返回 MC 令牌与资料 */
-async function mcTokenFromMsToken(msToken: string): Promise<{ mcToken: string; mcExpiresIn: number; name: string; uuid: string; skinUrl: string | null }> {
+async function mcTokenFromMsToken(msToken: string): Promise<{ mcToken: string; mcExpiresIn: number; name: string; uuid: string; skinUrl: string | null; skinModel: 'classic' | 'slim' }> {
   // Xbox Live 用户令牌
   const xblRes = await fetchWithTimeout('https://user.auth.xboxlive.com/user/authenticate', {
     method: 'POST',
@@ -279,6 +284,7 @@ async function mcTokenFromMsToken(msToken: string): Promise<{ mcToken: string; m
     name: profile.name,
     uuid: dashed,
     skinUrl: profile?.skins?.[0]?.url ?? null,
+    skinModel: String(profile?.skins?.[0]?.variant ?? '').toLowerCase() === 'slim' ? 'slim' : 'classic',
   };
 }
 
@@ -294,6 +300,8 @@ export async function finishMicrosoftLogin(session: MicrosoftLoginSession): Prom
     name: chain.name,
     uuid: chain.uuid,
     skinUrl: chain.skinUrl,
+    capeUrl: null,
+    skinModel: chain.skinModel,
     accessToken: chain.mcToken,
     refreshToken: refreshToken ?? null,
     expiresAt: Date.now() + chain.mcExpiresIn * 1000,
@@ -331,6 +339,7 @@ async function refreshMicrosoftAccount(account: StoredAccount): Promise<StoredAc
     account.name = chain.name;
     account.uuid = chain.uuid;
     account.skinUrl = chain.skinUrl;
+    account.skinModel = chain.skinModel;
     account.lastUsedAt = Date.now();
     return account;
   } catch {
@@ -354,5 +363,139 @@ export async function getValidAccessToken(accountId: string): Promise<{ accessTo
   }
   save(data);
   return { accessToken: account.accessToken!, userType: 'msa', uuid: account.uuid, name: account.name };
+}
+
+/* ---------- 皮肤 / 披风 ---------- */
+
+const SKIN_API = 'https://api.minecraftservices.com/minecraft/profile/skins';
+const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
+
+interface PngInfo { width: number; height: number; dataUrl: string }
+
+function readPng(filePath: string): PngInfo {
+  const buf = fs.readFileSync(filePath);
+  if (buf.length < 32) throw new Error('图片文件为空或已损坏');
+  if (buf.length > MAX_IMAGE_BYTES) throw new Error('图片超过 4 MB，请换一张（Minecraft 皮肤是 64×64 的小图）');
+  if (buf.readUInt32BE(0) !== 0x89504e47) throw new Error('请选择 PNG 格式的图片（Minecraft 皮肤 / 披风必须是 PNG）');
+  const width = buf.readUInt32BE(16);
+  const height = buf.readUInt32BE(20);
+  return { width, height, dataUrl: `data:image/png;base64,${buf.toString('base64')}` };
+}
+
+function updateAccount(accountId: string, mutate: (account: StoredAccount) => void): Account {
+  const data = load();
+  const account = data.accounts.find(a => a.id === accountId);
+  if (!account) throw new Error('账号不存在');
+  mutate(account);
+  save(data);
+  return publicView(account);
+}
+
+/** 离线账号导入本地皮肤：仅保存到本机，仅启动器界面可见 */
+export function setLocalSkin(accountId: string, filePath: string, model: 'classic' | 'slim'): Account {
+  const data = load();
+  const account = data.accounts.find(a => a.id === accountId);
+  if (!account) throw new Error('账号不存在');
+  if (account.type === 'microsoft') throw new Error('微软账号请使用「上传皮肤到 Mojang」，这样其他玩家才能看到。');
+  const png = readPng(filePath);
+  if (png.width !== 64 || (png.height !== 64 && png.height !== 32)) {
+    throw new Error(`皮肤尺寸应为 64×64（或旧版 64×32），当前是 ${png.width}×${png.height}。`);
+  }
+  account.skinUrl = png.dataUrl;
+  account.skinModel = model;
+  save(data);
+  return publicView(account);
+}
+
+export function clearLocalSkin(accountId: string): Account {
+  return updateAccount(accountId, account => {
+    if (account.type === 'microsoft') throw new Error('微软账号的皮肤由 Mojang 管理，请使用「恢复默认皮肤」。');
+    account.skinUrl = null;
+    account.skinModel = null;
+  });
+}
+
+/** 本地披风预览：Minecraft 客户端不会读取，仅启动器展示用 */
+export function setLocalCape(accountId: string, filePath: string): Account {
+  const png = readPng(filePath);
+  if (png.width !== 64 || (png.height !== 32 && png.height !== 64)) {
+    throw new Error(`披风尺寸应为 64×32，当前是 ${png.width}×${png.height}。`);
+  }
+  return updateAccount(accountId, account => { account.capeUrl = png.dataUrl; });
+}
+
+export function clearLocalCape(accountId: string): Account {
+  return updateAccount(accountId, account => { account.capeUrl = null; });
+}
+
+/** 微软账号上传皮肤到 Mojang（multipart，零第三方依赖） */
+export async function uploadMicrosoftSkin(accountId: string, filePath: string, variant: 'classic' | 'slim'): Promise<Account> {
+  const data = load();
+  const account = data.accounts.find(a => a.id === accountId);
+  if (!account) throw new Error('账号不存在');
+  if (account.type !== 'microsoft') throw new Error('只有微软账号可以上传皮肤到 Mojang。');
+  const png = readPng(filePath);
+  if (png.width !== 64 || (png.height !== 64 && png.height !== 32)) {
+    throw new Error(`皮肤尺寸应为 64×64（或旧版 64×32），当前是 ${png.width}×${png.height}。`);
+  }
+  const token = await getValidAccessToken(accountId);
+  if (!token) throw new Error('登录令牌已过期，请先在账号页重新登录微软账号。');
+
+  const boundary = `----MCLSkin${crypto.randomBytes(8).toString('hex')}`;
+  const head = Buffer.from(
+    `--${boundary}\r\nContent-Disposition: form-data; name="variant"\r\n\r\n${variant}\r\n` +
+    `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="skin.png"\r\nContent-Type: image/png\r\n\r\n`,
+    'utf8',
+  );
+  const tail = Buffer.from(`\r\n--${boundary}--\r\n`, 'utf8');
+  const body = Buffer.concat([head, fs.readFileSync(filePath), tail]);
+
+  const res = await fetchWithTimeout(SKIN_API, {
+    method: 'POST',
+    timeoutMs: 30000,
+    headers: {
+      Authorization: `Bearer ${token.accessToken}`,
+      'Content-Type': `multipart/form-data; boundary=${boundary}`,
+      Accept: 'application/json',
+    },
+    body,
+  });
+  if (res.status === 401 || res.status === 403) {
+    throw new Error('Mojang 拒绝了皮肤上传（登录已过期或账号没有 Java 版）。请重新登录后再试。');
+  }
+  if (res.status === 400) {
+    let detail = '';
+    try { detail = JSON.parse(res.body.toString('utf8'))?.errorMessage ?? ''; } catch { /* ignore */ }
+    throw new Error(`Mojang 认为这张皮肤不合规${detail ? `：${detail}` : '（请检查 PNG 尺寸与内容）'}。`);
+  }
+  if (res.status >= 400) throw new Error(`皮肤上传失败（HTTP ${res.status}），请稍后再试。`);
+
+  return updateAccount(accountId, acc => {
+    acc.skinUrl = png.dataUrl;
+    acc.skinModel = variant;
+  });
+}
+
+/** 微软账号恢复为 Mojang 默认皮肤 */
+export async function resetMicrosoftSkin(accountId: string): Promise<Account> {
+  const accountData = load();
+  const account = accountData.accounts.find(a => a.id === accountId);
+  if (!account) throw new Error('账号不存在');
+  if (account.type !== 'microsoft') throw new Error('只有微软账号可以恢复 Mojang 默认皮肤。');
+  const token = await getValidAccessToken(accountId);
+  if (!token) throw new Error('登录令牌已过期，请先在账号页重新登录微软账号。');
+  const res = await fetchWithTimeout(SKIN_API, {
+    method: 'DELETE',
+    timeoutMs: 20000,
+    headers: { Authorization: `Bearer ${token.accessToken}`, Accept: 'application/json' },
+  });
+  // 204 = 成功；其他错误按人话抛出
+  if (res.status >= 400 && res.status !== 404) {
+    throw new Error(`恢复默认皮肤失败（HTTP ${res.status}），请稍后再试。`);
+  }
+  return updateAccount(accountId, acc => {
+    acc.skinUrl = null;
+    acc.skinModel = null;
+  });
 }
 

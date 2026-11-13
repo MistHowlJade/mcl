@@ -10,7 +10,7 @@ export default function Accounts() {
   const [msSession, setMsSession] = useState<{ userCode: string; verificationUri: string; message: string } | null>(null);
   const [msWaiting, setMsWaiting] = useState(false);
   const [offlineName, setOfflineName] = useState('');
-  const [skinPreview, setSkinPreview] = useState<Record<string, string>>({});
+  const [skinTarget, setSkinTarget] = useState<Account | null>(null);
   const toast = useToast();
 
   const reload = async () => {
@@ -60,13 +60,6 @@ export default function Accounts() {
     setOfflineName(`${adj[Math.floor(Math.random() * adj.length)]}${num}`);
   };
 
-  const importSkin = async (accountId: string) => {
-    try {
-      const dataUrl = await api.accountImportSkinFile(accountId);
-      if (dataUrl) { setSkinPreview(prev => ({ ...prev, [accountId]: dataUrl })); toast.toast('皮肤已导入（仅本地存储，仅自己可见）'); void reload(); }
-    } catch (e) { toast.toast(String(e), 'error'); }
-  };
-
   return (
     <div>
       <div className="page-header">
@@ -98,10 +91,14 @@ export default function Accounts() {
         <div className="list">
           {accounts.map(account => {
             const isActive = account.id === activeId;
-            const skin = skinPreview[account.id] ?? account.skinUrl;
+            const skin = account.skinUrl;
             return (
               <div key={account.id} className="list-row" style={{ borderColor: isActive ? 'var(--accent-strong)' : 'transparent' }}>
-                <div style={{ width: 46, height: 46, borderRadius: 10, overflow: 'hidden', background: 'var(--panel-3)', flexShrink: 0, imageRendering: 'pixelated' }}>
+                <div
+                  style={{ width: 46, height: 46, borderRadius: 10, overflow: 'hidden', background: 'var(--panel-3)', flexShrink: 0, imageRendering: 'pixelated', cursor: 'pointer' }}
+                  onClick={() => setSkinTarget(account)}
+                  title="管理皮肤 / 披风"
+                >
                   {skin ? <img src={skin} width={46} height={46} alt="" style={{ imageRendering: 'pixelated', objectFit: 'cover', objectPosition: 'left top' }} /> : <div style={{ width: '100%', height: '100%', display: 'grid', placeItems: 'center', fontWeight: 800, color: 'var(--text-dim)' }}>{account.name[0]?.toUpperCase()}</div>}
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
@@ -114,7 +111,7 @@ export default function Accounts() {
                 </div>
                 <div className="row" style={{ gap: 6 }}>
                   {!isActive && <button className="btn small" onClick={() => api.accountSetActive(account.id).then(() => { toast.toast('已切换账号'); void reload(); })}>设为使用中</button>}
-                  {account.type === 'offline' && <button className="btn small" onClick={() => importSkin(account.id)}>导入皮肤</button>}
+                  <button className="btn small" onClick={() => setSkinTarget(account)}>皮肤 / 披风</button>
                   <button className="btn small danger" onClick={() => api.accountRemove(account.id).then(() => { toast.toast('已移除账号', 'info'); void reload(); })}>移除</button>
                 </div>
               </div>
@@ -142,6 +139,121 @@ export default function Accounts() {
           <li>启动游戏只从 Mojang 官方渠道（或可切换的社区镜像）下载本体，不修改也不重新分发游戏文件。</li>
         </ul>
       </div>
+
+      {skinTarget && (
+        <SkinModal
+          account={skinTarget}
+          onClose={() => setSkinTarget(null)}
+          onChanged={account => { setSkinTarget(account); void reload(); }}
+        />
+      )}
     </div>
+  );
+}
+
+function SkinModal({ account, onClose, onChanged }: { account: Account; onClose: () => void; onChanged: (account: Account) => void }) {
+  const [model, setModel] = useState<'classic' | 'slim'>(account.skinModel === 'slim' ? 'slim' : 'classic');
+  const [busy, setBusy] = useState<string | null>(null);
+  const toast = useToast();
+  const isMicrosoft = account.type === 'microsoft';
+
+  const apply = async (label: string, fn: () => Promise<Account | null>) => {
+    setBusy(label);
+    try {
+      const updated = await fn();
+      if (updated) { onChanged(updated); toast.toast('已更新皮肤设置', 'ok'); }
+      else toast.toast('已取消', 'info');
+    } catch (e) {
+      toast.toast(e instanceof Error ? e.message : String(e), 'error');
+    } finally { setBusy(null); }
+  };
+
+  const headStyle: React.CSSProperties | undefined = account.skinUrl
+    ? {
+        width: 128,
+        height: 128,
+        backgroundImage: `url("${account.skinUrl}")`,
+        backgroundSize: '1024px 1024px',
+        backgroundPosition: '-128px -128px',
+        imageRendering: 'pixelated',
+      }
+    : undefined;
+
+  return (
+    <Modal title={`皮肤 / 披风 · ${account.name}`} onClose={onClose} footer={<button className="btn" onClick={onClose}>关闭</button>}>
+      <div className="row" style={{ gap: 20, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+        <div style={{ textAlign: 'center' }}>
+          <div style={{ width: 128, height: 128, borderRadius: 14, background: 'linear-gradient(135deg,#26313f,#141a24)', overflow: 'hidden', display: 'grid', placeItems: 'center' }}>
+            {headStyle ? <div style={headStyle} /> : <span style={{ fontSize: 42, fontWeight: 800, color: 'var(--text-faint)' }}>{account.name[0]?.toUpperCase()}</span>}
+          </div>
+          <div className="faint mt">头部预览</div>
+        </div>
+        <div style={{ flex: 1, minWidth: 220 }}>
+          <div className="row" style={{ gap: 8 }}>
+            <span className={`tag ${isMicrosoft ? 'blue' : 'amber'}`}>{isMicrosoft ? '微软账号' : '离线账号'}</span>
+            {account.skinModel && <span className="tag">{account.skinModel === 'slim' ? '纤细（Alex）' : '经典（Steve）'}</span>}
+            {account.capeUrl && <span className="tag green">有披风预览</span>}
+          </div>
+          <div className="faint mt">UUID {account.uuid}</div>
+          {account.skinUrl && (
+            <div className="row mt" style={{ gap: 10, alignItems: 'flex-start' }}>
+              <img src={account.skinUrl} alt="皮肤贴图" width={64} height={64} style={{ imageRendering: 'pixelated', borderRadius: 6, background: 'var(--panel-3)' }} />
+              <div className="faint">完整皮肤贴图<br />（64×64 PNG）</div>
+            </div>
+          )}
+          {account.capeUrl && (
+            <div className="row mt" style={{ gap: 10, alignItems: 'flex-start' }}>
+              <img src={account.capeUrl} alt="披风贴图" width={64} height={32} style={{ imageRendering: 'pixelated', borderRadius: 6, background: 'var(--panel-3)' }} />
+              <div className="faint">披风预览贴图<br />（仅 MCL 界面显示）</div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="setting-row mt-lg">
+        <div className="label">皮肤模型<Tip text="经典 Steve 是 4 格宽手臂，纤细 Alex 是 3 格宽手臂。选错会导致手臂贴图错位。只有上传/导入时会写入模型。" /></div>
+        <div className="control">
+          {(['classic', 'slim'] as const).map(m => (
+            <label key={m} className="row" style={{ gap: 6, cursor: 'pointer' }}>
+              <input type="radio" name="skin-model" checked={model === m} onChange={() => setModel(m)} />
+              {m === 'classic' ? '经典（Steve）' : '纤细（Alex）'}
+            </label>
+          ))}
+        </div>
+      </div>
+
+      {isMicrosoft ? (
+        <>
+          <div className="row mt" style={{ gap: 8, flexWrap: 'wrap' }}>
+            <button className="btn primary" disabled={!!busy} onClick={() => apply('upload', () => api.accountMicrosoftSkin(account.id, model))}>
+              {busy === 'upload' ? '上传中…' : '上传皮肤到 Mojang'}
+            </button>
+            <button className="btn" disabled={!!busy} onClick={() => apply('reset', () => api.accountMicrosoftSkinReset(account.id))}>
+              {busy === 'reset' ? '处理中…' : '恢复默认皮肤'}
+            </button>
+            <button className="btn" disabled={!!busy} onClick={() => apply('cape', () => api.accountLocalCape(account.id))}>导入披风预览</button>
+            {account.capeUrl && <button className="btn ghost" disabled={!!busy} onClick={() => apply('capeClear', () => api.accountClearLocalCape(account.id))}>清除披风预览</button>}
+          </div>
+          <p className="faint mt">
+            上传后皮肤由 Mojang 官方保存并同步给所有玩家（需要正版 Java 版与可用的 api.minecraftservices.com 网络）。
+            披风无法通过公开 API 上传——MCL 的披风按钮只做本地预览，不会出现在游戏里。
+          </p>
+        </>
+      ) : (
+        <>
+          <div className="row mt" style={{ gap: 8, flexWrap: 'wrap' }}>
+            <button className="btn primary" disabled={!!busy} onClick={() => apply('skin', () => api.accountLocalSkin(account.id, model))}>
+              {busy === 'skin' ? '导入中…' : '导入本地皮肤'}
+            </button>
+            {account.skinUrl && <button className="btn ghost" disabled={!!busy} onClick={() => apply('clear', () => api.accountClearLocalSkin(account.id))}>清除本地皮肤</button>}
+            <button className="btn" disabled={!!busy} onClick={() => apply('cape', () => api.accountLocalCape(account.id))}>导入披风预览</button>
+            {account.capeUrl && <button className="btn ghost" disabled={!!busy} onClick={() => apply('capeClear', () => api.accountClearLocalCape(account.id))}>清除披风预览</button>}
+          </div>
+          <div className="mt" style={{ padding: '10px 14px', borderRadius: 9, background: 'var(--amber-soft)', border: '1px solid rgba(240,180,91,.3)', fontSize: 13 }}>
+            ⚠ 离线皮肤只保存在本机 <span className="mono">accounts.json</span>，仅 MCL 界面可见。离线模式不会向服务器上报皮肤，其他玩家看到的是默认皮肤——这是 Minecraft 离线模式的设计，不是 MCL 的限制。
+          </div>
+        </>
+      )}
+    </Modal>
   );
 }

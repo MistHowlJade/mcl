@@ -11,6 +11,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
     autoBackupBeforeLaunch: true,
     backupKeep: 10,
     confirmBeforeLaunch: false,
+    defaultResolution: { width: 1280, height: 720 },
   },
   download: {
     source: 'auto',
@@ -28,12 +29,24 @@ export const DEFAULT_SETTINGS: AppSettings = {
     log4jFix: true,
     utf8Encoding: true,
     showLogOnCrash: true,
+    globalJvmArgs: '',
   },
   curseforge: {
     apiKey: '',
   },
   migration: {
     copyInsteadOfMove: true,
+  },
+  cloud: {
+    provider: 'off',
+    webdavUrl: '',
+    webdavUsername: '',
+    webdavPassword: '',
+    gistToken: '',
+    gistId: '',
+    includeSaves: false,
+    lastSyncAt: null,
+    lastSyncDirection: null,
   },
 };
 

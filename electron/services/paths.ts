@@ -58,6 +58,10 @@ export function cacheDir(): string { return path.join(dataRoot(), 'cache'); }
 export function backupsDir(): string { return path.join(dataRoot(), 'backups'); }
 export function instanceBackupsDir(id: string): string { return path.join(backupsDir(), id); }
 export function logsDir(): string { return path.join(dataRoot(), 'logs'); }
+export function serversDir(): string { return path.join(dataRoot(), 'servers'); }
+export function serverDir(id: string): string { return path.join(serversDir(), id); }
+export function serverFile(id: string): string { return path.join(serverDir(id), 'server.json'); }
+export function serverBackupsDir(id: string): string { return path.join(serverDir(id), 'backups'); }
 export function configFile(): string { return path.join(dataRoot(), 'config.json'); }
 export function accountsFile(): string { return path.join(dataRoot(), 'accounts.json'); }
 export function instancesIndexFile(): string { return path.join(dataRoot(), 'instances.json'); }
@@ -69,7 +73,7 @@ export function ensureLayout(): void {
   for (const dir of [
     dataRoot(), sharedDir(), assetsDir(), assetsObjectsDir(), assetsIndexDir(),
     librariesDir(), versionsDir(), instancesDir(), javaDir(), cacheDir(),
-    backupsDir(), logsDir(),
+    backupsDir(), logsDir(), serversDir(),
   ]) {
     fs.mkdirSync(dir, { recursive: true });
   }

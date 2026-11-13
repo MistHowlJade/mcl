@@ -17,6 +17,12 @@ import { AppSettings } from '../shared/types';
 function sanitizeSettings(settings: AppSettings): AppSettings {
   const clone = JSON.parse(JSON.stringify(settings)) as AppSettings;
   if (clone.curseforge.apiKey) clone.curseforge.apiKey = '<已隐藏>';
+  // 云同步凭据绝不出现在诊断包里（URL 也可能内嵌 token）
+  clone.cloud.webdavUrl = clone.cloud.webdavUrl ? '<已隐藏>' : '';
+  clone.cloud.webdavUsername = clone.cloud.webdavUsername ? '<已隐藏>' : '';
+  clone.cloud.webdavPassword = clone.cloud.webdavPassword ? '<已隐藏>' : '';
+  clone.cloud.gistToken = clone.cloud.gistToken ? '<已隐藏>' : '';
+  clone.cloud.gistId = clone.cloud.gistId ? '<已隐藏>' : '';
   return clone;
 }
 

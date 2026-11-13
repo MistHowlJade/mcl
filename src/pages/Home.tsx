@@ -4,7 +4,7 @@ import { useToast } from '../components/Toast';
 import { formatBytes, timeAgo } from '../components/Modal';
 import type { CrashDiagnosis, InstanceInfo, LaunchState } from '../../electron/shared/types';
 
-type Page = 'home' | 'instances' | 'mods' | 'backups' | 'crash' | 'migrate' | 'accounts' | 'logs' | 'settings';
+type Page = 'home' | 'instances' | 'servers' | 'mods' | 'content' | 'backups' | 'crash' | 'migrate' | 'accounts' | 'cloud' | 'logs' | 'settings';
 
 export default function Home({ onNavigate, onLaunchFail }: { onNavigate: (p: Page) => void; onLaunchFail: (msg: string) => void }) {
   const [instances, setInstances] = useState<InstanceInfo[]>([]);
@@ -178,6 +178,9 @@ export default function Home({ onNavigate, onLaunchFail }: { onNavigate: (p: Pag
       <div className="row" style={{ flexWrap: 'wrap', gap: 10 }}>
         <button className="btn" onClick={() => selected && api.backupCreate(selected.id, '手动快速备份').then(b => toast.toast(b ? `已备份（${b.worldNames.length} 个世界）` : '没有存档可备份'))}>💾 备份存档</button>
         <button className="btn" onClick={() => onNavigate('mods')}>🧩 模组体检</button>
+        <button className="btn" onClick={() => onNavigate('content')}>🎨 内容管理</button>
+        <button className="btn" onClick={() => onNavigate('servers')}>🖥️ 开服务器</button>
+        <button className="btn" onClick={() => onNavigate('cloud')}>☁️ 云同步</button>
         <button className="btn" onClick={() => onNavigate('crash')}>🩺 崩溃分析</button>
         <button className="btn" onClick={() => onNavigate('migrate')}>🚚 从其它启动器迁移</button>
         <button className="btn" onClick={() => selected && api.instanceOpenGameDir(selected.id)}>📂 打开游戏目录</button>

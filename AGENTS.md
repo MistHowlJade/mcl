@@ -39,29 +39,33 @@
 
 ```
 electron/                 主进程（TS → CJS，rootDir electron）
-  main.ts                 入口：单实例锁、无边框窗口(frame:false)、残余进程清理
+  main.ts                 入口：单实例锁、无边框窗口(frame:false)、残余进程清理、mcl-media:// 本地图片协议、退出时结束服务端
   preload.ts              唯一桥：contextBridge 仅暴露 invoke/on（sandbox）
-  shared/types.ts         ★ 两端唯一类型契约（Instance/Account/CrashFix…）
+  shared/types.ts         ★ 两端唯一类型契约（Instance/Account/CrashFix/Server/Cloud/Content…）
   services/
-    paths.ts              数据目录布局（.mcl-data / shared / instances / backups / logs）
+    paths.ts              数据目录布局（.mcl-data / shared / instances / servers / backups / logs）
     store.ts net.ts zip.ts  基建：原子 JSON / 超时+重试+镜像映射 / 零依赖 ZIP
     downloader.ts         多线程分段下载（.part 断点续传 + SHA-1 换源）
     version.ts            Mojang 清单 + inheritsFrom 合并 + 库/资源规划
     java.ts               Java 检测/推荐/Adoptium 自动下载
-    auth.ts               微软设备码 → XBL → XSTS → MC → profile；离线账号；XErr 人话翻译
+    auth.ts               微软设备码 → XBL → XSTS → MC → profile；离线账号；皮肤/披风
     minecraft.ts          启动管线（natives 唯一目录/classpath/Aikar 参数/残余进程）
-    crash.ts backup.ts modrinth.ts modpack.ts modhealth.ts migrate.ts diagnostic.ts logs.ts
-    settings.ts           设置读写（deepMerge 默认值）
+    server.ts             服务端生命周期（Vanilla/Fabric/Quilt/Forge/NeoForge 安装、控制台、属性、备份）
+    cloud.ts              云同步（WebDAV 完整快照 / GitHub Gist 仅配置；快照脱敏）
+    exporter.ts           实例导出（MultiMC/Prism、Modrinth .mrpack、完整 ZIP）
+    content.ts            资源包/光影/截图/世界管理（开关写 options.txt / iris.properties）
+    update.ts             启动器更新检查（GitHub Release，只提示不自动安装）
+    crash.ts backup.ts modrinth.ts modpack.ts modhealth.ts migrate.ts diagnostic.ts logs.ts settings.ts
     ipc.ts                全部 IPC 通道注册（唯一对外接口）
 src/                      渲染进程（React 18 + Vite）
   App.tsx                 侧边栏路由 + 无边框窗口按钮（win:minimize 等）
-  lib/api.ts              类型安全包装（与 preload 通道一一对应）
+  lib/api.ts              类型安全包装（与 preload 通道一一对应）+ mediaUrl
   global.css              设计系统（纯手写 CSS 变量，无 UI 库）
-  pages/                  9 页：Home Instances Mods Backups Crash Migrate Accounts Logs Settings
+  pages/                  12 页：Home Instances Servers Mods Content Backups Crash Migrate Accounts Cloud Logs Settings
 ```
 
 **数据目录布局**（`.mcl-data/` 开发态 / `%APPDATA%/mcl` 打包态）：
-`shared/libraries|assets|versions` 全实例共享零拷贝；`instances/<id>/game/` 每实例完全隔离（saves/mods/config）；`java/` 自管 JRE；`cache/` 下载 .part；`backups/` 存档；`logs/` 日志。
+`shared/libraries|assets|versions` 全实例共享零拷贝；`instances/<id>/game/` 每实例完全隔离（saves/mods/config）；`servers/<id>/` 每个服务端独立（世界/模组/backups）；`java/` 自管 JRE；`cache/` 下载 .part；`backups/` 存档；`logs/` 日志。
 
 ## 5. 架构约束（不许破坏）
 
@@ -91,6 +95,10 @@ src/                      渲染进程（React 18 + Vite）
 | 下载源/镜像 | `electron/services/net.ts` 的 `mapToMirror` |
 | 启动参数/内存预设 | `electron/services/minecraft.ts` 的 `MEMORY_PRESETS` 与 args 组装 |
 | 模组来源/更新 | `electron/services/modrinth.ts`；体检逻辑 `modhealth.ts` |
+| 资源包/光影/世界 | `electron/services/content.ts` + `src/pages/Content.tsx` |
+| 开服/服务端 | `electron/services/server.ts` + `src/pages/Servers.tsx` |
+| 云同步 | `electron/services/cloud.ts` + `src/pages/Cloud.tsx`（凭据只存本机设置） |
+| 实例导出 | `electron/services/exporter.ts` + `Instances.tsx` 的导出弹窗 |
 | 设置项（必须带 Tip 解释）| `electron/services/settings.ts` 默认值 + `Settings.tsx` 行（每项配 `<Tip>`）|
 | 数据目录布局 | `electron/services/paths.ts`（改这里要同步 README 目录结构图）|
 
@@ -108,8 +116,9 @@ git add -A && git commit -m "feat: ..."   # 或 fix: / docs: / refactor:
 
 ## 9. 已知限制与待办（动手前知道自己在什么上面）
 
-- ❌ **未真正实测运行**：游戏下载/启动/崩溃链路从未执行过。Forge/NeoForge 静默安装器（`ensureForgeLikeInstalled`）风险最高。
-- 离线皮肤：官方限制，仅自己可见；微软账号走官方皮肤。
-- Forge 系启动未统一进共享库布局（安装到实例 `game/libraries` 后按 `versions/` 读取）。
-- 无云同步（路线图）、无代码签名、Windows 优先。
+- ❌ **未真正实测运行**：游戏下载/启动/崩溃链路、服务端安装（尤其 Forge/NeoForge 静默安装器）、WebDAV/Gist 同步均未执行过。逻辑写完但未经真机验证，报错优先看日志与控制台输出。
+- 离线皮肤：仅启动器界面可见，其他玩家看不到（离线模式设计）；披风没有公开上传 API，MCL 只做本地预览。微软账号皮肤上传走官方 Mojang API。
+- Forge 系客户端启动未统一进共享库布局（安装到实例 `game/libraries` 后按 `versions/` 读取）；服务端 Forge 系使用官方 `run.sh/run.bat` 参数文件方式启动。
+- 云同步：WebDAV 兼容性取决于服务商（坚果云/Nextcloud 已按标准实现，未实测）；Gist 只同步配置，不传存档与模组。
+- 无代码签名、Windows 优先；构建产物未附带安装器（需自行 electron-builder）。
 - `npm run dev` 依赖手动修好的 electron 二进制（见 §3.1）。
