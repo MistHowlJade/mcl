@@ -247,6 +247,18 @@ export function collectLibraries(resolved: Record<string, any>): LibraryDownload
         isNative: true,
         nativeKey: wanted,
       });
+    } else if (lib.natives) {
+      // 旧版 json（如 1.7.10）：只有 natives 映射，没有 downloads.classifiers，
+      // 需要按 maven classifier 自行拼出 natives jar，否则游戏会缺 lwjgl dll 直接崩。
+      const osKey = process.platform === 'win32' ? 'windows' : process.platform === 'darwin' ? 'osx' : 'linux';
+      const classifier = lib.natives[osKey];
+      if (typeof classifier === 'string' && classifier) {
+        const rel = mavenToPath(`${name}:${classifier}`);
+        const base = typeof lib.url === 'string' && lib.url
+          ? String(lib.url).replace(/\/+$/, '')
+          : OFFICIAL.libraries;
+        out.push({ name, url: `${base}/${rel}`, path: rel, isNative: true, nativeKey: wanted });
+      }
     }
   }
   return out;

@@ -82,7 +82,7 @@ export default function Home({ onNavigate, onLaunchFail }: { onNavigate: (p: Pag
     setCrash(null);
     setLogs([]);
     setProgress(null);
-    setLaunchState({ instanceId: instance.id, status: 'preparing', message: '正在准备…' });
+    // 状态完全由主进程的 launch:status 事件驱动，避免"已有实例在运行"被拒绝后界面卡在准备中
     await api.launchStart(instance.id);
   };
 

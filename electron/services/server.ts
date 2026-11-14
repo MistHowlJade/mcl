@@ -417,14 +417,24 @@ export async function prepareServer(id: string): Promise<ServerInfo> {
         const fullId = forgeId.includes('-') ? forgeId : `${cfg.mcVersion}-${forgeId}`;
         installerUrl = `https://maven.minecraftforge.net/net/minecraftforge/forge/${fullId}/forge-${fullId}-installer.jar`;
       } else {
+        // NeoForge 1.20.1 沿用 Forge 47.x，发布坐标为 net.neoforged:forge，版本带 1.20.1- 前缀
+        const neoForgeLegacy = cfg.mcVersion === '1.20.1';
         if (!forgeId) {
-          const versions = await mavenVersions('https://maven.neoforged.net/releases/net/neoforged/neoforge/maven-metadata.xml');
+          const metaUrl = neoForgeLegacy
+            ? 'https://maven.neoforged.net/releases/net/neoforged/forge/maven-metadata.xml'
+            : 'https://maven.neoforged.net/releases/net/neoforged/neoforge/maven-metadata.xml';
+          const versions = await mavenVersions(metaUrl);
           const prefix = neoForgePrefix(cfg.mcVersion);
           const matching = versions.filter(v => v.startsWith(prefix));
           if (!matching.length) throw new Error(`找不到适用于 ${cfg.mcVersion} 的 NeoForge 版本，请手动指定加载器版本。`);
           forgeId = matching[matching.length - 1];
         }
-        installerUrl = `https://maven.neoforged.net/releases/net/neoforged/neoforge/${forgeId}/neoforge-${forgeId}-installer.jar`;
+        if (neoForgeLegacy) {
+          forgeId = forgeId.startsWith(`${cfg.mcVersion}-`) ? forgeId : `${cfg.mcVersion}-${forgeId}`;
+          installerUrl = `https://maven.neoforged.net/releases/net/neoforged/forge/${forgeId}/forge-${forgeId}-installer.jar`;
+        } else {
+          installerUrl = `https://maven.neoforged.net/releases/net/neoforged/neoforge/${forgeId}/neoforge-${forgeId}-installer.jar`;
+        }
       }
       if (!cfg.loaderVersion) updateServer(id, { loaderVersion: forgeId });
       const installerPath = path.join(dir, `.${loader}-installer.jar`);
@@ -647,11 +657,22 @@ export function listServerBackups(id: string): ServerBackupInfo[] {
   }).sort((a, b) => b.createdAt - a.createdAt);
 }
 
+/** level-name 可被手动改成 ../xxx，必须校验解析后的世界目录仍在服务器目录内 */
+function resolveServerWorldDir(id: string, worldName: string): string {
+  const serverDir = path.resolve(paths.serverDir(id));
+  const worldDir = path.resolve(serverDir, worldName);
+  if (worldDir !== serverDir && !worldDir.startsWith(serverDir + path.sep)) {
+    throw new Error(`level-name「${worldName}」指向了服务器目录之外，请先在服务器属性里改成正常的世界名。`);
+  }
+  if (worldDir === serverDir) throw new Error('level-name 不能是服务器根目录，请改成具体世界名。');
+  return worldDir;
+}
+
 export function backupServerWorld(id: string, name?: string): ServerBackupInfo {
-  const cfg = readConfig(id);
+  readConfig(id);
   const props = readServerProperties(id);
   const worldName = props['level-name'] || 'world';
-  const worldDir = path.join(paths.serverDir(id), worldName);
+  const worldDir = resolveServerWorldDir(id, worldName);
   if (!fs.existsSync(worldDir)) throw new Error(`找不到世界目录：${worldName}`);
   const dir = paths.serverBackupsDir(id);
   fs.mkdirSync(dir, { recursive: true });
@@ -665,12 +686,12 @@ export function backupServerWorld(id: string, name?: string): ServerBackupInfo {
 export function restoreServerWorld(id: string, backupName: string): { restoredFiles: number } {
   const rt = runtimeOf(id);
   if (rt.child) throw new Error('请先停止服务器再恢复世界备份');
-  const cfg = readConfig(id);
+  readConfig(id);
   const props = readServerProperties(id);
   const worldName = props['level-name'] || 'world';
   const zipPath = path.join(paths.serverBackupsDir(id), `${path.basename(backupName)}.zip`);
   if (!fs.existsSync(zipPath)) throw new Error('备份文件不存在');
-  const worldDir = path.join(paths.serverDir(id), worldName);
+  const worldDir = resolveServerWorldDir(id, worldName);
   const files = zipExtractAll(fs.readFileSync(zipPath), worldDir);
   return { restoredFiles: files.length };
 }

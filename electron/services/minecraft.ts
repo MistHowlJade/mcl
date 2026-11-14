@@ -252,11 +252,16 @@ async function ensureForgeLikeInstalled(gameDir: string, loader: 'forge' | 'neof
 
   let forgeId: string;
   let installerUrl: string;
+  // NeoForge 1.20.1 沿用 Forge 的 47.x 版本号，发布坐标为 net.neoforged:forge
+  const neoForgeLegacy = loader === 'neoforge' && mcVersion === '1.20.1';
   if (loaderVersion) {
     // 已指定版本：不请求元数据，直接下载安装器
     if (loader === 'forge') {
       forgeId = loaderVersion.includes('-') ? loaderVersion : `${mcVersion}-${loaderVersion}`;
       installerUrl = `https://maven.minecraftforge.net/net/minecraftforge/forge/${forgeId}/forge-${forgeId}-installer.jar`;
+    } else if (neoForgeLegacy) {
+      forgeId = loaderVersion.startsWith(`${mcVersion}-`) ? loaderVersion : `${mcVersion}-${loaderVersion}`;
+      installerUrl = `https://maven.neoforged.net/releases/net/neoforged/forge/${forgeId}/forge-${forgeId}-installer.jar`;
     } else {
       forgeId = loaderVersion;
       installerUrl = `https://maven.neoforged.net/releases/net/neoforged/neoforge/${forgeId}/neoforge-${forgeId}-installer.jar`;
@@ -267,6 +272,12 @@ async function ensureForgeLikeInstalled(gameDir: string, loader: 'forge' | 'neof
     if (matching.length === 0) throw new Error(`Maven 中找不到适用于 ${mcVersion} 的 Forge 版本，请在创建实例时手动指定加载器版本。`);
     forgeId = matching[matching.length - 1];
     installerUrl = `https://maven.minecraftforge.net/net/minecraftforge/forge/${forgeId}/forge-${forgeId}-installer.jar`;
+  } else if (neoForgeLegacy) {
+    const versions = await fetchMavenVersions('https://maven.neoforged.net/releases/net/neoforged/forge/maven-metadata.xml');
+    const matching = versions.filter(v => v.startsWith(`${mcVersion}-`));
+    if (matching.length === 0) throw new Error(`NeoForge 中找不到适用于 ${mcVersion} 的版本，请在创建实例时手动指定加载器版本。`);
+    forgeId = matching[matching.length - 1];
+    installerUrl = `https://maven.neoforged.net/releases/net/neoforged/forge/${forgeId}/forge-${forgeId}-installer.jar`;
   } else {
     const versions = await fetchMavenVersions('https://maven.neoforged.net/releases/net/neoforged/neoforge/maven-metadata.xml');
     const prefix = neoForgePrefix(mcVersion);

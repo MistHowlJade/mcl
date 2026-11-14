@@ -108,11 +108,13 @@ export function pruneOldBackups(instanceId: string): void {
 
 export function deleteBackup(id: string): void {
   // id 形如 auto-1234，需要找到实例目录 — 在所有实例备份目录下查找
+  const safeId = path.basename(String(id ?? ''));
+  if (!safeId) return;
   const root = paths.backupsDir();
   if (!fs.existsSync(root)) return;
   for (const sub of fs.readdirSync(root)) {
-    const zip = path.join(root, sub, `${id}.zip`);
-    const meta = path.join(root, sub, `${id}.json`);
+    const zip = path.join(root, sub, `${safeId}.zip`);
+    const meta = path.join(root, sub, `${safeId}.json`);
     fs.rmSync(zip, { force: true });
     fs.rmSync(meta, { force: true });
   }
@@ -120,7 +122,8 @@ export function deleteBackup(id: string): void {
 
 export async function restoreBackup(backupId: string, instanceId: string): Promise<{ restoredFiles: number }> {
   const dir = paths.instanceBackupsDir(instanceId);
-  const zipPath = path.join(dir, `${backupId}.zip`);
+  const safeId = path.basename(String(backupId ?? ''));
+  const zipPath = path.join(dir, `${safeId}.zip`);
   if (!fs.existsSync(zipPath)) throw new Error('备份文件不存在');
   // 恢复前先自动备份一次当前状态（痛点 #29：后悔药）
   await createBackup(instanceId, 'pre-restore', '恢复前自动备份');

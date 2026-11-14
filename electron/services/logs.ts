@@ -37,8 +37,13 @@ export function readLog(name: string, instanceId?: string | null, maxBytes = 102
   let full: string | null = null;
   if (name === 'latest.log (游戏)' && instanceId) {
     full = path.join(paths.gameDir(instanceId), 'logs', 'latest.log');
-  } else if (fs.existsSync(path.join(paths.logsDir(), name))) {
-    full = path.join(paths.logsDir(), name);
+  } else {
+    // 只允许读取 logs 目录下的 .log/.txt，防止通过 ../ 读取任意文件
+    const safe = path.basename(String(name ?? ''));
+    if (!/\.(log|txt)$/i.test(safe)) throw new Error('日志不存在');
+    const candidate = path.join(paths.logsDir(), safe);
+    if (!fs.existsSync(candidate)) throw new Error('日志不存在');
+    full = candidate;
   }
   if (!full) throw new Error('日志不存在');
   const stat = fs.statSync(full);
