@@ -94,17 +94,6 @@ const RULES: CrashRule[] = [
     ],
   },
   {
-    id: 'no-such-method',
-    pattern: /NoSuchMethodError|NoSuchFieldError|ClassNotFoundException|NoClassDefFoundError/,
-    title: '模组或加载器版本不匹配',
-    summary: '代码里调用了一个"不存在的方法/字段/类"——几乎总是：模组版本与 Minecraft、Forge/Fabric、或另一个模组的 API 对不上。',
-    detail: 'NoSuchMethodError 最典型的是：1) 模组用了某 API 的新版本但当前是旧版；2) Java 8 低于 8u291 调用 TLS 1.3 相关方法失败（报的错长得不像网络问题，其实是网络问题）。',
-    severity: 'medium',
-    fixes: [
-      { id: 'open-mods-nsm', label: '打开 mods 文件夹核对版本', description: '对照报错里提到的类名（如 net.fabricmc.fabric.*）确认模组版本与 MC 版本匹配。', action: 'fix:openModsFolder', severity: 'medium' },
-    ],
-  },
-  {
     id: 'tls-too-old',
     pattern: /SSLHandshakeException|NoSuchMethodError.*SSL|TLSv1\.3|TLS 1\.3/i,
     title: 'Java 8 版本过低，不支持 TLS 1.3',
@@ -113,6 +102,17 @@ const RULES: CrashRule[] = [
     severity: 'high',
     fixes: [
       { id: 'switch-java-tls', label: '切换到受支持的 Java', description: '升级 Java 8 到 8u291 以上，或让 MCL 自动选择更新的 Java。', action: 'fix:switchJava', severity: 'high' },
+    ],
+  },
+  {
+    id: 'no-such-method',
+    pattern: /NoSuchMethodError|NoSuchFieldError|ClassNotFoundException|NoClassDefFoundError/,
+    title: '模组或加载器版本不匹配',
+    summary: '代码里调用了一个"不存在的方法/字段/类"——几乎总是：模组版本与 Minecraft、Forge/Fabric、或另一个模组的 API 对不上。',
+    detail: 'NoSuchMethodError 最典型的是：1) 模组用了某 API 的新版本但当前是旧版；2) 加载器与游戏版本不匹配。请对照报错里的类名核对 mods 目录。',
+    severity: 'medium',
+    fixes: [
+      { id: 'open-mods-nsm', label: '打开 mods 文件夹核对版本', description: '对照报错里提到的类名（如 net.fabricmc.fabric.*）确认模组版本与 MC 版本匹配。', action: 'fix:openModsFolder', severity: 'medium' },
     ],
   },
   {

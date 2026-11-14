@@ -62,7 +62,8 @@ export default function Home({ onNavigate, onLaunchFail }: { onNavigate: (p: Pag
       onLaunchFail(e.error);
       setProgress(null);
       setLogs(prev => [...prev, `[mcl] 启动失败：${e.error}`]);
-      setLaunchState(prev => ({ ...prev, status: 'idle', message: e.error }));
+      // 状态由主进程的 launch:status 事件决定：真正失败会推 idle，
+      // 「已有实例在运行」被拒绝时保持 running，不能在这里强行覆盖
     });
     return () => { [offStatus, offProgress, offLog, offCrash, offExit, offFail].forEach(f => f()); };
   }, []);

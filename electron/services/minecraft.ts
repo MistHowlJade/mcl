@@ -22,6 +22,15 @@ import { fetchJson } from './net';
 import { LoaderType, MemoryPreset } from '../shared/types';
 
 export const launchEvents = new EventEmitter();
+
+/** 已有实例在启动/运行时拒绝二次启动（用于区分"本次启动失败"与"别的实例正在运行"） */
+export class LaunchBusyError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'LaunchBusyError';
+  }
+}
+
 export const launchState = {
   instanceId: null as string | null,
   status: 'idle' as 'idle' | 'preparing' | 'downloading' | 'launching' | 'running' | 'crashed' | 'exited',
@@ -304,8 +313,11 @@ export async function launchInstance(instanceId: string, options: LaunchOptions 
   // 并发保护：已有实例在启动/运行中时拒绝二次启动（防双进程、防误杀正在运行的游戏）
   const busyStates = ['preparing', 'downloading', 'launching', 'running'];
   if (busyStates.includes(launchState.status) && launchState.instanceId) {
-    throw new Error('已有实例在启动/运行中，请等待其退出后再试。');
+    throw new LaunchBusyError('已有实例在启动/运行中，请等待其退出后再试。');
   }
+  // 从这里开始本次启动接管状态；后续任何失败都由 IPC 层回退为 idle
+  launchState.instanceId = instanceId;
+  launchState.pid = null;
   const gameLogSafe = (s: string) => s.replace(/[^a-zA-Z0-9_-]/g, '');
   // 本次启动唯一日志文件（避免跨启动累积导致旧错误被当成本次错误，见 issue #9）
   const launchLogName = `launch-${gameLogSafe(instanceId)}-${startedAt}.log`;

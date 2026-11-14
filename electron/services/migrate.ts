@@ -47,7 +47,8 @@ function scanInstances(root: string): FoundInstance[] {
       const instDir = path.join(prismInstances, e.name);
       const candidate = [path.join(instDir, '.minecraft'), path.join(instDir, 'minecraft')].find(looksLikeGameDir);
       if (candidate) {
-        out.push({ name: e.name, gameDir: candidate, mcVersion: readPackVersion(instDir), loader: readPackLoader(instDir), loaderVersion: null });
+        const pack = readPackLoaderInfo(instDir);
+        out.push({ name: e.name, gameDir: candidate, mcVersion: readPackVersion(instDir), loader: pack.loader, loaderVersion: pack.loaderVersion });
       } else if (looksLikeGameDir(instDir)) {
         out.push({ name: e.name, gameDir: instDir, mcVersion: null, loader: 'vanilla', loaderVersion: null });
       }
@@ -90,18 +91,25 @@ function readPackVersion(instDir: string): string | null {
   return null;
 }
 
-function readPackLoader(instDir: string): LoaderType {
+/** Prism/MultiMC：从 mmc-pack.json 的组件读取加载器类型与精确版本 */
+function readPackLoaderInfo(instDir: string): { loader: LoaderType; loaderVersion: string | null } {
   try {
-    if (fs.existsSync(path.join(instDir, 'mmc-pack.json'))) {
-      const json = JSON.parse(fs.readFileSync(path.join(instDir, 'mmc-pack.json'), 'utf8'));
-      const ids = (json?.components ?? []).map((c: any) => String(c?.uid ?? ''));
-      if (ids.includes('net.fabricmc.fabric-loader')) return 'fabric';
-      if (ids.includes('org.quiltmc.quilt-loader')) return 'quilt';
-      if (ids.includes('net.minecraftforge')) return 'forge';
-      if (ids.includes('net.neoforged')) return 'neoforge';
+    const file = path.join(instDir, 'mmc-pack.json');
+    if (fs.existsSync(file)) {
+      const json = JSON.parse(fs.readFileSync(file, 'utf8'));
+      const components = (json?.components ?? []) as Array<{ uid?: string; version?: string }>;
+      const find = (uid: string) => components.find(c => String(c?.uid ?? '') === uid);
+      const fabric = find('net.fabricmc.fabric-loader');
+      if (fabric) return { loader: 'fabric', loaderVersion: fabric.version ?? null };
+      const quilt = find('org.quiltmc.quilt-loader');
+      if (quilt) return { loader: 'quilt', loaderVersion: quilt.version ?? null };
+      const forge = find('net.minecraftforge');
+      if (forge) return { loader: 'forge', loaderVersion: forge.version ?? null };
+      const neo = find('net.neoforged');
+      if (neo) return { loader: 'neoforge', loaderVersion: neo.version ?? null };
     }
   } catch { /* ignore */ }
-  return 'vanilla';
+  return { loader: 'vanilla', loaderVersion: null };
 }
 
 /** 按语义版本比较两个版本号（越大越新） */

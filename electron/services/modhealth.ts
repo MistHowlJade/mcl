@@ -113,14 +113,13 @@ export function checkModHealth(instanceId: string, gameDir: string, currentLoade
 
 /** 应用体检修复：把问题 jar 重命名为 .jar.disabled */
 export function applyModHealthFix(instanceId: string, gameDir: string, target: string): boolean {
-  const modsDir = path.join(gameDir, 'mods');
-  const candidates = [target, path.basename(target)];
-  for (const name of candidates) {
-    const full = path.join(modsDir, name);
-    if (fs.existsSync(full) && full.endsWith('.jar')) {
-      fs.renameSync(full, full + '.disabled');
-      return true;
-    }
+  const modsDir = path.resolve(gameDir, 'mods');
+  // 只取文件名并做目录边界校验，防止 target 携带 ../ 逃逸 mods 目录
+  const full = path.resolve(modsDir, path.basename(target));
+  if (!full.startsWith(modsDir + path.sep)) return false;
+  if (fs.existsSync(full) && full.endsWith('.jar')) {
+    fs.renameSync(full, full + '.disabled');
+    return true;
   }
   return false;
 }

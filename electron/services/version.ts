@@ -3,7 +3,7 @@
  */
 import * as fs from 'fs';
 import * as path from 'path';
-import { fetchJson, mapToMirror, OFFICIAL } from './net';
+import { fetchJson, lastHealthCheck, mapToMirror, OFFICIAL } from './net';
 import { assetsIndexDir, assetsObjectsDir, librariesDir, versionsDir } from './paths';
 import { VersionManifestEntry, DownloadSource } from '../shared/types';
 import { readJson, writeJson } from './store';
@@ -64,10 +64,9 @@ export async function getVersionManifest(source: DownloadSource, customMirror?: 
 
 /** auto 模式实际生效源：读最近测速缓存（无测速或过期则默认 BMCLAPI，mirror:test 可刷新） */
 export function getAutoSource(): 'bmclapi' | 'official' {
-  // 避免循环依赖：直接读 health 文件
+  // 走 net.ts 的统一健康缓存，避免路径各写一份导致读不到测速结果
   try {
-    const healthPath = path.join(versionsDir(), '..', 'cache', 'mirror-health.json');
-    const health = readJson<{ at: number; latencies: { source: 'official' | 'bmclapi'; ok: boolean; latencyMs: number }[] } | null>(healthPath, null);
+    const health = lastHealthCheck();
     if (health && Date.now() - health.at < 10 * 60 * 1000) {
       const okList = health.latencies.filter(l => l.ok);
       if (okList.length === 2) return okList[0].latencyMs <= okList[1].latencyMs ? okList[0].source : okList[1].source;
