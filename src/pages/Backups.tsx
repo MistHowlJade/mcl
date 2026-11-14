@@ -72,11 +72,11 @@ export default function Backups() {
           <div className="list">
             {backups.map(b => (
               <div key={b.id} className="list-row">
-                <div style={{ fontSize: 20 }}>{b.kind === 'auto' ? '⏰' : b.kind === 'pre-restore' ? '🛟' : '💾'}</div>
+                <div style={{ fontSize: 20 }}>{b.kind === 'auto' ? '⏰' : b.kind === 'pre-restore' ? '🛟' : b.kind === 'world' ? '🌍' : '💾'}</div>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div className="row" style={{ gap: 8 }}>
                     <strong style={{ fontSize: 13 }}>{b.name}</strong>
-                    <span className="tag">{b.kind === 'auto' ? '自动' : b.kind === 'pre-restore' ? '恢复前' : '手动'}</span>
+                    <span className="tag">{b.kind === 'auto' ? '自动' : b.kind === 'pre-restore' ? '恢复前' : b.kind === 'world' ? '世界' : '手动'}</span>
                   </div>
                   <div className="faint">{timeAgo(b.createdAt)} · {formatBytes(b.sizeBytes)} · {b.worldNames.length > 0 ? `世界：${b.worldNames.slice(0, 3).join('、')}${b.worldNames.length > 3 ? '…' : ''}` : '未知世界'}</div>
                 </div>
@@ -93,7 +93,9 @@ export default function Backups() {
       {restoreTarget && (
         <ConfirmModal
           title="恢复备份"
-          message={`将用「${restoreTarget.name}」覆盖当前存档。\n\nMCL 会先把当前存档再自动备份一次（恢复前备份），所以这一步不会让你丢东西。`}
+          message={restoreTarget.kind === 'world'
+            ? `将把「${restoreTarget.name}」还原到 saves/${restoreTarget.worldNames[0] ?? '对应世界'}。\n\n如果当前已有同名世界，会被覆盖；MCL 会先把当前存档整体再备份一次。`
+            : `将用「${restoreTarget.name}」覆盖当前存档。\n\nMCL 会先把当前存档再自动备份一次（恢复前备份），所以这一步不会让你丢东西。`}
           confirmText="恢复"
           onCancel={() => setRestoreTarget(null)}
           onConfirm={() => {

@@ -275,12 +275,20 @@ export function importContent(instanceId: string, kind: ContentKind, sourcePaths
     try {
       if (!fs.existsSync(src)) { skipped.push(src); continue; }
       const stat = fs.statSync(src);
-      if (kind === 'worlds' && !stat.isDirectory()) {
-        if (/\.zip$/i.test(src)) { importWorldZip(instanceId, src); imported++; }
-        else skipped.push(src);
+      if (kind === 'worlds') {
+        if (!stat.isDirectory()) {
+          if (/\.zip$/i.test(src)) { importWorldZip(instanceId, src); imported++; }
+          else skipped.push(src);
+          continue;
+        }
+        // 世界文件夹：必须含 level.dat，避免把普通文件夹塞进 saves
+        if (!fs.existsSync(path.join(src, 'level.dat'))) { skipped.push(src); continue; }
+        const worldDest = uniqueDir(destDir, safeName(path.basename(src)));
+        fs.cpSync(src, worldDest, { recursive: true });
+        imported++;
         continue;
       }
-      if (kind !== 'worlds' && stat.isDirectory()) {
+      if (stat.isDirectory()) {
         // 资源包/光影包目录：整体复制
         const dest = uniqueTarget(destDir, safeName(path.basename(src)));
         fs.cpSync(src, dest, { recursive: true });

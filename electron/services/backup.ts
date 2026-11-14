@@ -8,7 +8,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as paths from './paths';
 import { BackupInfo } from '../shared/types';
-import { zipFromDir, zipExtractAll } from './zip';
+import { zipExtractAll, zipList } from './zip';
 import { getSettings } from './settings';
 import { getInstance } from './instances';
 
@@ -126,7 +126,24 @@ export async function restoreBackup(backupId: string, instanceId: string): Promi
   await createBackup(instanceId, 'pre-restore', '恢复前自动备份');
   const gameDir = paths.gameDir(instanceId);
   const buf = fs.readFileSync(zipPath);
-  // 只允许还原到白名单子目录
-  const written = zipExtractAll(buf, gameDir, undefined);
+
+  // 世界单独备份（内容管理的「备份世界」/删除前自动备份）是“世界目录内部”打包，
+  // 需要还原到 saves/<世界名>/；完整存档备份则直接还原到游戏根目录。
+  let targetDir = gameDir;
+  let meta: { kind?: string; worldNames?: string[] } = {};
+  const metaPath = zipPath.replace(/\.zip$/, '.json');
+  try { if (fs.existsSync(metaPath)) meta = JSON.parse(fs.readFileSync(metaPath, 'utf8')); } catch { /* ignore */ }
+  if (meta.kind === 'world') {
+    const entries = zipList(buf).map(e => e.name.replace(/\\/g, '/'));
+    const alreadyPrefixed = entries.some(n => n === 'saves' || n.startsWith('saves/'));
+    if (!alreadyPrefixed) {
+      const worldName = path.basename(meta.worldNames?.[0] || `restored-${backupId}`);
+      targetDir = path.join(gameDir, 'saves', worldName);
+      fs.mkdirSync(targetDir, { recursive: true });
+    }
+  }
+
+  // 只允许还原到白名单子目录（zipExtractAll 内部还会做目录穿越防护）
+  const written = zipExtractAll(buf, targetDir, undefined);
   return { restoredFiles: written.length };
 }

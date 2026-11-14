@@ -11,9 +11,8 @@ import { execFile } from 'child_process';
 import { javaDir } from './paths';
 import { zipExtractAll } from './zip';
 import { fetchJson, USER_AGENT } from './net';
+import { createProxiedRequest } from './proxy';
 import { JavaInfo } from '../shared/types';
-import * as http from 'http';
-import * as https from 'https';
 
 /** 根据 MC 版本推荐 Java 主版本 */
 export function recommendedJavaMajor(mcVersion: string): number {
@@ -187,33 +186,36 @@ export async function getAdoptiumJreUrl(major: number): Promise<AdoptiumBinary |
   }
 }
 
-async function downloadToFile(url: string, dest: string, onProgress?: (n: number, total: number) => void): Promise<void> {
+async function downloadToFile(url: string, dest: string, onProgress?: (n: number, total: number) => void, redirects = 0): Promise<void> {
+  if (redirects > 5) throw new Error('Java 下载重定向过多');
+  const req = await createProxiedRequest(url, {
+    headers: { 'User-Agent': USER_AGENT },
+    timeoutMs: 60000,
+  });
   await new Promise<void>((resolve, reject) => {
-    const doGet = (u: string, redirects: number) => {
-      const client = u.startsWith('http:') ? http : https;
-      const req = client.request(u, { headers: { 'User-Agent': USER_AGENT }, timeout: 30000 }, (res) => {
-        const status = res.statusCode ?? 0;
-        if ([301, 302, 307, 308].includes(status) && res.headers.location) {
-          res.resume();
-          if (redirects > 5) { reject(new Error('重定向过多')); return; }
-          doGet(new URL(res.headers.location, u).toString(), redirects + 1);
-          return;
-        }
-        if (status >= 400) { res.resume(); reject(new Error(`HTTP ${status}：${u}`)); return; }
-        const total = parseInt(res.headers['content-length'] ?? '0', 10);
-        let received = 0;
-        const out = fs.createWriteStream(dest);
-        res.on('data', (chunk: Buffer) => { received += chunk.length; onProgress?.(received, total); });
-        res.pipe(out);
-        out.on('finish', () => { out.close(); resolve(); });
-        out.on('error', reject);
-        res.on('error', reject);
-      });
-      req.on('timeout', () => req.destroy(new Error('Java 下载超时')));
-      req.on('error', reject);
-      req.end();
-    };
-    doGet(url, 0);
+    req.once('response', (res) => {
+      const status = res.statusCode ?? 0;
+      if ([301, 302, 307, 308].includes(status) && res.headers.location) {
+        res.resume();
+        const next = new URL(res.headers.location, url).toString();
+        downloadToFile(next, dest, onProgress, redirects + 1).then(resolve, reject);
+        return;
+      }
+      if (status >= 400) { res.resume(); reject(new Error(`HTTP ${status}：${url}`)); return; }
+      const total = parseInt(res.headers['content-length'] ?? '0', 10);
+      let received = 0;
+      const out = fs.createWriteStream(dest);
+      res.on('data', (chunk: Buffer) => { received += chunk.length; onProgress?.(received, total); });
+      res.on('error', (e) => { out.destroy(); reject(e); });
+      out.on('error', reject);
+      out.on('finish', () => { out.close(); resolve(); });
+      res.pipe(out);
+    });
+    req.once('error', reject);
+    req.end();
+  }).catch((e) => {
+    try { fs.rmSync(dest, { force: true }); } catch { /* ignore */ }
+    throw e;
   });
 }
 
