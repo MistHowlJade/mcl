@@ -66,7 +66,13 @@ export function checkModHealth(instanceId: string, gameDir: string, currentLoade
   if (!fs.existsSync(modsDir)) return { instanceId, scanned: 0, issues };
 
   const jars = fs.readdirSync(modsDir).filter(f => f.endsWith('.jar'));
-  const metas = jars.map(f => ({ fileName: f, path: path.join(modsDir, f), stat: fs.statSync(path.join(modsDir, f)), meta: readJarModMeta(path.join(modsDir, f)) }));
+  const metas: Array<{ fileName: string; path: string; stat: fs.Stats; meta: ModMeta }> = [];
+  for (const f of jars) {
+    const full = path.join(modsDir, f);
+    try {
+      metas.push({ fileName: f, path: full, stat: fs.statSync(full), meta: readJarModMeta(full) });
+    } catch { /* 文件可能在体检过程中被删除 */ }
+  }
 
   // 1) 零字节文件
   for (const m of metas) {

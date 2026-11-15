@@ -167,6 +167,9 @@ export function updateServer(id: string, patch: Partial<ServerConfig>): ServerCo
   };
   if (!Number.isInteger(next.port) || next.port < 1 || next.port > 65535) throw new Error('端口必须是 1–65535 之间的整数');
   next.memoryMB = Number.isFinite(next.memoryMB) ? Math.max(512, Math.min(32768, Math.round(next.memoryMB))) : current.memoryMB;
+  // 名称不能被清空：空名字会让服务器列表和通知里出现空白项
+  const name = String(next.name ?? '').trim();
+  next.name = name ? name.slice(0, 80) : current.name;
   writeJson(paths.serverFile(id), next);
   // 端口同时写进 server.properties，否则启动检查用新端口、服务端实际监听旧端口
   if (next.port !== current.port) {
@@ -335,6 +338,7 @@ function findForgeArgs(dir: string, loader: 'forge' | 'neoforge'): string | null
   if (!fs.existsSync(base)) return null;
   const wanted = process.platform === 'win32' ? 'win_args.txt' : 'unix_args.txt';
   const stack = [base];
+  const found: string[] = [];
   while (stack.length) {
     const current = stack.pop()!;
     let entries: fs.Dirent[] = [];
@@ -342,10 +346,16 @@ function findForgeArgs(dir: string, loader: 'forge' | 'neoforge'): string | null
     for (const e of entries) {
       const full = path.join(current, e.name);
       if (e.isDirectory()) stack.push(full);
-      else if (e.name === wanted) return full;
+      else if (e.name === wanted) found.push(full);
     }
   }
-  return null;
+  if (found.length === 0) return null;
+  // 重装后旧版本库仍在：取最近写入的参数文件，避免启动到上一次安装的版本
+  try {
+    return found.sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs)[0];
+  } catch {
+    return found[0];
+  }
 }
 
 function emitLog(id: string, line: string, source: 'install' | 'server' = 'server'): void {

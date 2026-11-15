@@ -66,8 +66,13 @@ const sanitizeRemoteName = (name: string): string => {
   const base = String(name).replace(/\\/g, '/').split('/').filter(Boolean).pop() ?? '';
   let cleaned = base
     .replace(/[<>:"/\\|?*\u0000-\u001f]/g, '_')
-    .replace(/[. ]+$/g, '')   // Windows 会吞掉结尾的点和空格
-    .slice(0, 120);
+    .replace(/[. ]+$/g, '');   // Windows 会吞掉结尾的点和空格
+  // 截断时保留扩展名，否则超长文件名会丢掉 .jar 导致模组不被加载
+  if (cleaned.length > 150) {
+    const ext = path.extname(cleaned);
+    const keep = Math.max(1, 150 - ext.length);
+    cleaned = cleaned.slice(0, keep).replace(/[. ]+$/g, '') + ext;
+  }
   if (!cleaned || /^\.+$/.test(cleaned)) cleaned = `file-${Date.now()}.jar`;
   if (WINDOWS_RESERVED.test(cleaned)) cleaned = `_${cleaned}`;
   return cleaned;

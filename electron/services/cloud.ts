@@ -8,6 +8,7 @@
  */
 import * as fs from 'fs';
 import * as path from 'path';
+import { app } from 'electron';
 import * as paths from './paths';
 import { readJson, writeJson } from './store';
 import { getSettings, updateSettings } from './settings';
@@ -43,9 +44,10 @@ export interface CloudApplyResult {
 /* ------------------------------ 配置与安全 ------------------------------ */
 
 function sanitizeSettings(settings: AppSettings): AppSettings {
-  const clone = JSON.parse(JSON.stringify(settings)) as AppSettings;
+  const clone = JSON.parse(JSON.stringify(settings ?? {})) as AppSettings;
+  // 快照可能被手工编辑或来自旧版本：缺字段时按空对象处理，不能让合并直接崩掉
   clone.cloud = {
-    ...clone.cloud,
+    ...(clone.cloud ?? {}),
     provider: 'off',
     webdavUrl: '',
     webdavUsername: '',
@@ -55,9 +57,9 @@ function sanitizeSettings(settings: AppSettings): AppSettings {
     lastSyncAt: null,
     lastSyncDirection: null,
   };
-  clone.curseforge.apiKey = '';
+  clone.curseforge = { ...(clone.curseforge ?? {}), apiKey: '' };
   clone.network = {
-    ...clone.network,
+    ...(clone.network ?? {}),
     proxyMode: 'off',
     proxyUrl: '',
     proxyUsername: '',
@@ -68,10 +70,17 @@ function sanitizeSettings(settings: AppSettings): AppSettings {
 
 function webdavEndpoint(): string {
   const s = getSettings().cloud;
-  const base = (s.webdavUrl || '').trim();
-  if (!base) throw new Error('还没有填写 WebDAV 地址（设置 → 云同步）');
-  if (/\/[^/]+\.zip$/i.test(base)) return base;
-  return `${base.replace(/\/+$/, '')}/mcl-snapshot.zip`;
+  const raw = (s.webdavUrl || '').trim();
+  if (!raw) throw new Error('还没有填写 WebDAV 地址（设置 → 云同步）');
+  // 兼容带查询参数/锚点的地址（部分网盘的分享链接会带 token），文件路径必须拼在查询参数前面
+  const hashAt = raw.indexOf('#');
+  const frag = hashAt >= 0 ? raw.slice(hashAt) : '';
+  const noFrag = hashAt >= 0 ? raw.slice(0, hashAt) : raw;
+  const qAt = noFrag.indexOf('?');
+  const query = qAt >= 0 ? noFrag.slice(qAt) : '';
+  const core = qAt >= 0 ? noFrag.slice(0, qAt) : noFrag;
+  if (/\.zip$/i.test(core)) return `${core}${query}${frag}`;
+  return `${core.replace(/\/+$/, '')}/mcl-snapshot.zip${query}${frag}`;
 }
 
 function webdavHeaders(): Record<string, string> {
@@ -111,7 +120,7 @@ function buildManifest(includeSaves: boolean): { manifest: CloudManifest; saveDi
     format: 'mcl-cloud',
     version: 1,
     createdAt: Date.now(),
-    appVersion: '0.1.0',
+    appVersion: app.getVersion(),
     settings: sanitizeSettings(settings),
     instances,
     servers,
@@ -300,14 +309,18 @@ export async function inspectCloud(): Promise<CloudSnapshotInfo> {
 export async function uploadCloud(): Promise<CloudSnapshotInfo> {
   const settings = getSettings();
   if (settings.cloud.provider === 'webdav') {
-    const buf = buildFullSnapshotZip();
+    // 先校验地址再打包（存档快照可能很大，地址没填就别白忙）
     const url = webdavEndpoint();
+    const buf = buildFullSnapshotZip();
     const res = await fetchWithTimeout(url, {
       method: 'PUT',
       headers: { ...webdavHeaders(), 'Content-Type': 'application/zip', 'Content-Length': String(buf.length) },
       body: buf,
       timeoutMs: 120000,
     });
+    if (res.status === 409 || res.status === 404) {
+      throw new Error(`WebDAV 上传失败（HTTP ${res.status}）：目标目录可能不存在。WebDAV 不会自动创建多级目录，请先在网盘里建好文件夹。`);
+    }
     if (res.status >= 400) throw new Error(`WebDAV 上传失败（HTTP ${res.status}）`);
     updateSettings({ cloud: { ...getSettings().cloud, lastSyncAt: Date.now(), lastSyncDirection: 'upload' } });
     return inspectCloud();
@@ -348,7 +361,12 @@ export async function downloadCloud(): Promise<CloudApplyResult> {
     const entries = zipList(buf);
     const manifestEntry = entries.find(e => e.name.replace(/\\/g, '/') === 'mcl-cloud.json');
     if (!manifestEntry) throw new Error('快照里缺少 mcl-cloud.json，文件可能损坏');
-    const manifest = JSON.parse(zipExtractEntry(buf, manifestEntry).toString('utf8')) as CloudManifest;
+    let manifest: CloudManifest;
+    try {
+      manifest = JSON.parse(zipExtractEntry(buf, manifestEntry).toString('utf8')) as CloudManifest;
+    } catch {
+      throw new Error('快照里的 mcl-cloud.json 不是有效 JSON，文件可能已损坏。');
+    }
     const saveArchives = new Map<string, Buffer>();
     for (const entry of entries) {
       const norm = entry.name.replace(/\\/g, '/');
@@ -371,7 +389,12 @@ export async function downloadCloud(): Promise<CloudApplyResult> {
       content = raw.body.toString('utf8');
     }
     if (!content) throw new Error('Gist 文件内容为空');
-    const manifest = JSON.parse(content) as CloudManifest;
+    let manifest: CloudManifest;
+    try {
+      manifest = JSON.parse(content) as CloudManifest;
+    } catch {
+      throw new Error('Gist 里的 mcl-config.json 不是有效 JSON，内容可能已损坏。');
+    }
     const result = applyManifest(manifest);
     updateSettings({ cloud: { ...getSettings().cloud, lastSyncAt: Date.now(), lastSyncDirection: 'download' } });
     return result;

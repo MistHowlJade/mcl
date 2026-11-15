@@ -27,7 +27,9 @@ export default function Home({ onNavigate, onLaunchFail }: { onNavigate: (p: Pag
       const [list, account] = await Promise.all([api.instancesList(), api.accountsActive()]);
       setInstances(list);
       setAccountName(account?.name ?? null);
-      if (!selectedId && list.length > 0) setSelectedId(list[0].id);
+      // 用函数式更新读取最新选中项：退出/崩溃事件里调用的是挂载时的旧闭包，
+      // 直接读 selectedId 会把用户后来切换的实例重置成列表第一个
+      setSelectedId(prev => prev ?? list[0]?.id ?? null);
     } catch (e) {
       toast.toast(e instanceof Error ? e.message : String(e), 'error');
     } finally {

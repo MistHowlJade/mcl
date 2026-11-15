@@ -174,6 +174,9 @@ export default function Servers() {
       setProperties(next);
       setPropDraft(next);
       toast.toast('server.properties 已保存。部分设置需要重启服务器生效。', 'ok');
+      // 端口可能在属性页被改过，服务端会同步 server.json；刷新一次让顶栏/设置页显示一致
+      await refreshDetail();
+      await reloadServers();
     } catch (e) { toast.toast(e instanceof Error ? e.message : String(e), 'error'); }
   };
 
@@ -315,7 +318,7 @@ export default function Servers() {
               )}
               <button className="btn danger" disabled={busyNow || !server.pid} onClick={() => setKillTarget(server)}>强制结束</button>
               <button className="btn" disabled={busyNow} onClick={() => run('prepare', () => api.serverPrepare(server.id), '服务端已重新安装')}>{busy === 'prepare' ? '安装中…' : server.prepared ? '重新安装' : '安装服务端'}</button>
-              <button className="btn" onClick={() => api.serverOpenDir(server.id)}>打开目录</button>
+              <button className="btn" onClick={() => api.serverOpenDir(server.id).catch(e => toast.toast(String(e), 'error'))}>打开目录</button>
               <button className="btn danger" disabled={busyNow} onClick={() => setDeleteTarget(server)}>删除…</button>
             </div>
           </div>
@@ -471,7 +474,7 @@ export default function Servers() {
             <span>我已阅读并同意 Minecraft EULA（会写入 eula.txt，与官方服务器一致）</span>
           </label>
           <div className="row mt" style={{ justifyContent: 'flex-end' }}>
-            <button className="btn small" onClick={() => api.openExternal('https://aka.ms/MinecraftEULA')}>在浏览器打开 EULA ↗</button>
+            <button className="btn small" onClick={() => api.openExternal('https://aka.ms/MinecraftEULA').catch(e => toast.toast(String(e), 'error'))}>在浏览器打开 EULA ↗</button>
           </div>
         </Modal>
       )}

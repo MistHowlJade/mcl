@@ -104,6 +104,13 @@ export default function Settings({ onNavigate }: { onNavigate?: (page: 'cloud') 
     finally { setUpdateDownloading(false); setUpdateProgress(null); }
   };
 
+  const exportDiagnostic = async () => {
+    try {
+      const file = await api.diagnosticExport();
+      if (file) toast.toast(`诊断包已导出：${file}`, 'ok');
+    } catch (e) { toast.toast(e instanceof Error ? e.message : String(e), 'error'); }
+  };
+
   const clearCache = async () => {
     setConfirmClearCache(false);
     setCacheClearing(true);
@@ -383,7 +390,7 @@ export default function Settings({ onNavigate }: { onNavigate?: (page: 'cloud') 
         )}
         {updateInfo?.url && (
           <div className="row mt" style={{ gap: 8, flexWrap: 'wrap' }}>
-            <button className="btn" onClick={() => api.openExternal(updateInfo.url!)}>打开 Release 页面 ↗</button>
+            <button className="btn" onClick={() => api.openExternal(updateInfo.url!).catch(e => toast.toast(String(e), 'error'))}>打开 Release 页面 ↗</button>
             {updateInfo.hasUpdate && updateInfo.assets.length > 0 && (
               <button className="btn primary" onClick={downloadUpdate} disabled={updateDownloading}>
                 {updateDownloading ? '下载中…' : '下载更新包'}
@@ -406,7 +413,7 @@ export default function Settings({ onNavigate }: { onNavigate?: (page: 'cloud') 
           <div className="row mt" style={{ gap: 8 }}>
             <span className="tag green">已下载</span>
             <span className="mono" style={{ fontSize: 12 }}>{downloadedUpdate.fileName}</span>
-            <button className="btn small" onClick={() => api.appRevealFile(downloadedUpdate.filePath)}>在文件夹中显示</button>
+            <button className="btn small" onClick={() => api.appRevealFile(downloadedUpdate.filePath).catch(e => toast.toast(String(e), 'error'))}>在文件夹中显示</button>
           </div>
         )}
         <p className="faint mt">MCL 只把更新包下载到系统「下载」文件夹，不会自动替换程序文件、也不会静默安装——安装与否由你决定。</p>
@@ -419,7 +426,7 @@ export default function Settings({ onNavigate }: { onNavigate?: (page: 'cloud') 
           <div className="label">数据目录<Tip text="实例、共享库、Java、备份与日志都在这里。便携模式：exe 同目录放 portable.txt 后数据会放到 exe 旁的 mcl-data/。" /></div>
           <div className="control">
             <span className="mono" style={{ maxWidth: 420, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={dataDir}>{dataDir || '…'}</span>
-            {dataDir && <button className="btn small" onClick={() => api.openPath(dataDir)}>打开</button>}
+            {dataDir && <button className="btn small" onClick={() => api.openPath(dataDir).catch(e => toast.toast(String(e), 'error'))}>打开</button>}
           </div>
         </div>
         <div className="setting-row">
@@ -441,9 +448,9 @@ export default function Settings({ onNavigate }: { onNavigate?: (page: 'cloud') 
           <div><div className="faint">游戏本体</div><div style={{ fontWeight: 700 }}>Mojang 官方渠道（可切换镜像）</div></div>
         </div>
         <div className="row mt" style={{ gap: 10, flexWrap: 'wrap' }}>
-          <button className="btn" onClick={() => api.openExternal('https://github.com/MistHowlJade/mcl')}>GitHub 仓库 ↗</button>
-          <button className="btn" onClick={() => api.openExternal('https://github.com/MistHowlJade/mcl/issues/new')}>反馈问题 ↗</button>
-          <button className="btn" onClick={() => api.diagnosticExport()}>导出诊断包</button>
+          <button className="btn" onClick={() => api.openExternal('https://github.com/MistHowlJade/mcl').catch(e => toast.toast(String(e), 'error'))}>GitHub 仓库 ↗</button>
+          <button className="btn" onClick={() => api.openExternal('https://github.com/MistHowlJade/mcl/issues/new').catch(e => toast.toast(String(e), 'error'))}>反馈问题 ↗</button>
+          <button className="btn" onClick={exportDiagnostic}>导出诊断包</button>
           <button className="btn danger" onClick={() => setConfirmReset(true)}>重置全部设置…</button>
         </div>
       </div>

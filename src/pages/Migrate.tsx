@@ -31,8 +31,12 @@ export default function Migrate() {
   };
 
   const pickFolder = async () => {
-    const folder = await api.pickFolder();
-    if (folder) await loadPreview(folder);
+    try {
+      const folder = await api.pickFolder();
+      if (folder) await loadPreview(folder);
+    } catch (e) {
+      toast.toast(e instanceof Error ? e.message : String(e), 'error');
+    }
   };
 
   const doImport = async () => {

@@ -66,15 +66,24 @@ export async function exportDiagnostic(instanceId?: string | null): Promise<stri
   };
 
   // 1) 日志（最近 20 个）
+  const mtimeOf = (file: string): number => { try { return fs.statSync(file).mtimeMs; } catch { return 0; } };
   if (fs.existsSync(paths.logsDir())) {
-    const logs = fs.readdirSync(paths.logsDir()).filter(f => f.endsWith('.log') || f.endsWith('.txt')).map(f => ({ f, m: fs.statSync(path.join(paths.logsDir(), f)).mtimeMs })).sort((a, b) => b.m - a.m).slice(0, 20);
+    const logs = fs.readdirSync(paths.logsDir())
+      .filter(f => f.endsWith('.log') || f.endsWith('.txt'))
+      .map(f => ({ f, m: mtimeOf(path.join(paths.logsDir(), f)) }))
+      .filter(x => x.m > 0)
+      .sort((a, b) => b.m - a.m).slice(0, 20);
     for (const { f } of logs) files.push({ name: `logs/${f}`, absPath: path.join(paths.logsDir(), f) });
   }
   // 2) 崩溃报告（最近 5 个）
   if (instanceId) {
     const crashDir = path.join(paths.gameDir(instanceId), 'crash-reports');
     if (fs.existsSync(crashDir)) {
-      const crashes = fs.readdirSync(crashDir).filter(f => f.endsWith('.txt')).map(f => ({ f, m: fs.statSync(path.join(crashDir, f)).mtimeMs })).sort((a, b) => b.m - a.m).slice(0, 5);
+      const crashes = fs.readdirSync(crashDir)
+        .filter(f => f.endsWith('.txt'))
+        .map(f => ({ f, m: mtimeOf(path.join(crashDir, f)) }))
+        .filter(x => x.m > 0)
+        .sort((a, b) => b.m - a.m).slice(0, 5);
       for (const { f } of crashes) files.push({ name: `crash-reports/${f}`, absPath: path.join(crashDir, f) });
     }
     const latestLog = path.join(paths.gameDir(instanceId), 'logs', 'latest.log');
@@ -90,9 +99,12 @@ export async function exportDiagnostic(instanceId?: string | null): Promise<stri
     files.push({ name: 'javas.json', absPath: writeTmp('javas.json', JSON.stringify(javas, null, 2)) });
   } catch { /* 检测失败也不阻塞导出 */ }
 
-  const buffer = zipFromFiles(files);
-  fs.rmSync(tmpDir, { recursive: true, force: true });
-  fs.writeFileSync(filePath, buffer);
+  try {
+    const buffer = zipFromFiles(files);
+    fs.writeFileSync(filePath, buffer);
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
   shell.showItemInFolder(filePath);
   return filePath;
 }

@@ -203,7 +203,13 @@ export function zipFromDir(baseDir: string, filter?: (relPath: string) => boolea
   return zipWrite(entries);
 }
 
-/** 打包指定文件列表 */
+/** 打包指定文件列表（单个文件读不到时跳过，避免日志轮转导致整个诊断包导出失败） */
 export function zipFromFiles(files: Array<{ name: string; absPath: string }>): Buffer {
-  return zipWrite(files.map(f => ({ name: f.name, data: fs.readFileSync(f.absPath) })));
+  const entries: ZipEntryInput[] = [];
+  for (const f of files) {
+    try {
+      entries.push({ name: f.name, data: fs.readFileSync(f.absPath) });
+    } catch { /* 文件可能在打包瞬间被删除 */ }
+  }
+  return zipWrite(entries);
 }

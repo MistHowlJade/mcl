@@ -117,13 +117,19 @@ export function listContent(instanceId: string): ContentList {
   const shaderpacks = listPackDir(path.join(game, 'shaderpacks')).map(s => ({ ...s, enabled: shader === s.fileName || shader === s.name }));
 
   const screenshotsDir = path.join(game, 'screenshots');
-  const screenshots: ContentItem[] = fs.existsSync(screenshotsDir)
-    ? fs.readdirSync(screenshotsDir).filter(f => /\.(png|jpe?g)$/i.test(f)).map(f => {
+  const screenshots: ContentItem[] = [];
+  if (fs.existsSync(screenshotsDir)) {
+    for (const f of fs.readdirSync(screenshotsDir)) {
+      if (!/\.(png|jpe?g)$/i.test(f)) continue;
       const full = path.join(screenshotsDir, f);
-      const stat = fs.statSync(full);
-      return { name: f.replace(/\.(png|jpe?g)$/i, ''), fileName: f, path: full, sizeBytes: stat.size, mtime: stat.mtimeMs, previewPath: full };
-    }).sort((a, b) => b.mtime - a.mtime)
-    : [];
+      try {
+        const stat = fs.statSync(full);
+        if (!stat.isFile()) continue;
+        screenshots.push({ name: f.replace(/\.(png|jpe?g)$/i, ''), fileName: f, path: full, sizeBytes: stat.size, mtime: stat.mtimeMs, previewPath: full });
+      } catch { /* 文件可能在列目录瞬间被删除 */ }
+    }
+    screenshots.sort((a, b) => b.mtime - a.mtime);
+  }
 
   const savesDir = path.join(game, 'saves');
   const worlds: ContentItem[] = fs.existsSync(savesDir)

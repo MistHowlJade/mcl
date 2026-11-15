@@ -127,6 +127,11 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('instances:update', (_e, id: string, patch: any) => instances.updateInstance(id, patch));
   ipcMain.handle('instances:duplicate', (_e, id: string) => instances.duplicateInstance(id));
   ipcMain.handle('instances:delete', async (_e, id: string) => {
+    // 游戏运行时删除会把正在使用的存档/模组删到一半，先拒绝并给出人话提示
+    const busyStates = ['preparing', 'downloading', 'launching', 'running'];
+    if (minecraft.launchState.instanceId === id && busyStates.includes(minecraft.launchState.status)) {
+      throw new Error('这个实例正在运行，无法删除。请先退出游戏，等实例状态变为「已退出」后再试。');
+    }
     const backupDir = path.join(paths.backupsDir(), 'deleted-instances');
     return instances.deleteInstance(id, backupDir);
   });

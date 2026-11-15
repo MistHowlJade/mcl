@@ -145,9 +145,11 @@ export function parseVersionName(name: string): { mcVersion: string | null; load
   const mcToken = tokens.find(t => /^1\.\d+(\.\d+)?$/.test(t)) ?? null;
 
   let loaderVersion: string | null = null;
-  const grab = (re: RegExp) => { const m = name.match(re); return m?.[1] ?? null; };
-  if (loader === 'forge') loaderVersion = grab(/forge-([\d.]+)/i) ?? grab(/-forge-([\d.]+)/i);
-  else if (loader === 'neoforge') loaderVersion = grab(/neoforge-([\d.]+)/i);
+  // 先剥掉 MC 版本，避免 forge-1.20.1-47.2.0 把 1.20.1 误当成加载器版本
+  const rest = mcToken ? name.split(mcToken).join('-') : name;
+  const grab = (re: RegExp) => { const m = rest.match(re); return m?.[1] ?? null; };
+  if (loader === 'forge') loaderVersion = grab(/forge[-_\s]+([\d.]+)/i);
+  else if (loader === 'neoforge') loaderVersion = grab(/neoforge[-_\s]+([\d.]+)/i);
   else if (loader === 'fabric') loaderVersion = grab(/fabric[-_]?loader[-_]([\d.]+)/i) ?? grab(/fabric[-_]([\d.]+)/i);
   else if (loader === 'quilt') loaderVersion = grab(/quilt[-_]?loader[-_]([\d.]+)/i) ?? grab(/quilt[-_]([\d.]+)/i);
 

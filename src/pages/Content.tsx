@@ -117,7 +117,7 @@ export default function Content() {
           <select className="input" style={{ width: 220 }} value={instanceId ?? ''} onChange={e => setInstanceId(e.target.value)}>
             {instances.map(i => <option key={i.id} value={i.id}>{i.name}（{i.mcVersion}）</option>)}
           </select>
-          <button className="btn" onClick={() => instanceId && api.contentOpenFolder(instanceId, tab)}>打开文件夹</button>
+          <button className="btn" onClick={() => { if (instanceId) void api.contentOpenFolder(instanceId, tab).catch(e => toast.toast(String(e), 'error')); }}>打开文件夹</button>
         </div>
       </div>
 
@@ -172,7 +172,7 @@ export default function Content() {
             <div key={item.fileName} className="panel" style={{ padding: 10 }}>
               <div
                 style={{ borderRadius: 8, overflow: 'hidden', background: '#0b0e14', aspectRatio: '16 / 9', display: 'grid', placeItems: 'center', cursor: 'pointer' }}
-                onClick={() => api.contentOpenItem(item.path)}
+                onClick={() => api.contentOpenItem(item.path).catch(e => toast.toast(String(e), 'error'))}
                 title="点击用系统看图工具打开"
               >
                 <img src={mediaUrl(item.previewPath)} alt={item.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
@@ -214,7 +214,7 @@ export default function Content() {
                     <>
                       <button className="btn small" onClick={() => backupWorld(item)}>备份世界</button>
                       <button className="btn small" onClick={() => exportWorld(item)}>导出 ZIP</button>
-                      <button className="btn small" onClick={() => api.contentOpenItem(item.path)}>打开</button>
+                      <button className="btn small" onClick={() => api.contentOpenItem(item.path).catch(e => toast.toast(String(e), 'error'))}>打开</button>
                     </>
                   )}
                   <button className="btn small danger" onClick={() => setDeleteTarget({ kind: tab, item })}>删除</button>
@@ -345,7 +345,7 @@ function OnlineContentModal({ instance, kind, onClose, onInstalled }: {
                 </div>
               </div>
               <div className="row" style={{ gap: 6, flexShrink: 0 }}>
-                <button className="btn small" onClick={() => api.openExternal(`https://modrinth.com/project/${item.slug}`)}>详情 ↗</button>
+                <button className="btn small" onClick={() => api.openExternal(`https://modrinth.com/project/${item.slug}`).catch(e => toast.toast(String(e), 'error'))}>详情 ↗</button>
                 <button className="btn small primary" onClick={() => install(item)} disabled={installingId !== null}>
                   {installingId === item.projectId ? '安装中…' : '安装'}
                 </button>

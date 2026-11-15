@@ -104,7 +104,7 @@ export async function importModpack(zipPath: string, targetName?: string, onLog?
     let index: any;
     try { index = JSON.parse(readEntry('modrinth.index.json')!.toString('utf8')); }
     catch { throw new Error('整合包索引 modrinth.index.json 不是有效 JSON，文件可能已损坏。'); }
-    const mcVersion: string = index?.dependencies?.minecraft ?? '1.20.1';
+    const mcVersion: string = String(index?.dependencies?.minecraft ?? '1.20.1');
     let loader: LoaderType = 'vanilla';
     let loaderVersion: string | null = null;
     if (index?.dependencies?.['fabric-loader']) { loader = 'fabric'; loaderVersion = String(index.dependencies['fabric-loader']); }
@@ -114,7 +114,9 @@ export async function importModpack(zipPath: string, targetName?: string, onLog?
     const instance = createInstance({ name: targetName ?? index.name ?? 'Modrinth 整合包', mcVersion, loader, loaderVersion, memoryPreset: 'heavy' });
     const game = paths.gameDir(instance.id);
     // 下载 files（跳过服务端专用文件 env.client === 'unsupported'）
-    const files: Array<{ downloads: string[]; path: string; hashes?: { sha1?: string; sha512?: string }; size?: number; env?: { client?: string } }> = index.files ?? [];
+    const rawFiles = index?.files;
+    if (!Array.isArray(rawFiles)) warnings.push('整合包索引里的 files 字段不是数组，可能已损坏；实例已创建但没有自动下载模组。');
+    const files: Array<{ downloads: string[]; path: string; hashes?: { sha1?: string; sha512?: string }; size?: number; env?: { client?: string } }> = Array.isArray(rawFiles) ? rawFiles : [];
     let skippedServer = 0;
     let invalidFiles = 0;
     const downloadable = files.filter(f => {
@@ -148,8 +150,10 @@ export async function importModpack(zipPath: string, targetName?: string, onLog?
     let manifest: any;
     try { manifest = JSON.parse(readEntry('manifest.json')!.toString('utf8')); }
     catch { throw new Error('整合包清单 manifest.json 不是有效 JSON，文件可能已损坏。'); }
-    const mcVersion: string = manifest?.minecraft?.version ?? '1.20.1';
-    const modLoaderEntry = (manifest?.minecraft?.modLoaders ?? []).find((l: any) => l.primary) ?? manifest?.minecraft?.modLoaders?.[0];
+    const mcVersion: string = String(manifest?.minecraft?.version ?? '1.20.1');
+    const rawLoaders = manifest?.minecraft?.modLoaders;
+    const modLoaderEntry = (Array.isArray(rawLoaders) ? rawLoaders : []).find((l: any) => l?.primary)
+      ?? (Array.isArray(rawLoaders) ? rawLoaders[0] : undefined);
     let loader: LoaderType = 'vanilla';
     let loaderVersion: string | null = null;
     const idStr: string = modLoaderEntry?.id ?? '';
@@ -158,7 +162,7 @@ export async function importModpack(zipPath: string, targetName?: string, onLog?
     const instance = createInstance({ name: targetName ?? manifest?.name ?? 'CurseForge 整合包', mcVersion, loader, loaderVersion, memoryPreset: 'heavy' as MemoryPreset });
     const game = paths.gameDir(instance.id);
     copyOverrides('overrides', game);
-    const files: Array<{ projectID: number; fileID: number }> = manifest?.files ?? [];
+    const files: Array<{ projectID: number; fileID: number }> = Array.isArray(manifest?.files) ? manifest.files : [];
     const apiKey = getSettings().curseforge.apiKey.trim();
     if (apiKey) {
       log(`使用 CurseForge API 下载 ${files.length} 个模组…`);
@@ -191,7 +195,7 @@ export async function importModpack(zipPath: string, targetName?: string, onLog?
   const game = paths.gameDir(instance.id);
   let mmcJson: any = null;
   try { mmcJson = JSON.parse(readEntry('mmc-pack.json')!.toString('utf8')); } catch { warnings.push('mmc-pack.json 解析失败，按 vanilla 1.20.1 创建'); }
-  if (mmcJson?.components) {
+  if (Array.isArray(mmcJson?.components)) {
     const mc = mmcJson.components.find((c: any) => c?.uid === 'net.minecraft');
     const loaderComp = mmcJson.components.find((c: any) => ['net.fabricmc.fabric-loader', 'net.minecraftforge', 'org.quiltmc.quilt-loader', 'net.neoforged'].includes(c?.uid));
     if (mc?.version) {
