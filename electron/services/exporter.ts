@@ -97,8 +97,14 @@ async function latestLoaderVersion(loader: LoaderType, mcVersion: string): Promi
       return last ? last.slice(mcVersion.length + 1) : null;
     }
     if (loader === 'neoforge') {
-      // NeoForge 1.20.1 沿用 Forge 的 47.x
-      const prefix = mcVersion === '1.20.1' ? '47.' : mcVersion.replace(/^1\./, '').replace(/\.0$/, '') + '.';
+      // NeoForge 1.20.1 沿用 Forge 47.x，坐标为 net/neoforged/forge，版本带 1.20.1- 前缀
+      if (mcVersion === '1.20.1') {
+        const versions = await mavenVersions('https://maven.neoforged.net/releases/net/neoforged/forge/maven-metadata.xml');
+        const matching = versions.filter(v => v.startsWith(`${mcVersion}-47.`));
+        const last = matching[matching.length - 1];
+        return last ? last.slice(mcVersion.length + 1) : null;
+      }
+      const prefix = mcVersion.replace(/^1\./, '').replace(/\.0$/, '') + '.';
       const versions = await mavenVersions('https://maven.neoforged.net/releases/net/neoforged/neoforge/maven-metadata.xml');
       const matching = versions.filter(v => v.startsWith(prefix));
       return matching[matching.length - 1] ?? null;

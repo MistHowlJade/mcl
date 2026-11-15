@@ -35,6 +35,7 @@ export interface ZipEntryInput {
 }
 
 export function zipWrite(entries: ZipEntryInput[]): Buffer {
+  if (entries.length > 0xffff) throw new Error(`ZIP 条目过多（${entries.length} > 65535）`);
   const localParts: Buffer[] = [];
   const centralParts: Buffer[] = [];
   let offset = 0;
@@ -115,6 +116,7 @@ export interface ZipEntry {
 }
 
 export function zipList(buf: Buffer): ZipEntry[] {
+  if (buf.length < 22) throw new Error('不是有效的 ZIP 文件（文件过小）');
   // 从尾部找 End of Central Directory
   let eocd = -1;
   for (let i = buf.length - 22; i >= Math.max(0, buf.length - 22 - 65536); i--) {
@@ -156,6 +158,9 @@ export function zipExtractEntry(buf: Buffer, entry: ZipEntry): Buffer {
   const nameLen = buf.readUInt16LE(local + 26);
   const extraLen = buf.readUInt16LE(local + 28);
   const dataStart = local + 30 + nameLen + extraLen;
+  if (dataStart + entry.compressedSize > buf.length) {
+    throw new Error(`ZIP 数据区越界：${entry.name}`);
+  }
   const data = buf.subarray(dataStart, dataStart + entry.compressedSize);
   if (entry.method === 0) return Buffer.from(data);
   if (entry.method === 8) return zlib.inflateRawSync(data);

@@ -378,7 +378,22 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('server:checkPort', (_e, port: number) => serverService.isPortAvailable(port));
   ipcMain.handle('server:acceptEula', (_e, id: string) => serverService.acceptEula(id));
   ipcMain.handle('server:properties', (_e, id: string) => serverService.readServerProperties(id));
-  ipcMain.handle('server:saveProperties', (_e, id: string, patch: Record<string, string>) => serverService.saveServerProperties(id, patch));
+  ipcMain.handle('server:saveProperties', (_e, id: string, patch: Record<string, string>) => {
+    const nextPatch = { ...patch };
+    if (Object.prototype.hasOwnProperty.call(nextPatch, 'server-port')) {
+      const port = Number(String(nextPatch['server-port']).trim());
+      if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('端口必须是 1–65535 之间的整数');
+      nextPatch['server-port'] = String(port);
+    }
+    const saved = serverService.saveServerProperties(id, nextPatch);
+    // 属性页直接改端口时同步 server.json，避免设置页显示旧端口
+    if (nextPatch['server-port']) {
+      const port = Number(nextPatch['server-port']);
+      const current = serverService.getServer(id);
+      if (current && current.port !== port) serverService.updateServer(id, { port });
+    }
+    return saved;
+  });
   ipcMain.handle('server:log', (_e, id: string, maxLines?: number) => serverService.readServerLog(id, maxLines ?? 400));
   ipcMain.handle('server:openDir', (_e, id: string) => shell.openPath(paths.serverDir(id)));
   ipcMain.handle('server:backups', (_e, id: string) => serverService.listServerBackups(id));

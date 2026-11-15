@@ -40,8 +40,10 @@ function findPackRoot(entries: PackEntry[]): { format: ModpackFormat; prefix: st
       return segs[segs.length - 1] === file && segs.length - 1 <= 4;
     });
     if (hit) {
-      const idx = hit.name.lastIndexOf('/');
-      return { format, prefix: idx >= 0 ? hit.name.slice(0, idx + 1) : '' };
+      // 必须用归一化后的路径计算前缀，Windows 打包的 ZIP 可能用反斜杠
+      const norm = hit.name.replace(/\\/g, '/');
+      const idx = norm.lastIndexOf('/');
+      return { format, prefix: idx >= 0 ? norm.slice(0, idx + 1) : '' };
     }
   }
   return null;
@@ -86,15 +88,22 @@ export async function importModpack(zipPath: string, targetName?: string, onLog?
       const rel = stripPrefix(norm, overPrefix);
       const target = safeTarget(destGameDir, rel);
       if (!target) { warnings.push(`已跳过可疑路径：${norm}`); continue; }
-      fs.mkdirSync(path.dirname(target), { recursive: true });
-      fs.writeFileSync(target, zipExtractEntry(buf, entry));
-      count++;
+      try {
+        fs.mkdirSync(path.dirname(target), { recursive: true });
+        fs.writeFileSync(target, zipExtractEntry(buf, entry));
+        count++;
+      } catch (e) {
+        // 单个覆盖文件失败不应让整个整合包导入中断，记录下来让用户知道
+        warnings.push(`覆盖文件写入失败：${norm}（${e instanceof Error ? e.message : String(e)}）`);
+      }
     }
     return count;
   };
 
   if (format === 'modrinth') {
-    const index = JSON.parse(readEntry('modrinth.index.json')!.toString('utf8'));
+    let index: any;
+    try { index = JSON.parse(readEntry('modrinth.index.json')!.toString('utf8')); }
+    catch { throw new Error('整合包索引 modrinth.index.json 不是有效 JSON，文件可能已损坏。'); }
     const mcVersion: string = index?.dependencies?.minecraft ?? '1.20.1';
     let loader: LoaderType = 'vanilla';
     let loaderVersion: string | null = null;
@@ -107,11 +116,15 @@ export async function importModpack(zipPath: string, targetName?: string, onLog?
     // 下载 files（跳过服务端专用文件 env.client === 'unsupported'）
     const files: Array<{ downloads: string[]; path: string; hashes?: { sha1?: string; sha512?: string }; size?: number; env?: { client?: string } }> = index.files ?? [];
     let skippedServer = 0;
+    let invalidFiles = 0;
     const downloadable = files.filter(f => {
       if (f?.env?.client === 'unsupported') { skippedServer++; return false; }
+      if (!Array.isArray(f?.downloads) || typeof f.downloads[0] !== 'string' || !f.downloads[0]) { invalidFiles++; return false; }
+      if (typeof f?.path !== 'string' || !f.path.trim()) { invalidFiles++; return false; }
       return true;
     });
     if (skippedServer > 0) warnings.push(`已跳过 ${skippedServer} 个服务端专用文件（env.client = unsupported）。`);
+    if (invalidFiles > 0) warnings.push(`已跳过 ${invalidFiles} 个没有下载地址的文件（整合包索引可能不完整）。`);
     log(`需要下载 ${downloadable.length} 个文件（已过滤 ${skippedServer} 个服务端文件）…`);
     const tasks = downloadable.map((f, i) => ({
       id: `packfile:${i}`,
@@ -132,7 +145,9 @@ export async function importModpack(zipPath: string, targetName?: string, onLog?
   }
 
   if (format === 'curseforge') {
-    const manifest = JSON.parse(readEntry('manifest.json')!.toString('utf8'));
+    let manifest: any;
+    try { manifest = JSON.parse(readEntry('manifest.json')!.toString('utf8')); }
+    catch { throw new Error('整合包清单 manifest.json 不是有效 JSON，文件可能已损坏。'); }
     const mcVersion: string = manifest?.minecraft?.version ?? '1.20.1';
     const modLoaderEntry = (manifest?.minecraft?.modLoaders ?? []).find((l: any) => l.primary) ?? manifest?.minecraft?.modLoaders?.[0];
     let loader: LoaderType = 'vanilla';
@@ -201,11 +216,15 @@ export async function importModpack(zipPath: string, targetName?: string, onLog?
     if (SKIP_META.has(rel.split('/')[0])) continue;   // 跳过实例元数据（instance.cfg 等）
     const target = safeTarget(game, rel);
     if (!target) { warnings.push(`已跳过可疑路径：${norm}`); continue; }
-    fs.mkdirSync(path.dirname(target), { recursive: true });
-    fs.writeFileSync(target, zipExtractEntry(buf, entry));
-    copied++;
-    if (rel.startsWith('mods/')) modsCopied++;
-    else if (rel.startsWith('saves/')) savesCopied++;
+    try {
+      fs.mkdirSync(path.dirname(target), { recursive: true });
+      fs.writeFileSync(target, zipExtractEntry(buf, entry));
+      copied++;
+      if (rel.startsWith('mods/')) modsCopied++;
+      else if (rel.startsWith('saves/')) savesCopied++;
+    } catch (e) {
+      warnings.push(`文件写入失败：${norm}（${e instanceof Error ? e.message : String(e)}）`);
+    }
   }
   log(`已复制 mods ${modsCopied} 个、saves ${savesCopied} 个、共 ${copied} 个文件${hasMinecraftDir ? '（minecraft/ 前缀已剥离）' : ''}`);
   warnings.push(`MultiMC 格式：${hasMinecraftDir ? '已识别 minecraft/ 游戏目录，' : ''}整包展开为实例目录（${copied} 个文件：mods ${modsCopied}、saves ${savesCopied}）。`);

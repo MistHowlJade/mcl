@@ -16,7 +16,7 @@ export default function Mods() {
     api.instancesList().then(list => {
       setInstances(list);
       if (!instanceId && list.length) setInstanceId(list[0].id);
-    });
+    }).catch(e => toast.toast(String(e), 'error'));
     /* eslint-disable-next-line */
   }, []);
   const instance = useMemo(() => instances.find(i => i.id === instanceId) ?? null, [instances, instanceId]);
@@ -88,10 +88,12 @@ function InstalledTab({ instance }: { instance: InstanceInfo }) {
 
   const applyFix = async (issue: ModHealthIssue) => {
     if (!issue.fix?.target) return;
-    const ok = await api.modsHealthFix(instance.id, issue.fix.target);
-    toast.toast(ok ? '已隔离（重命名为 .disabled），可随时手动改回' : '修复失败', ok ? 'ok' : 'error');
-    setHealthReport(prev => prev ? { ...prev, issues: prev.issues.filter(i => i !== issue) } : prev);
-    void reload();
+    try {
+      const ok = await api.modsHealthFix(instance.id, issue.fix.target);
+      toast.toast(ok ? '已隔离（重命名为 .disabled），可随时手动改回' : '修复失败', ok ? 'ok' : 'error');
+      setHealthReport(prev => prev ? { ...prev, issues: prev.issues.filter(i => i !== issue) } : prev);
+      void reload();
+    } catch (e) { toast.toast(String(e), 'error'); }
   };
 
   return (
@@ -103,7 +105,7 @@ function InstalledTab({ instance }: { instance: InstanceInfo }) {
           <button className="btn small" onClick={checkHealth}>🩺 体检</button>
           <Tip text="检查 Modrinth 上是否有可更新版本。该实例开启了「禁止自动更新」时不会执行" />
           <button className="btn small" onClick={checkUpdates} disabled={checking}>{checking ? '检查中…' : '🔄 检查更新'}</button>
-          <button className="btn small" onClick={() => api.modsOpenFolder(instance.id)}>📂 打开目录</button>
+          <button className="btn small" onClick={() => api.modsOpenFolder(instance.id).catch(e => toast.toast(String(e), 'error'))}>📂 打开目录</button>
         </div>
       </div>
       {mods.length === 0 ? (
@@ -122,7 +124,7 @@ function InstalledTab({ instance }: { instance: InstanceInfo }) {
               </div>
               <div className="row" style={{ gap: 6, flexShrink: 0 }}>
                 {mod.updateAvailable && <button className="btn small primary" onClick={() => api.modrinthUpdateMod(instance.id, mod.fileName).then(() => { toast.toast('已更新'); void reload(); }).catch(e => toast.toast(String(e), 'error'))}>更新</button>}
-                <button className="btn small" onClick={() => api.modrinthToggle(instance.id, mod.fileName).then(() => void reload())}>{mod.disabled ? '启用' : '禁用'}</button>
+                <button className="btn small" onClick={() => api.modrinthToggle(instance.id, mod.fileName).then(() => void reload()).catch(e => toast.toast(String(e), 'error'))}>{mod.disabled ? '启用' : '禁用'}</button>
               </div>
             </div>
           ))}
@@ -240,7 +242,7 @@ function ImportTab() {
             <div className="mt">
               <div className="faint">需要手动下载的模组：</div>
               {result.manualDownloads.map((d: { name: string; url: string }, i: number) => (
-                <button key={i} className="btn small ghost" style={{ display: 'block', marginTop: 6 }} onClick={() => api.openExternal(d.url)}>🔗 {d.name}</button>
+                <button key={i} className="btn small ghost" style={{ display: 'block', marginTop: 6 }} onClick={() => api.openExternal(d.url).catch(e => toast.toast(String(e), 'error'))}>🔗 {d.name}</button>
               ))}
             </div>
           )}

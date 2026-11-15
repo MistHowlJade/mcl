@@ -243,7 +243,12 @@ function neoForgePrefix(mcVersion: string): string {
 /** Forge/NeoForge：下载安装器并静默安装到实例目录（使用实例自己的 libraries 目录） */
 async function ensureForgeLikeInstalled(gameDir: string, loader: 'forge' | 'neoforge', mcVersion: string, loaderVersion: string | null | undefined, javaPath: string, emit: (line: string) => void): Promise<string> {
   const versionsDirRel = path.join(gameDir, 'versions');
-  const existingFilter = (d: string) => loader === 'neoforge' ? /neoforge/i.test(d) : /forge/i.test(d);
+  const neoForgeLegacy = loader === 'neoforge' && mcVersion === '1.20.1';
+  // NeoForge 1.20.1 安装器沿用 Forge 代码，版本目录形如 1.20.1-forge-47.x
+  const existingFilter = (d: string) => loader === 'neoforge'
+    ? (/neoforge/i.test(d) || (neoForgeLegacy && d.startsWith(`${mcVersion}-forge-`)))
+    // 排除包含 forge 子串的 neoforge 目录，避免 Forge 实例误用 NeoForge 版本
+    : (/forge/i.test(d) && !/neoforge/i.test(d));
   const existing = fs.existsSync(versionsDirRel) ? fs.readdirSync(versionsDirRel).filter(existingFilter) : [];
   if (existing.length > 0 && loaderVersion) {
     const hit = existing.find(d => d.includes(loaderVersion));
@@ -253,7 +258,6 @@ async function ensureForgeLikeInstalled(gameDir: string, loader: 'forge' | 'neof
   let forgeId: string;
   let installerUrl: string;
   // NeoForge 1.20.1 沿用 Forge 的 47.x 版本号，发布坐标为 net.neoforged:forge
-  const neoForgeLegacy = loader === 'neoforge' && mcVersion === '1.20.1';
   if (loaderVersion) {
     // 已指定版本：不请求元数据，直接下载安装器
     if (loader === 'forge') {
@@ -302,8 +306,8 @@ async function ensureForgeLikeInstalled(gameDir: string, loader: 'forge' | 'neof
     child.on('error', reject);
   });
   fs.rmSync(installerPath, { force: true });
-  const installed = fs.existsSync(versionsDirRel) ? fs.readdirSync(versionsDirRel).filter(d => loader === 'neoforge' ? /neoforge/i.test(d) : /forge/i.test(d)) : [];
-  const hit = installed[0];
+  const installed = fs.existsSync(versionsDirRel) ? fs.readdirSync(versionsDirRel).filter(existingFilter) : [];
+  const hit = loaderVersion ? (installed.find(d => d.includes(loaderVersion)) ?? installed[0]) : installed[0];
   if (!hit) throw new Error(`${loader} 安装完成但找不到版本目录，请查看安装日志。`);
   return path.join(versionsDirRel, hit, `${hit}.json`);
 }
@@ -427,10 +431,15 @@ export async function launchInstance(instanceId: string, options: LaunchOptions 
   if (corrupted.length > 0) {
     emitLog(`[mcl] 警告：检测到 ${corrupted.length} 个可能损坏的库文件，将尝试重新下载`);
     const repair = new DownloadManager({ source: settings.download.source, customMirror: settings.download.customMirror, maxThreads: 4, retries: 2, timeoutMs: settings.download.timeoutMs });
-    await repair.run(corrupted.map(c => {
+    const repairReports = await repair.run(corrupted.map(c => {
       const lib = versionService.collectLibraries(resolved).find(l => l.path === c.path)!;
-      return { id: `repair:${c.path}`, url: lib.url, sha1: lib.sha1, size: lib.size, dest: lib.url.includes('forge') ? path.join(gameLibsDir, ...c.path.split('/')) : path.join(paths.librariesDir(), ...c.path.split('/')), name: c.path };
+      // 必须写回 findCorruptedLibraries 实际选中的位置：classpath 优先用 shared，
+      // 若 shared 中是 0 字节坏文件、却把修复结果写进 game/libraries，启动仍会加载坏文件。
+      return { id: `repair:${c.path}`, url: lib.url, sha1: lib.sha1, size: lib.size, dest: c.dest, name: c.path };
     }));
+    const repairFailed = repairReports.filter(r => !r.ok);
+    for (const f of repairFailed.slice(0, 5)) emitLog(`[mcl] 库修复失败：${f.name}（${f.error ?? '未知错误'}）`);
+    if (repairFailed.length > 0) emitLog(`[mcl] 警告：${repairFailed.length} 个库文件未能修复，游戏可能无法启动。可稍后在实例设置里点「一键修复」。`);
   }
 
   // 7) Natives 到唯一目录（痛点 #56）
@@ -572,6 +581,8 @@ export async function launchInstance(instanceId: string, options: LaunchOptions 
     const playSeconds = Math.floor((Date.now() - sessionStart) / 1000);
     touchPlayed(instanceId, playSeconds);
     safeRmDir(nativesDir);
+    launchState.pid = null;
+    launchState.progress = null;
     emitLog(`[mcl] 游戏进程退出，退出码 ${code}`);
     if (code === 0) {
       emitStatus('exited', `游戏正常退出（游玩时长 ${Math.floor(playSeconds / 60)} 分钟）`);
@@ -581,11 +592,14 @@ export async function launchInstance(instanceId: string, options: LaunchOptions 
     // 崩溃：自动分析（痛点 #26/#27/#25），只分析本次启动产生的内容
     const diagnosis = analyzeCrash(instanceId, path.join(paths.logsDir(), launchLogName), startedAt);
     launchState.status = 'crashed';
-    launchEvents.emit('status', { ...launchState, message: diagnosis.title });
+    launchState.message = diagnosis.title;
+    launchEvents.emit('status', { ...launchState });
     launchEvents.emit('crash', diagnosis);
   });
   child.on('error', (err) => {
     if (child.pid) untrackPid(child.pid);
+    launchState.pid = null;
+    launchState.progress = null;
     emitStatus('exited', `启动失败：${err.message}`);
     launchEvents.emit('exit', { instanceId, code: -1, crashed: true });
   });

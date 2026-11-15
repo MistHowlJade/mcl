@@ -165,9 +165,13 @@ export function updateServer(id: string, patch: Partial<ServerConfig>): ServerCo
     id: current.id,
     createdAt: current.createdAt,
   };
-  if (next.port < 1 || next.port > 65535) throw new Error('端口必须是 1–65535 之间的整数');
-  next.memoryMB = Math.max(512, Math.min(32768, next.memoryMB));
+  if (!Number.isInteger(next.port) || next.port < 1 || next.port > 65535) throw new Error('端口必须是 1–65535 之间的整数');
+  next.memoryMB = Number.isFinite(next.memoryMB) ? Math.max(512, Math.min(32768, Math.round(next.memoryMB))) : current.memoryMB;
   writeJson(paths.serverFile(id), next);
+  // 端口同时写进 server.properties，否则启动检查用新端口、服务端实际监听旧端口
+  if (next.port !== current.port) {
+    saveServerProperties(id, { 'server-port': String(next.port) });
+  }
   serverEvents.emit('status', toInfo(next));
   return next;
 }
@@ -424,7 +428,8 @@ export async function prepareServer(id: string): Promise<ServerInfo> {
             ? 'https://maven.neoforged.net/releases/net/neoforged/forge/maven-metadata.xml'
             : 'https://maven.neoforged.net/releases/net/neoforged/neoforge/maven-metadata.xml';
           const versions = await mavenVersions(metaUrl);
-          const prefix = neoForgePrefix(cfg.mcVersion);
+          // 1.20.1 的 NeoForge 版本形如 1.20.1-47.x，不能直接用 47. 前缀匹配
+          const prefix = neoForgeLegacy ? `${cfg.mcVersion}-47.` : neoForgePrefix(cfg.mcVersion);
           const matching = versions.filter(v => v.startsWith(prefix));
           if (!matching.length) throw new Error(`找不到适用于 ${cfg.mcVersion} 的 NeoForge 版本，请手动指定加载器版本。`);
           forgeId = matching[matching.length - 1];
@@ -534,8 +539,15 @@ export async function startServer(id: string): Promise<ServerInfo> {
   const forgeLoader: 'forge' | 'neoforge' | null = fresh.loader === 'forge' || fresh.loader === 'neoforge' ? fresh.loader : null;
   if (!forgeLoader && !findInstalledJar(dir)) throw new Error('服务端文件不存在，请点击「重新安装」后再启动。');
   if (forgeLoader && !findForgeArgs(dir, forgeLoader)) throw new Error('Forge/NeoForge 启动参数缺失，请点击「重新安装」后再启动。');
-  if (!(await portAvailable(fresh.port))) {
-    throw new Error(`端口 ${fresh.port} 已被占用。请关闭占用该端口的程序，或在「服务器设置」里换一个端口。`);
+  // server.properties 才是服务端实际监听的权威端口；用户可能在属性页直接改过
+  const propsPort = parseInt(readServerProperties(id)['server-port'] ?? '', 10);
+  const effectivePort = Number.isInteger(propsPort) && propsPort >= 1 && propsPort <= 65535 ? propsPort : fresh.port;
+  if (effectivePort !== fresh.port) {
+    fresh.port = effectivePort;
+    writeJson(paths.serverFile(id), fresh);
+  }
+  if (!(await portAvailable(effectivePort))) {
+    throw new Error(`端口 ${effectivePort} 已被占用。请关闭占用该端口的程序，或在「服务器设置」里换一个端口。`);
   }
 
   const javaPath = await resolveJava(fresh);

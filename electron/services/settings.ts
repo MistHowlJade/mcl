@@ -59,8 +59,10 @@ export const DEFAULT_SETTINGS: AppSettings = {
 };
 
 function deepMerge<T>(base: T, patch: any): T {
-  if (patch === null || patch === undefined) return base;
-  if (typeof base !== 'object' || Array.isArray(base)) return patch as T;
+  // null 是合法值（如 defaultResolution = null 表示自动），不能用 base 覆盖
+  if (patch === undefined) return base;
+  if (patch === null) return null as T;
+  if (typeof base !== 'object' || base === null || Array.isArray(base)) return patch as T;
   const out: any = { ...(base as any) };
   for (const key of Object.keys(patch)) {
     out[key] = key in (base as any) ? deepMerge((base as any)[key], patch[key]) : patch[key];

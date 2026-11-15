@@ -6,7 +6,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import * as paths from './paths';
-import { createInstance } from './instances';
+import { createInstance, deleteInstance } from './instances';
 import { MigrationCandidate, MigrationPreview, MigrationResult, LoaderType } from '../shared/types';
 import { getSettings } from './settings';
 
@@ -220,6 +220,9 @@ export function importInstances(root: string, selectedNames?: string[]): Migrati
   const copyInsteadOfMove = getSettings().migration.copyInsteadOfMove;
 
   for (const f of selected) {
+    let createdId: string | null = null;
+    // 移动模式下记录是否已经真正移动过文件：一旦移动过，失败时不能删实例（会毁掉唯一副本）
+    const moveState = { moved: false };
     try {
       if (!f.mcVersion) {
         warnings.push(`实例「${f.name}」未识别 MC 版本（无版本 json），已按"未识别"导入——请在「实例」页手动选择版本后再启动。`);
@@ -231,32 +234,63 @@ export function importInstances(root: string, selectedNames?: string[]): Migrati
         loaderVersion: f.loaderVersion,
         memoryPreset: 'standard',
       });
+      createdId = cfg.id;
       const dest = paths.gameDir(cfg.id);
       for (const dir of COPY_DIRS) {
         const src = path.join(f.gameDir, dir);
-        if (fs.existsSync(src)) copyRecursive(src, path.join(dest, dir), copyInsteadOfMove);
+        if (fs.existsSync(src)) copyRecursive(src, path.join(dest, dir), copyInsteadOfMove, moveState);
       }
       for (const file of COPY_FILES) {
         const src = path.join(f.gameDir, file);
-        if (fs.existsSync(src)) fs.copyFileSync(src, path.join(dest, file));
+        if (!fs.existsSync(src)) continue;
+        const target = path.join(dest, file);
+        if (copyInsteadOfMove) {
+          fs.copyFileSync(src, target);
+        } else {
+          moveFile(src, target);
+          moveState.moved = true;
+        }
       }
       imported.push(f.name);
     } catch (e) {
+      // 复制模式失败：删除半成品实例；移动模式已搬走文件则保留，避免数据丢失
+      if (createdId) {
+        if (!copyInsteadOfMove && moveState.moved) {
+          warnings.push(`实例「${f.name}」导入中断，已移动的文件保留在 MCL 实例中，请检查后决定是否删除。`);
+        } else {
+          try { deleteInstance(createdId); } catch { /* 清理失败不覆盖原始错误 */ }
+        }
+      }
       skipped.push({ name: f.name, reason: e instanceof Error ? e.message : String(e) });
     }
   }
   return { imported, skipped, warnings };
 }
 
-function copyRecursive(src: string, dest: string, copy: boolean): void {
+function moveFile(src: string, dest: string): void {
+  try {
+    fs.renameSync(src, dest);
+  } catch (e) {
+    // rename 跨盘符会抛 EXDEV：退化为复制后删除源文件
+    if ((e as NodeJS.ErrnoException).code !== 'EXDEV') throw e;
+    fs.copyFileSync(src, dest);
+    fs.rmSync(src, { force: true });
+  }
+}
+
+function copyRecursive(src: string, dest: string, copy: boolean, moveState: { moved: boolean }): void {
   fs.mkdirSync(dest, { recursive: true });
   for (const entry of fs.readdirSync(src, { withFileTypes: true })) {
     const s = path.join(src, entry.name);
     const d = path.join(dest, entry.name);
-    if (entry.isDirectory()) copyRecursive(s, d, copy);
+    if (entry.isDirectory()) copyRecursive(s, d, copy, moveState);
     else {
-      if (copy) fs.copyFileSync(s, d);
-      else fs.renameSync(s, d);
+      if (copy) {
+        fs.copyFileSync(s, d);
+      } else {
+        moveFile(s, d);
+        moveState.moved = true;
+      }
     }
   }
 }

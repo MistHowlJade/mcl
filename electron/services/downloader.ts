@@ -156,6 +156,20 @@ export class DownloadManager extends EventEmitter {
     });
   }
 
+  /** 清理主 part 与所有分段文件，避免半成品在换源后继续被复用 */
+  private cleanupParts(partFile: string): void {
+    try { fs.rmSync(partFile, { force: true }); } catch { /* ignore */ }
+    const dir = path.dirname(partFile);
+    const base = path.basename(partFile);
+    try {
+      for (const entry of fs.readdirSync(dir)) {
+        if (entry === base || entry.startsWith(`${base}.seg`)) {
+          fs.rmSync(path.join(dir, entry), { force: true });
+        }
+      }
+    } catch { /* 目录不存在时忽略 */ }
+  }
+
   private async downloadTask(task: DownloadTask): Promise<TaskReport> {
     const name = task.name ?? path.basename(task.dest);
     const partFile = path.join(cacheDir(), `dl-${safeId(task.id + task.url)}.part`);
@@ -186,11 +200,13 @@ export class DownloadManager extends EventEmitter {
         // 一次 HEAD 探测：大小 + 是否支持 Range
         const threshold = this.opts.segmentSizeMB * 1024 * 1024;
         const h = await this.head(url);
+        // 优先使用任务声明的大小 / HEAD 的完整大小；只有拿不到完整大小时才退回已有 part 大小
         let total = task.size ?? 0;
+        if (!total) total = h.size;
         if (!total && fs.existsSync(partFile)) total = fs.statSync(partFile).size;
-        if (total === 0) {
-          total = h.size;
-          if (total > 0) this.bytesTotalAll += h.size;
+        if (!task.size && h.size > 0 && !this.sizeCounted.has(task.id)) {
+          this.sizeCounted.add(task.id);
+          this.bytesTotalAll += h.size;
         }
 
         if (total > threshold && !isAlt && h.acceptsRanges) {
@@ -219,8 +235,8 @@ export class DownloadManager extends EventEmitter {
         if (task.sha1) {
           const hash = await sha1File(dest);
           if (hash !== task.sha1.toLowerCase()) {
+            this.cleanupParts(partFile);
             fs.rmSync(dest, { force: true });
-            fs.rmSync(partFile, { force: true });
             throw new Error('文件校验失败（SHA-1 不匹配），正在尝试备用源');
           }
         }
@@ -228,10 +244,8 @@ export class DownloadManager extends EventEmitter {
         return { id: task.id, name, ok: true, bytes, fromCache: false };
       } catch (e) {
         lastError = e instanceof Error ? e.message : String(e);
-        // 失败后清理当前 part，换源重试
-        if (attempt < this.opts.retries) {
-          try { fs.rmSync(partFile, { force: true }); } catch { /* ignore */ }
-        }
+        // 失败后清理当前 part 与分段文件，换源重试
+        if (attempt < this.opts.retries) this.cleanupParts(partFile);
       }
     }
     return { id: task.id, name, ok: false, bytes: 0, error: lastError, fromCache: false };
@@ -243,59 +257,94 @@ export class DownloadManager extends EventEmitter {
     const segSize = Math.ceil(total / segCount);
     const segFiles: string[] = [];
     const workers: Array<Promise<void>> = [];
+    const activeStreams = new Set<import('stream').Readable>();
+    let firstError: Error | null = null;
+
+    const abortWorkers = (err: Error) => {
+      if (!firstError) firstError = err;
+      for (const stream of activeStreams) {
+        try { stream.destroy(err); } catch { /* ignore */ }
+      }
+    };
+
     for (let i = 0; i < segCount; i++) {
       const start = i * segSize;
       const end = Math.min(total - 1, (i + 1) * segSize - 1);
       if (start > end) continue;
+      const expected = end - start + 1;
       const segFile = `${partFile}.seg${i}`;
       segFiles.push(segFile);
-      const existing = fs.existsSync(segFile) ? fs.statSync(segFile).size : 0;
+
+      // 已有分段超过本段长度说明缓存损坏，截断后重下；刚好下完则跳过请求
+      let existing = fs.existsSync(segFile) ? fs.statSync(segFile).size : 0;
+      if (existing > expected) {
+        try { fs.truncateSync(segFile, expected); } catch { /* 截断失败则重下整段 */ }
+        existing = fs.existsSync(segFile) ? fs.statSync(segFile).size : 0;
+      }
+      if (existing >= expected) continue;
+
       const actualStart = start + existing;
       workers.push((async () => {
+        if (firstError) return;
         const { status, stream } = await this.requestWithRedirects(url, { method: 'GET', headers: { Range: `bytes=${actualStart}-${end}` } });
+        if (firstError) { stream.resume(); return; }
         if (status === 200) {
           stream.resume();
           throw new Error('RANGE_UNSUPPORTED');
         }
-        if (status !== 206 && status !== 200) {
+        if (status !== 206) {
           stream.resume();
           throw new Error(`HTTP ${status}（分段 ${i}）`);
         }
         await new Promise<void>((resolve, reject) => {
           const out = fs.createWriteStream(segFile, { flags: existing > 0 ? 'a' : 'w' });
+          activeStreams.add(stream);
           stream.on('data', (chunk: Buffer) => onChunk(chunk.length));
+          stream.on('error', (e) => { activeStreams.delete(stream); out.destroy(); reject(e); });
+          stream.on('close', () => activeStreams.delete(stream));
           stream.pipe(out);
           out.on('finish', () => { out.close(); resolve(); });
           out.on('error', reject);
-          stream.on('error', (e) => { out.destroy(); reject(e); });
         });
-      })());
-    }
-    try {
-      await Promise.all(workers);
-    } catch (e) {
-      if (e instanceof Error && e.message === 'RANGE_UNSUPPORTED') {
-        for (const seg of segFiles) fs.rmSync(seg, { force: true });
+        const written = fs.existsSync(segFile) ? fs.statSync(segFile).size : 0;
+        if (written !== expected) throw new Error(`分段 ${i} 数据不完整（${written}/${expected} 字节）`);
+      })().catch((e: unknown) => {
+        abortWorkers(e instanceof Error ? e : new Error(String(e)));
         throw e;
+      }));
+    }
+
+    try {
+      await Promise.allSettled(workers);
+      if (firstError) throw firstError;
+      // 拼接前再次确认每段长度，避免短流被静默拼成坏文件
+      for (let i = 0; i < segFiles.length; i++) {
+        const stat = fs.existsSync(segFiles[i]) ? fs.statSync(segFiles[i]) : null;
+        if (!stat) throw new Error(`分段 ${i} 文件缺失`);
       }
+      fs.mkdirSync(path.dirname(partFile), { recursive: true });
+      const out = fs.createWriteStream(partFile);
+      for (const seg of segFiles) {
+        await new Promise<void>((resolve, reject) => {
+          const rs = fs.createReadStream(seg);
+          rs.on('end', resolve);
+          rs.on('error', reject);
+          rs.pipe(out, { end: false });
+        });
+      }
+      await new Promise<void>((resolve, reject) => { out.end(() => resolve()); out.on('error', reject); });
+      const finalSize = fs.existsSync(partFile) ? fs.statSync(partFile).size : 0;
+      if (finalSize !== total) throw new Error(`分段拼接后大小不符（期望 ${total}，实际 ${finalSize} 字节）`);
+      for (const seg of segFiles) fs.rmSync(seg, { force: true });
+    } catch (e) {
+      for (const seg of segFiles) fs.rmSync(seg, { force: true });
+      try { fs.rmSync(partFile, { force: true }); } catch { /* ignore */ }
       throw e;
     }
-    // 拼接
-    fs.mkdirSync(path.dirname(partFile), { recursive: true });
-    const out = fs.createWriteStream(partFile);
-    for (const seg of segFiles) {
-      await new Promise<void>((resolve, reject) => {
-        const rs = fs.createReadStream(seg);
-        rs.on('end', resolve);
-        rs.on('error', reject);
-        rs.pipe(out, { end: false });
-      });
-    }
-    await new Promise<void>((resolve, reject) => { out.end(() => resolve()); out.on('error', reject); });
-    for (const seg of segFiles) fs.rmSync(seg, { force: true });
   }
 
   private progressMap = new Map<string, number>();
+  private sizeCounted = new Set<string>();
 
   private addProgress(task: DownloadTask, n: number): void {
     this.bytesDoneAll += n;
@@ -311,6 +360,7 @@ export class DownloadManager extends EventEmitter {
     this.reports = [];
     this.canceled = false;
     this.active = 0;
+    this.sizeCounted.clear();
     const queue = [...tasks];
     let cursor = 0;
 
@@ -327,6 +377,12 @@ export class DownloadManager extends EventEmitter {
             this.reports.push(report);
             this.active--;
             this.emit('taskDone', task, report);
+            tryNext();
+          }).catch((e: unknown) => {
+            // downloadTask 内部已兜底，这里防御漏网异常导致队列永久挂起
+            const name = task.name ?? path.basename(task.dest);
+            this.reports.push({ id: task.id, name, ok: false, bytes: 0, error: e instanceof Error ? e.message : String(e), fromCache: false });
+            this.active--;
             tryNext();
           });
         }

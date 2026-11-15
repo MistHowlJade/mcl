@@ -23,11 +23,16 @@ export default function Home({ onNavigate, onLaunchFail }: { onNavigate: (p: Pag
   const toast = useToast();
 
   const reload = async () => {
-    const [list, account] = await Promise.all([api.instancesList(), api.accountsActive()]);
-    setInstances(list);
-    setAccountName(account?.name ?? null);
-    if (!selectedId && list.length > 0) setSelectedId(list[0].id);
-    setLoading(false);
+    try {
+      const [list, account] = await Promise.all([api.instancesList(), api.accountsActive()]);
+      setInstances(list);
+      setAccountName(account?.name ?? null);
+      if (!selectedId && list.length > 0) setSelectedId(list[0].id);
+    } catch (e) {
+      toast.toast(e instanceof Error ? e.message : String(e), 'error');
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -48,6 +53,7 @@ export default function Home({ onNavigate, onLaunchFail }: { onNavigate: (p: Pag
     const offLog = on('launch:log', (line: string) => setLogs(prev => [...prev.slice(-300), line]));
     const offCrash = on('launch:crash', (d: CrashDiagnosis) => {
       setCrash(d);
+      setProgress(null);
       onLaunchFail(`游戏崩溃：${d.title}`);
       // 崩溃时按设置自动跳到崩溃分析页（日志、人话解释、一键修复都在那里）
       if (settingsRef.current?.launch.showLogOnCrash !== false) onNavigate('crash');
@@ -56,7 +62,10 @@ export default function Home({ onNavigate, onLaunchFail }: { onNavigate: (p: Pag
     const offExit = on('launch:exit', (e: { instanceId: string }) => {
       setProgress(null);
       void reload();
-      if (e) setLaunchState(prev => ({ ...prev, status: 'exited' }));
+      // 只处理当前实例的退出事件，避免旧进程的延迟事件把新启动状态改成 exited
+      if (e?.instanceId) {
+        setLaunchState(prev => (prev.instanceId === e.instanceId ? { ...prev, status: 'exited', pid: null, progress: null } : prev));
+      }
     });
     const offFail = on('launch:failed', (e: { instanceId: string; error: string }) => {
       onLaunchFail(e.error);
@@ -83,7 +92,13 @@ export default function Home({ onNavigate, onLaunchFail }: { onNavigate: (p: Pag
     setLogs([]);
     setProgress(null);
     // 状态完全由主进程的 launch:status 事件驱动，避免"已有实例在运行"被拒绝后界面卡在准备中
-    await api.launchStart(instance.id);
+    try {
+      await api.launchStart(instance.id);
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      toast.toast(message, 'error');
+      onLaunchFail(message);
+    }
   };
 
   const doLaunch = async () => {
@@ -191,15 +206,15 @@ export default function Home({ onNavigate, onLaunchFail }: { onNavigate: (p: Pag
 
       <div className="panel-title mt-lg">快捷操作</div>
       <div className="row" style={{ flexWrap: 'wrap', gap: 10 }}>
-        <button className="btn" onClick={() => selected && api.backupCreate(selected.id, '手动快速备份').then(b => toast.toast(b ? `已备份（${b.worldNames.length} 个世界）` : '没有存档可备份'))}>💾 备份存档</button>
+        <button className="btn" onClick={() => selected && api.backupCreate(selected.id, '手动快速备份').then(b => toast.toast(b ? `已备份（${b.worldNames.length} 个世界）` : '没有存档可备份', b ? 'ok' : 'info')).catch(e => toast.toast(String(e), 'error'))}>💾 备份存档</button>
         <button className="btn" onClick={() => onNavigate('mods')}>🧩 模组体检</button>
         <button className="btn" onClick={() => onNavigate('content')}>🎨 内容管理</button>
         <button className="btn" onClick={() => onNavigate('servers')}>🖥️ 开服务器</button>
         <button className="btn" onClick={() => onNavigate('cloud')}>☁️ 云同步</button>
         <button className="btn" onClick={() => onNavigate('crash')}>🩺 崩溃分析</button>
         <button className="btn" onClick={() => onNavigate('migrate')}>🚚 从其它启动器迁移</button>
-        <button className="btn" onClick={() => selected && api.instanceOpenGameDir(selected.id)}>📂 打开游戏目录</button>
-        <button className="btn" onClick={() => { api.launchKillResidual().then(r => toast.toast(`已清理 ${r.killed.length} 个残余进程`, 'info')); }}>🧹 清理残余进程</button>
+        <button className="btn" onClick={() => selected && api.instanceOpenGameDir(selected.id).catch(e => toast.toast(String(e), 'error'))}>📂 打开游戏目录</button>
+        <button className="btn" onClick={() => { api.launchKillResidual().then(r => toast.toast(`已清理 ${r.killed.length} 个残余进程`, 'info')).catch(e => toast.toast(String(e), 'error')); }}>🧹 清理残余进程</button>
       </div>
 
       {confirmLaunch && (

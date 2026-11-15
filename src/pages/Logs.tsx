@@ -19,7 +19,7 @@ export default function Logs() {
     api.instancesList().then(list => {
       setInstances(list);
       if (!instanceId && list.length) setInstanceId(list[0].id);
-    });
+    }).catch(e => toast.toast(String(e), 'error'));
     /* eslint-disable-next-line */
   }, []);
 

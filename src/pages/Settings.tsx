@@ -1,8 +1,21 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { api, on } from '../lib/api';
 import { useToast } from '../components/Toast';
 import { ConfirmModal, Tip, Toggle, formatBytes } from '../components/Modal';
 import type { AppSettings, JavaInfo, UpdateInfo } from '../../electron/shared/types';
+
+/** 与主进程 settings.ts 一致的深合并：保证嵌套分区只改传入字段 */
+function deepMerge<T>(base: T, patch: any): T {
+  // null 是合法值（如 defaultResolution = null 表示自动），不能用 base 覆盖
+  if (patch === undefined) return base;
+  if (patch === null) return null as T;
+  if (typeof base !== 'object' || base === null || Array.isArray(base)) return patch as T;
+  const out: any = { ...(base as any) };
+  for (const key of Object.keys(patch)) {
+    out[key] = key in (base as any) ? deepMerge((base as any)[key], patch[key]) : patch[key];
+  }
+  return out;
+}
 
 export default function Settings({ onNavigate }: { onNavigate?: (page: 'cloud') => void }) {
   const [settings, setSettings] = useState<AppSettings | null>(null);
@@ -38,8 +51,22 @@ export default function Settings({ onNavigate }: { onNavigate?: (page: 'cloud') 
     try { setJavas(await api.javaDetect()); } catch { setJavas([]); } finally { setJavaScanning(false); }
   };
 
+  const patchSeq = useRef(0);
   const patch = async (p: any) => {
-    try { setSettings(await api.settingsUpdate(p)); } catch (e) { toast.toast(String(e), 'error'); }
+    const seq = ++patchSeq.current;
+    // 先本地合并，输入框不会因为等待 IPC 回写而丢字符
+    setSettings(prev => (prev ? deepMerge(prev, p) : prev));
+    try {
+      const saved = await api.settingsUpdate(p);
+      // 只接受最新一次请求的返回值，避免旧响应覆盖用户刚输入的内容
+      if (seq === patchSeq.current) setSettings(saved);
+    } catch (e) {
+      if (seq === patchSeq.current) {
+        toast.toast(String(e), 'error');
+        // 回读服务器状态，避免界面停留在未保存的值
+        try { setSettings(await api.settingsGet()); } catch { /* ignore */ }
+      }
+    }
   };
 
   if (!settings) return <div className="empty"><div className="big">⚙️</div>正在加载设置…</div>;
@@ -428,7 +455,15 @@ export default function Settings({ onNavigate }: { onNavigate?: (page: 'cloud') 
           confirmText="重置"
           danger
           onCancel={() => setConfirmReset(false)}
-          onConfirm={() => { api.settingsReset().then(setSettings).then(() => toast.toast('设置已重置')); setConfirmReset(false); }}
+          onConfirm={() => {
+            // 作废正在等待的 patch 响应，避免旧响应把重置后的设置覆盖回去
+            patchSeq.current += 1;
+            api.settingsReset().then(saved => {
+              setSettings(saved);
+              toast.toast('设置已重置');
+            }).catch(e => toast.toast(String(e), 'error'));
+            setConfirmReset(false);
+          }}
         />
       )}
 

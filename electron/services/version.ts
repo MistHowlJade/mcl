@@ -137,10 +137,29 @@ export function mergeProfile(base: Record<string, any>, profile: Record<string, 
 }
 
 /* ---------- inheritsFrom 合并 ---------- */
+/**
+ * 库去重键：group:artifact[:classifier][@ext]。
+ * inheritsFrom 的常见场景是子版本用同坐标、不同版本覆盖父版本库（Forge 补丁库），
+ * 直接拼接会让旧版库先进入 classpath；这里保留子版本。classifier 不同的 native 库不受影响。
+ */
+function libraryKey(lib: Record<string, any>): string {
+  const raw = String(lib?.name ?? '');
+  if (!raw) return `raw:${JSON.stringify(lib)}`;
+  const at = raw.indexOf('@');
+  const ext = at >= 0 ? raw.slice(at + 1) : 'jar';
+  const parts = (at >= 0 ? raw.slice(0, at) : raw).split(':');
+  if (parts.length >= 2) return `${parts[0]}:${parts[1]}:${parts[3] ?? ''}:${ext}`;
+  return raw;
+}
+
 function mergeVersionJson(child: Record<string, any>, parent: Record<string, any>): Record<string, any> {
   const merged: Record<string, any> = { ...parent, ...child };
-  // libraries 拼接（父在前，子追加）
-  merged.libraries = [...(parent.libraries ?? []), ...(child.libraries ?? [])];
+  // libraries 按坐标去重：父在前，子覆盖同坐标的版本（Map.set 保留父条目顺序）
+  const libs = new Map<string, Record<string, any>>();
+  for (const lib of [...(parent.libraries ?? []), ...(child.libraries ?? [])]) {
+    if (lib && typeof lib === 'object') libs.set(libraryKey(lib), lib);
+  }
+  merged.libraries = [...libs.values()];
   // arguments 合并
   if (parent.arguments || child.arguments) {
     merged.arguments = {

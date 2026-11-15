@@ -21,8 +21,10 @@ export default function Instances() {
   useEffect(() => { void reload(); /* eslint-disable-next-line */ }, []);
 
   const diskUsage = async (id: string) => {
-    const u = await api.instanceDiskUsage(id);
-    toast.toast(`实例占用 ${formatBytes(u.instance)}\n共享库/资源（全实例复用）占用 ${formatBytes(u.shared)}`, 'info');
+    try {
+      const u = await api.instanceDiskUsage(id);
+      toast.toast(`实例占用 ${formatBytes(u.instance)}\n共享库/资源（全实例复用）占用 ${formatBytes(u.shared)}`, 'info');
+    } catch (e) { toast.toast(String(e), 'error'); }
   };
 
   return (
@@ -57,7 +59,7 @@ export default function Instances() {
               toast.toast(r.ok ? '实例已备份并删除' : '删除失败', r.ok ? 'ok' : 'error');
               setDeleteTarget(null);
               void reload();
-            });
+            }).catch(e => { toast.toast(String(e), 'error'); setDeleteTarget(null); });
           }}
         />
       )}
@@ -89,9 +91,14 @@ export function InstanceCard({ inst, onReload, onDiskUsage, onDelete, onExport }
     if (n && n !== inst.name) patch.name = n;
     if (inst.mcVersion === 'unknown' && mcVersion.trim()) patch.mcVersion = mcVersion.trim();
     if (Object.keys(patch).length > 0) {
-      await api.instanceUpdate(inst.id, patch);
-      toast.toast('已保存');
-      onReload();
+      try {
+        await api.instanceUpdate(inst.id, patch);
+        toast.toast('已保存');
+        onReload();
+      } catch (e) {
+        toast.toast(e instanceof Error ? e.message : String(e), 'error');
+        return;
+      }
     }
     setEditing(false);
   };
@@ -132,11 +139,11 @@ export function InstanceCard({ inst, onReload, onDiskUsage, onDelete, onExport }
         <div className="row" style={{ gap: 8 }}>
           <span className="faint">禁止 Mod 自动更新</span>
           <Tip text="开启后，此实例不会提示任何模组可更新。适合整合包玩家避免随手更新导致版本错乱（大坑，官方没有这个开关时只能服主口头叮嘱）。" />
-          <Toggle checked={!!inst.noModUpdate} onChange={v => api.instanceUpdate(inst.id, { noModUpdate: v }).then(onReload)} label="禁止 Mod 自动更新" />
+          <Toggle checked={!!inst.noModUpdate} onChange={v => { api.instanceUpdate(inst.id, { noModUpdate: v }).then(onReload).catch(e => toast.toast(String(e), 'error')); }} label="禁止 Mod 自动更新" />
         </div>
         <div className="row" style={{ gap: 6 }}>
           <span className="faint">内存</span>
-          <select className="input" style={{ width: 110, padding: '4px 8px' }} value={inst.memoryPreset ?? 'standard'} onChange={e => api.instanceUpdate(inst.id, { memoryPreset: e.target.value }).then(onReload)}>
+          <select className="input" style={{ width: 110, padding: '4px 8px' }} value={inst.memoryPreset ?? 'standard'} onChange={e => { api.instanceUpdate(inst.id, { memoryPreset: e.target.value }).then(onReload).catch(err => toast.toast(String(err), 'error')); }}>
             {(Object.keys(PRESET_INFO) as MemoryPreset[]).map(k => <option key={k} value={k}>{PRESET_INFO[k].label}</option>)}
           </select>
         </div>
@@ -150,8 +157,8 @@ export function InstanceCard({ inst, onReload, onDiskUsage, onDelete, onExport }
         ) : (
           <button className="btn small" onClick={() => setEditing(true)}>重命名</button>
         )}
-        <button className="btn small" onClick={() => api.instanceOpenGameDir(inst.id)}>打开游戏目录</button>
-        <button className="btn small" onClick={() => api.instanceOpenDir(inst.id)}>实例文件夹</button>
+        <button className="btn small" onClick={() => api.instanceOpenGameDir(inst.id).catch(e => toast.toast(String(e), 'error'))}>打开游戏目录</button>
+        <button className="btn small" onClick={() => api.instanceOpenDir(inst.id).catch(e => toast.toast(String(e), 'error'))}>实例文件夹</button>
         <button className="btn small" onClick={() => onDiskUsage(inst.id)}>磁盘占用</button>
         <button className="btn small" onClick={() => setAdvanced(true)}>高级设置</button>
         <button className="btn small" onClick={duplicate} disabled={duplicating} title="完整复制模组、存档与配置，适合开新档或测试模组">

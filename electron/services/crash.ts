@@ -183,7 +183,9 @@ export function findLatestCrashReport(gameDir: string, since?: number): string |
     files = files.filter(f => { try { return fs.statSync(f).mtimeMs >= threshold; } catch { return false; } });
     if (files.length === 0) return null;
   }
-  return files.sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs)[0] ?? null;
+  // 排序时文件可能已被其它程序清理：stat 失败按 0 处理，避免整个崩溃分析抛错
+  const mtime = (f: string) => { try { return fs.statSync(f).mtimeMs; } catch { return 0; } };
+  return files.sort((a, b) => mtime(b) - mtime(a))[0] ?? null;
 }
 
 function readTail(file: string, bytes = 512 * 1024): string {

@@ -347,6 +347,19 @@ async function refreshMicrosoftAccount(account: StoredAccount): Promise<StoredAc
   }
 }
 
+/** 同一账号的刷新请求合并为一个，避免并发使用旧 refresh_token（微软会轮换令牌） */
+const refreshJobs = new Map<string, Promise<StoredAccount | null>>();
+
+function refreshAccountOnce(account: StoredAccount): Promise<StoredAccount | null> {
+  const existing = refreshJobs.get(account.id);
+  if (existing) return existing;
+  // 传副本：refreshMicrosoftAccount 会就地修改对象，不能让并发调用共享它
+  const job = refreshMicrosoftAccount({ ...account })
+    .finally(() => { refreshJobs.delete(account.id); });
+  refreshJobs.set(account.id, job);
+  return job;
+}
+
 /** 获取可用于启动的 accessToken（自动刷新）；返回 null 表示需要重新登录 */
 export async function getValidAccessToken(accountId: string): Promise<{ accessToken: string; userType: 'msa' | 'legacy' | 'offline'; uuid: string; name: string } | null> {
   const data = load();
@@ -355,14 +368,20 @@ export async function getValidAccessToken(accountId: string): Promise<{ accessTo
   if (account.type === 'offline') {
     return { accessToken: '0', userType: 'legacy', uuid: account.uuid, name: account.name };
   }
-  if (!account.accessToken || !account.expiresAt || account.expiresAt - Date.now() <= 60_000) {
-    const refreshed = await refreshMicrosoftAccount(account);
+  let valid = account;
+  if (!valid.accessToken || !valid.expiresAt || valid.expiresAt - Date.now() <= 60_000) {
+    const refreshed = await refreshAccountOnce(valid);
     if (!refreshed) return null;
-    const idx = data.accounts.findIndex(a => a.id === account.id);
-    data.accounts[idx] = refreshed;
+    valid = refreshed;
+    // 等待刷新期间用户可能新增/移除了其它账号：重新读取，只写回这一个账号，
+    // 不能把开头读到的旧快照整体 save 回去（会复活已删除的账号或丢掉新登录的账号）。
+    const fresh = load();
+    const idx = fresh.accounts.findIndex(a => a.id === accountId);
+    if (idx < 0) return null;
+    fresh.accounts[idx] = refreshed;
+    save(fresh);
   }
-  save(data);
-  return { accessToken: account.accessToken!, userType: 'msa', uuid: account.uuid, name: account.name };
+  return { accessToken: valid.accessToken!, userType: 'msa', uuid: valid.uuid, name: valid.name };
 }
 
 /* ---------- 皮肤 / 披风 ---------- */

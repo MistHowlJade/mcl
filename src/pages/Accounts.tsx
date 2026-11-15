@@ -14,9 +14,13 @@ export default function Accounts() {
   const toast = useToast();
 
   const reload = async () => {
-    const [list, active] = await Promise.all([api.accountsList(), api.accountsActive()]);
-    setAccounts(list);
-    setActiveId(active?.id ?? null);
+    try {
+      const [list, active] = await Promise.all([api.accountsList(), api.accountsActive()]);
+      setAccounts(list);
+      setActiveId(active?.id ?? null);
+    } catch (e) {
+      toast.toast(String(e), 'error');
+    }
   };
   useEffect(() => { void reload(); }, []);
 
@@ -110,9 +114,9 @@ export default function Accounts() {
                   <div className="faint">UUID {account.uuid.slice(0, 13)}… · 上次使用 {timeAgo(account.lastUsedAt)}{account.type === 'microsoft' && account.expiresAt ? ` · 令牌有效至 ${new Date(account.expiresAt).toLocaleDateString()}` : ''}</div>
                 </div>
                 <div className="row" style={{ gap: 6 }}>
-                  {!isActive && <button className="btn small" onClick={() => api.accountSetActive(account.id).then(() => { toast.toast('已切换账号'); void reload(); })}>设为使用中</button>}
+                  {!isActive && <button className="btn small" onClick={() => api.accountSetActive(account.id).then(() => { toast.toast('已切换账号'); void reload(); }).catch(e => toast.toast(String(e), 'error'))}>设为使用中</button>}
                   <button className="btn small" onClick={() => setSkinTarget(account)}>皮肤 / 披风</button>
-                  <button className="btn small danger" onClick={() => api.accountRemove(account.id).then(() => { toast.toast('已移除账号', 'info'); void reload(); })}>移除</button>
+                  <button className="btn small danger" onClick={() => api.accountRemove(account.id).then(() => { toast.toast('已移除账号', 'info'); void reload(); }).catch(e => toast.toast(String(e), 'error'))}>移除</button>
                 </div>
               </div>
             );

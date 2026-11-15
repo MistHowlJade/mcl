@@ -35,18 +35,22 @@ function registerMediaProtocol(): void {
       const url = new URL(request.url);
       const raw = url.searchParams.get('p');
       if (!raw) return new Response('缺少路径参数', { status: 400 });
-      const target = path.resolve(decodeURIComponent(raw));
+      // URLSearchParams 已经解码一次，不能再 decodeURIComponent，否则路径里的 % 会被二次解码
+      const target = path.resolve(raw);
       const root = path.resolve(dataRoot());
       // 目录穿越防护：渲染进程只能读取 MCL 数据目录内的文件
       if (target !== root && !target.startsWith(root + path.sep)) {
         return new Response('拒绝访问数据目录之外的文件', { status: 403 });
       }
+      // 只允许图片：数据目录里还有 accounts.json / settings.json 等含令牌的文件
+      const mime = MEDIA_MIME[path.extname(target).toLowerCase()];
+      if (!mime) return new Response('仅支持图片预览', { status: 403 });
       const stat = await fs.promises.stat(target);
       if (!stat.isFile()) return new Response('文件不存在', { status: 404 });
       const data = await fs.promises.readFile(target);
       return new Response(data, {
         headers: {
-          'Content-Type': MEDIA_MIME[path.extname(target).toLowerCase()] ?? 'application/octet-stream',
+          'Content-Type': mime,
           'Cache-Control': 'no-cache',
         },
       });
