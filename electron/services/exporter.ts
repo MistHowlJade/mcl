@@ -124,10 +124,16 @@ export async function exportInstance(instanceId: string, format: ExportFormat, d
   const instance = getInstance(instanceId);
   if (!instance) throw new Error('实例不存在');
   const warnings: string[] = [];
+  if (instance.mcVersion === 'unknown' && format !== 'zip') {
+    warnings.push('该实例未识别 Minecraft 版本，导出的启动器包可能无法直接导入。建议先在实例页补全版本。');
+  }
+  /** NeoForge 1.20.1 的加载器版本在发布坐标里带 1.20.1- 前缀，导出格式通常只要 47.x */
+  const normalizeLoaderVersion = (v: string | null): string | null =>
+    instance.loader === 'neoforge' && instance.mcVersion === '1.20.1' && v ? v.replace(/^1\.20\.1-/, '') : v;
   let entries: ZipEntryInput[] = [];
 
   if (format === 'mmc') {
-    const loaderVersion = instance.loader === 'vanilla' ? null : (instance.loaderVersion || await latestLoaderVersion(instance.loader, instance.mcVersion));
+    const loaderVersion = instance.loader === 'vanilla' ? null : normalizeLoaderVersion(instance.loaderVersion || await latestLoaderVersion(instance.loader, instance.mcVersion));
     if (instance.loader !== 'vanilla' && !loaderVersion) warnings.push('没有确定加载器版本，导出的实例包未包含加载器组件，目标启动器可能需要手动补装。');
     const components: any[] = [{ important: true, uid: 'net.minecraft', version: instance.mcVersion }];
     if (instance.loader !== 'vanilla' && loaderVersion) {
@@ -150,11 +156,12 @@ export async function exportInstance(instanceId: string, format: ExportFormat, d
       entries.push({ name: `.minecraft/${e.rel}`, data: e.data, mtime: e.mtime });
     }
   } else if (format === 'mrpack') {
-    const loaderVersion = instance.loader === 'vanilla' ? null : (instance.loaderVersion || await latestLoaderVersion(instance.loader, instance.mcVersion));
+    const loaderVersion = instance.loader === 'vanilla' ? null : normalizeLoaderVersion(instance.loaderVersion || await latestLoaderVersion(instance.loader, instance.mcVersion));
     if (instance.loader !== 'vanilla' && !loaderVersion) warnings.push('没有确定加载器版本，导出的 mrpack 可能无法被启动器正确识别。');
     const dependencies: Record<string, string> = { minecraft: instance.mcVersion };
     if (instance.loader !== 'vanilla' && loaderVersion) {
-      const key = instance.loader === 'neoforge' ? 'neoforge' : `${instance.loader}-loader`;
+      // Modrinth 规范的键：forge / neoforge / fabric-loader / quilt-loader
+      const key = instance.loader === 'fabric' ? 'fabric-loader' : instance.loader === 'quilt' ? 'quilt-loader' : instance.loader;
       dependencies[key] = loaderVersion;
     }
     const index = {

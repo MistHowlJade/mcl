@@ -258,7 +258,7 @@ export function registerIpcHandlers(): void {
   /* ---------- 备份 ---------- */
   ipcMain.handle('backup:list', (_e, instanceId: string) => backups.listBackups(instanceId));
   ipcMain.handle('backup:create', (_e, instanceId: string, name?: string) => backups.createBackup(instanceId, 'manual', name));
-  ipcMain.handle('backup:delete', (_e, backupId: string) => { backups.deleteBackup(backupId); return true; });
+  ipcMain.handle('backup:delete', (_e, backupId: string, instanceId?: string) => { backups.deleteBackup(backupId, instanceId); return true; });
   ipcMain.handle('backup:restore', (_e, backupId: string, instanceId: string) => backups.restoreBackup(backupId, instanceId));
 
   /* ---------- 崩溃分析 ---------- */

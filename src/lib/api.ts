@@ -115,7 +115,7 @@ export const api = {
 
   backupList: (instanceId: string) => invoke<BackupInfo[]>('backup:list', instanceId),
   backupCreate: (instanceId: string, name?: string) => invoke<BackupInfo | null>('backup:create', instanceId, name),
-  backupDelete: (backupId: string) => invoke<boolean>('backup:delete', backupId),
+  backupDelete: (backupId: string, instanceId?: string) => invoke<boolean>('backup:delete', backupId, instanceId),
   backupRestore: (backupId: string, instanceId: string) => invoke<{ restoredFiles: number }>('backup:restore', backupId, instanceId),
 
   crashLatest: (instanceId: string) => invoke<CrashDiagnosis>('crash:latest', instanceId),

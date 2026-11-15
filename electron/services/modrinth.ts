@@ -60,10 +60,17 @@ export async function getProjectVersions(projectId: string, opts: { loader?: str
   return fetchJson<ModrinthVersion[]>(`${API}/project/${projectId}/version?${params.toString()}`, { timeoutMs: 20000, headers: HEADERS });
 }
 
-/** 远程文件名净化：去掉目录成分，杜绝 ../ 路径穿越 */
+/** 远程文件名净化：去掉目录成分并过滤 Windows 非法字符，杜绝 ../ 路径穿越与非法文件名 */
+const WINDOWS_RESERVED = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\..*)?$/i;
 const sanitizeRemoteName = (name: string): string => {
   const base = String(name).replace(/\\/g, '/').split('/').filter(Boolean).pop() ?? '';
-  return base || `file-${Date.now()}.jar`;
+  let cleaned = base
+    .replace(/[<>:"/\\|?*\u0000-\u001f]/g, '_')
+    .replace(/[. ]+$/g, '')   // Windows 会吞掉结尾的点和空格
+    .slice(0, 120);
+  if (!cleaned || /^\.+$/.test(cleaned)) cleaned = `file-${Date.now()}.jar`;
+  if (WINDOWS_RESERVED.test(cleaned)) cleaned = `_${cleaned}`;
+  return cleaned;
 };
 
 const installedModsPath = (instanceId: string) => paths.installedModsFile(instanceId);
@@ -149,6 +156,17 @@ export async function installMod(instanceId: string, projectId: string, versionI
   const all = readInstalledMods(instanceId);
   const merged = [...all];
   for (const entry of installed) {
+    // 同一 project 换了文件名时删掉旧 jar，避免 mods 目录里新旧版本并存（常见崩溃原因）
+    for (let i = merged.length - 1; i >= 0; i--) {
+      const old = merged[i];
+      if (old.projectId && old.projectId === entry.projectId && old.fileName !== entry.fileName) {
+        const oldPath = path.join(modsDir, old.fileName);
+        for (const p of [oldPath, `${oldPath}.disabled`]) {
+          try { fs.rmSync(p, { force: true }); } catch { /* 旧文件删不掉不阻断安装 */ }
+        }
+        merged.splice(i, 1);
+      }
+    }
     const idx = merged.findIndex(m => m.fileName === entry.fileName);
     if (idx >= 0) merged[idx] = entry; else merged.push(entry);
   }
@@ -221,8 +239,9 @@ export async function checkModUpdates(instanceId: string, mcVersion: string, loa
     try {
       const versions = await getProjectVersions(mod.projectId, { loader, gameVersion: mcVersion });
       const latest = versions[0];
-      if (latest && latest.id !== mod.versionId && latest.files.length > 0) {
-        mod.updateAvailable = { versionNumber: latest.version_number, fileUrl: latest.files[0].url, versionId: latest.id };
+      const latestFile = latest?.files.find(f => f.primary) ?? latest?.files[0];
+      if (latest && latestFile && latest.id !== mod.versionId) {
+        mod.updateAvailable = { versionNumber: latest.version_number, fileUrl: latestFile.url, versionId: latest.id };
       } else {
         mod.updateAvailable = null;
       }
@@ -239,8 +258,10 @@ export async function updateMod(instanceId: string, fileName: string): Promise<I
   const mod = all.find(m => m.fileName === fileName);
   if (!mod?.projectId || !mod.updateAvailable) throw new Error('没有可用的更新');
   const versions = await getProjectVersions(mod.projectId, {});
-  const target = versions.find(v => v.id === mod.updateAvailable!.versionId) ?? versions[0];
-  const file = target?.files.find(f => f.primary) ?? target?.files[0];
+  // 必须精确命中检查更新时选中的版本：拿不到就报错，不能退回到可能不兼容的最新版
+  const target = versions.find(v => v.id === mod.updateAvailable!.versionId);
+  if (!target) throw new Error('更新版本已不可用，请重新检查更新后再试');
+  const file = target.files.find(f => f.primary) ?? target.files[0];
   if (!file) throw new Error('更新文件不存在');
   const modsDir = path.join(paths.gameDir(instanceId), 'mods');
   const old = path.join(modsDir, mod.fileName);
@@ -249,7 +270,10 @@ export async function updateMod(instanceId: string, fileName: string): Promise<I
   const dl = new DownloadManager({ source: 'official', maxThreads: 2, retries: 3 });
   const reports = await dl.run([{ id: `modrinth:${safeName}`, url: file.url, sha1: file.hashes?.sha1, size: file.size, dest, name: safeName }]);
   if (!reports[0]?.ok) throw new Error(`更新下载失败：${reports[0]?.error}`);
-  if (old !== dest && fs.existsSync(old)) fs.rmSync(old, { force: true });
+  // 旧文件可能仍处于禁用状态（.disabled），一并清理
+  for (const candidate of [old, `${old}.disabled`]) {
+    if (candidate !== dest && fs.existsSync(candidate)) fs.rmSync(candidate, { force: true });
+  }
   const updated: InstalledMod = { ...mod, fileName: safeName, versionId: target.id, versionNumber: target.version_number, installedAt: Date.now(), updateAvailable: null, sizeBytes: fs.statSync(dest).size };
   writeInstalledMods(instanceId, all.map(m => m.fileName === fileName ? updated : m));
   return updated;
@@ -259,7 +283,13 @@ export function toggleModDisabled(instanceId: string, fileName: string): boolean
   const modsDir = path.join(paths.gameDir(instanceId), 'mods');
   const enabled = path.join(modsDir, fileName);
   const disabled = enabled + '.disabled';
-  if (fs.existsSync(enabled)) { fs.renameSync(enabled, disabled); return true; }
+  if (fs.existsSync(enabled)) {
+    if (fs.existsSync(disabled)) {
+      throw new Error(`mods 目录同时存在 ${fileName} 和 ${fileName}.disabled，请先手动删除一个重复文件`);
+    }
+    fs.renameSync(enabled, disabled);
+    return true;
+  }
   if (fs.existsSync(disabled)) { fs.renameSync(disabled, enabled); return false; }
   return false;
 }
@@ -269,5 +299,9 @@ export function listModFiles(instanceId: string): Array<{ fileName: string; size
   if (!fs.existsSync(modsDir)) return [];
   return fs.readdirSync(modsDir)
     .filter(f => f.endsWith('.jar') || f.endsWith('.jar.disabled'))
-    .map(f => ({ fileName: f, sizeBytes: fs.statSync(path.join(modsDir, f)).size, disabled: f.endsWith('.disabled') }));
+    .map(f => {
+      let sizeBytes = 0;
+      try { sizeBytes = fs.statSync(path.join(modsDir, f)).size; } catch { /* 文件可能刚被删除 */ }
+      return { fileName: f, sizeBytes, disabled: f.endsWith('.disabled') };
+    });
 }

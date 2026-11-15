@@ -114,7 +114,7 @@ export default function Backups() {
           confirmText="删除"
           danger
           onCancel={() => setDeleteTarget(null)}
-          onConfirm={() => { api.backupDelete(deleteTarget.id).then(() => { toast.toast('已删除'); setDeleteTarget(null); void reload(); }).catch(e => toast.toast(String(e), 'error')); }}
+          onConfirm={() => { api.backupDelete(deleteTarget.id, deleteTarget.instanceId).then(() => { toast.toast('已删除'); setDeleteTarget(null); void reload(); }).catch(e => toast.toast(String(e), 'error')); }}
         />
       )}
     </div>

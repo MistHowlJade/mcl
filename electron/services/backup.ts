@@ -106,10 +106,18 @@ export function pruneOldBackups(instanceId: string): void {
   }
 }
 
-export function deleteBackup(id: string): void {
-  // id 形如 auto-1234，需要找到实例目录 — 在所有实例备份目录下查找
+export function deleteBackup(id: string, instanceId?: string): void {
+  // id 形如 auto-1234；优先按实例定位，避免同毫秒备份 ID 误删其它实例的文件
   const safeId = path.basename(String(id ?? ''));
   if (!safeId) return;
+  if (instanceId) {
+    if (!/^[a-f0-9]{16}$/.test(instanceId)) throw new Error('实例 ID 不合法');
+    const dir = paths.instanceBackupsDir(instanceId);
+    fs.rmSync(path.join(dir, `${safeId}.zip`), { force: true });
+    fs.rmSync(path.join(dir, `${safeId}.json`), { force: true });
+    return;
+  }
+  // 兼容旧调用：没有实例信息时在所有实例备份目录下查找
   const root = paths.backupsDir();
   if (!fs.existsSync(root)) return;
   for (const sub of fs.readdirSync(root)) {
