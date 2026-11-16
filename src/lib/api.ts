@@ -86,6 +86,7 @@ export const api = {
   accountRemove: (id: string) => invoke<boolean>('accounts:remove', id),
   accountCreateOffline: (name: string, skinDataUrl?: string | null) => invoke<Account>('accounts:createOffline', name, skinDataUrl),
   accountsBeginMicrosoft: () => invoke<{ deviceCode: string; userCode: string; verificationUri: string; expiresIn: number; interval: number; message: string }>('accounts:beginMicrosoft'),
+  accountsCancelMicrosoft: (userCode: string) => invoke<boolean>('accounts:cancelMicrosoft', userCode),
   accountLocalSkin: (accountId: string, model: 'classic' | 'slim') => invoke<Account | null>('accounts:localSkin', accountId, model),
   accountClearLocalSkin: (accountId: string) => invoke<Account>('accounts:clearLocalSkin', accountId),
   accountLocalCape: (accountId: string) => invoke<Account | null>('accounts:localCape', accountId),

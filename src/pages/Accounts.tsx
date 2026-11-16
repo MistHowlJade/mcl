@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { api, on } from '../lib/api';
 import { useToast } from '../components/Toast';
 import { Modal, Tip, timeAgo } from '../components/Modal';
@@ -11,6 +11,7 @@ export default function Accounts() {
   const [msWaiting, setMsWaiting] = useState(false);
   const [offlineName, setOfflineName] = useState('');
   const [skinTarget, setSkinTarget] = useState<Account | null>(null);
+  const msCodeRef = useRef<string | null>(null);
   const toast = useToast();
 
   const reload = async () => {
@@ -24,22 +25,35 @@ export default function Accounts() {
   };
   useEffect(() => { void reload(); }, []);
 
-  useEffect(() => on('accounts:microsoft-result', (payload: { ok: boolean; account?: Account; error?: string; warn?: string | null }) => {
+  useEffect(() => on('accounts:microsoft-result', (payload: { ok: boolean; userCode?: string; account?: Account; error?: string; warn?: string | null; canceled?: boolean }) => {
+    // 忽略已关闭/过期的旧登录尝试，避免重新登录后弹出上一次的过期错误
+    if (payload.userCode && payload.userCode !== msCodeRef.current) return;
+    msCodeRef.current = null;
     setMsWaiting(false);
     if (payload.ok) {
       toast.toast(`登录成功：${payload.account?.name}${payload.warn ? `\n⚠ ${payload.warn}` : ''}`, 'ok');
       setMsSession(null);
       void reload();
     } else {
-      toast.toast(payload.error ?? '微软登录失败', 'error');
+      toast.toast(payload.error ?? '微软登录失败', payload.canceled ? 'info' : 'error');
       setMsSession(null);
     }
   }), []);
+
+  const closeMicrosoftModal = () => {
+    const code = msSession?.userCode;
+    msCodeRef.current = null;
+    setMsSession(null);
+    setMsWaiting(false);
+    // 通知主进程停止轮询，否则后台会白等到代码过期
+    if (code) void api.accountsCancelMicrosoft(code).catch(() => undefined);
+  };
 
   const beginMicrosoft = async () => {
     try {
       setMsWaiting(true);
       const session = await api.accountsBeginMicrosoft();
+      msCodeRef.current = session.userCode;
       setMsSession({ userCode: session.userCode, verificationUri: session.verificationUri, message: session.message });
     } catch (e) {
       setMsWaiting(false);
@@ -77,14 +91,14 @@ export default function Accounts() {
       </div>
 
       {msSession && (
-        <Modal title="完成微软登录" onClose={() => setMsSession(null)} footer={
-          <button className="btn" onClick={() => { api.openExternal(msSession.verificationUri); }}>打开验证页面 ↗</button>
+        <Modal title="完成微软登录" onClose={closeMicrosoftModal} footer={
+          <button className="btn" onClick={() => api.openExternal(msSession.verificationUri).catch(e => toast.toast(String(e), 'error'))}>打开验证页面 ↗</button>
         }>
           <p className="muted">1. 在浏览器打开 <strong>{msSession.verificationUri}</strong>（点右下角按钮可直接打开）<br />2. 输入下面的代码并确认登录</p>
           <div style={{ textAlign: 'center', margin: '18px 0' }}>
             <div className="mono" style={{ fontSize: 34, letterSpacing: 8, fontWeight: 800, color: 'var(--accent)', background: '#0b0e14', borderRadius: 12, padding: '16px 10px', userSelect: 'text' }}>{msSession.userCode}</div>
           </div>
-          <p className="faint">代码 15 分钟内有效。登录成功后本窗口会自动关闭。<br />Xbox Live 授权失败时，最常见的原因是：系统时间不对（差 5 分钟就会被微软拒绝）——MCL 会在报错里直接告诉你。</p>
+          <p className="faint">代码 15 分钟内有效。登录成功后本窗口会自动关闭；关闭窗口会取消本次登录。<br />Xbox Live 授权失败时，最常见的原因是：系统时间不对（差 5 分钟就会被微软拒绝）——MCL 会在报错里直接告诉你。</p>
           <div className="row mt" style={{ justifyContent: 'center' }}><div className="progress" style={{ width: 200 }}><div style={{ width: '100%', animation: 'pulse 1.6s infinite' }} /></div></div>
         </Modal>
       )}

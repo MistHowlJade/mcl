@@ -26,6 +26,13 @@ export interface MicrosoftLoginSession {
   message: string;
 }
 
+/** 用户关闭登录弹窗后标记取消，轮询在下一轮尽快退出，避免后台白等 15 分钟 */
+const canceledMicrosoftLogins = new Set<string>();
+
+export function cancelMicrosoftLogin(userCode: string): void {
+  if (userCode) canceledMicrosoftLogins.add(String(userCode));
+}
+
 interface StoredAccount extends Account {
   /** Minecraft 服务访问令牌（24h） */
   accessToken?: string | null;
@@ -173,7 +180,9 @@ function checkClockSkew(resHeaders: Record<string, any>): string | null {
 async function pollMicrosoftToken(session: MicrosoftLoginSession): Promise<{ msToken: string; refreshToken: string | null; expiresIn: number; skewWarning: string | null }> {
   const deadline = Date.now() + session.expiresIn * 1000;
   while (Date.now() < deadline) {
+    if (canceledMicrosoftLogins.has(session.userCode)) throw new Error('登录已取消。');
     await new Promise(r => setTimeout(r, session.interval * 1000));
+    if (canceledMicrosoftLogins.has(session.userCode)) throw new Error('登录已取消。');
     const body = new URLSearchParams({
       client_id: CLIENT_ID,
       grant_type: 'urn:ietf:params:oauth:grant-type:device_code',
@@ -290,28 +299,32 @@ async function mcTokenFromMsToken(msToken: string): Promise<{ mcToken: string; m
 
 /** 完整走通 Xbox → XSTS → Minecraft 服务 链路并保存账号 */
 export async function finishMicrosoftLogin(session: MicrosoftLoginSession): Promise<MicrosoftLoginResult> {
-  const { msToken, refreshToken, skewWarning } = await pollMicrosoftToken(session);
-  const chain = await mcTokenFromMsToken(msToken);
+  try {
+    const { msToken, refreshToken, skewWarning } = await pollMicrosoftToken(session);
+    const chain = await mcTokenFromMsToken(msToken);
 
-  const data = load();
-  const account: StoredAccount = {
-    id: `microsoft:${chain.uuid.replace(/-/g, '')}`,
-    type: 'microsoft',
-    name: chain.name,
-    uuid: chain.uuid,
-    skinUrl: chain.skinUrl,
-    capeUrl: null,
-    skinModel: chain.skinModel,
-    accessToken: chain.mcToken,
-    refreshToken: refreshToken ?? null,
-    expiresAt: Date.now() + chain.mcExpiresIn * 1000,
-    lastUsedAt: Date.now(),
-  };
-  data.accounts = data.accounts.filter(a => a.id !== account.id);
-  data.accounts.push(account);
-  data.activeId = account.id;
-  save(data);
-  return { account: publicView(account), warn: skewWarning };
+    const data = load();
+    const account: StoredAccount = {
+      id: `microsoft:${chain.uuid.replace(/-/g, '')}`,
+      type: 'microsoft',
+      name: chain.name,
+      uuid: chain.uuid,
+      skinUrl: chain.skinUrl,
+      capeUrl: null,
+      skinModel: chain.skinModel,
+      accessToken: chain.mcToken,
+      refreshToken: refreshToken ?? null,
+      expiresAt: Date.now() + chain.mcExpiresIn * 1000,
+      lastUsedAt: Date.now(),
+    };
+    data.accounts = data.accounts.filter(a => a.id !== account.id);
+    data.accounts.push(account);
+    data.activeId = account.id;
+    save(data);
+    return { account: publicView(account), warn: skewWarning };
+  } finally {
+    canceledMicrosoftLogins.delete(session.userCode);
+  }
 }
 
 /** 用刷新令牌换新的 MS token，再重跑整条链路 */

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../lib/api';
 import { useToast } from '../components/Toast';
 import { formatBytes, timeAgo } from '../components/Modal';
@@ -14,6 +14,8 @@ export default function Logs() {
   const [content, setContent] = useState('');
   const [query, setQuery] = useState('');
   const toast = useToast();
+  const listSeq = useRef(0);
+  const readSeq = useRef(0);
 
   useEffect(() => {
     api.instancesList().then(list => {
@@ -24,16 +26,26 @@ export default function Logs() {
   }, []);
 
   useEffect(() => {
+    const seq = ++listSeq.current;
     api.logsList(instanceId ?? undefined).then(list => {
+      if (seq !== listSeq.current) return;
       setLogs(list);
-      if (list.length && !selected) setSelected(list[0].name);
-    }).catch(() => setLogs([]));
+      // 切换实例后旧选中项可能不存在：自动落到第一条，避免右侧一直显示上一个实例的日志
+      setSelected(prev => (prev && list.some(l => l.name === prev)) ? prev : (list[0]?.name ?? null));
+    }).catch(() => {
+      if (seq === listSeq.current) { setLogs([]); setSelected(null); setContent(''); }
+    });
     /* eslint-disable-next-line */
   }, [instanceId]);
 
   useEffect(() => {
+    const seq = ++readSeq.current;
     if (!selected) { setContent(''); return; }
-    api.logsRead(selected, instanceId ?? undefined).then(setContent).catch(e => { setContent(''); toast.toast(String(e), 'error'); });
+    api.logsRead(selected, instanceId ?? undefined).then(text => {
+      if (seq === readSeq.current) setContent(text);
+    }).catch(e => {
+      if (seq === readSeq.current) { setContent(''); toast.toast(String(e), 'error'); }
+    });
     /* eslint-disable-next-line */
   }, [selected, instanceId]);
 

@@ -84,9 +84,9 @@ function Shell() {
       <div className="titlebar">
         <div className="brand"><div className="logo">M</div>MCL<span className="faint">新一代我的世界启动器</span></div>
         <div className="spacer" />
-        <button className="winbtn" onClick={() => api.windowMinimize()} title="最小化">─</button>
-        <button className="winbtn" onClick={async () => setMaximized(await api.windowToggleMaximize())} title="最大化/还原">{maximized ? '❐' : '□'}</button>
-        <button className="winbtn close" onClick={() => api.windowClose()} title="关闭">✕</button>
+        <button className="winbtn" onClick={() => api.windowMinimize().catch(() => undefined)} title="最小化">─</button>
+        <button className="winbtn" onClick={() => api.windowToggleMaximize().then(setMaximized).catch(() => undefined)} title="最大化/还原">{maximized ? '❐' : '□'}</button>
+        <button className="winbtn close" onClick={() => api.windowClose().catch(() => undefined)} title="关闭">✕</button>
       </div>
       <div className="app-shell">
         <nav className="sidebar">

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../lib/api';
 import { useToast } from '../components/Toast';
 import { ConfirmModal, formatBytes, timeAgo } from '../components/Modal';
@@ -11,6 +11,7 @@ export default function Backups() {
   const [restoreTarget, setRestoreTarget] = useState<BackupInfo | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<BackupInfo | null>(null);
   const [creating, setCreating] = useState(false);
+  const reloadSeq = useRef(0);
   const toast = useToast();
 
   useEffect(() => {
@@ -21,8 +22,22 @@ export default function Backups() {
     /* eslint-disable-next-line */
   }, []);
 
-  const reload = () => instanceId && api.backupList(instanceId).then(setBackups).catch(e => toast.toast(String(e), 'error'));
-  useEffect(() => { void reload(); /* eslint-disable-next-line */ }, [instanceId]);
+  const reload = async () => {
+    if (!instanceId) { setBackups([]); return; }
+    // 快速切换实例时旧请求可能后返回：只接受最后一次请求的结果
+    const seq = ++reloadSeq.current;
+    try {
+      const list = await api.backupList(instanceId);
+      if (seq === reloadSeq.current) setBackups(list);
+    } catch (e) {
+      if (seq === reloadSeq.current) toast.toast(String(e), 'error');
+    }
+  };
+  useEffect(() => {
+    setBackups([]);
+    void reload();
+    /* eslint-disable-next-line */
+  }, [instanceId]);
 
   const totalBytes = useMemo(() => backups.reduce((a, b) => a + b.sizeBytes, 0), [backups]);
   const instance = instances.find(i => i.id === instanceId) ?? null;
@@ -99,7 +114,8 @@ export default function Backups() {
           confirmText="恢复"
           onCancel={() => setRestoreTarget(null)}
           onConfirm={() => {
-            api.backupRestore(restoreTarget.id, instanceId!).then(r => {
+            // 用备份自身的 instanceId，避免切换实例后把旧列表里的备份恢复到新实例
+            api.backupRestore(restoreTarget.id, restoreTarget.instanceId).then(r => {
               toast.toast(`恢复完成：${r.restoredFiles} 个文件`, 'ok');
               setRestoreTarget(null);
               void reload();

@@ -380,7 +380,8 @@ export async function prepareServer(id: string): Promise<ServerInfo> {
   const dir = paths.serverDir(id);
   fs.mkdirSync(dir, { recursive: true });
   const rt = runtimeOf(id);
-  if (rt.status === 'running' || rt.status === 'starting') throw new Error('服务器正在运行，无法重新安装');
+  if (rt.status === 'preparing') throw new Error('服务端正在安装中，请稍候。');
+  if (rt.status === 'running' || rt.status === 'starting' || rt.status === 'stopping') throw new Error('服务器正在运行，无法重新安装');
   setStatus(id, 'preparing');
   try {
     const javaPath = await resolveJava(cfg);
@@ -414,8 +415,12 @@ export async function prepareServer(id: string): Promise<ServerInfo> {
       emitLog(id, `正在下载 Quilt 安装器 ${installerVersion}…`, 'install');
       await downloadFile(installerUrl, installerPath, 'Quilt 安装器');
       emitLog(id, '正在安装 Quilt 服务端（可能需要 1–3 分钟）…', 'install');
-      await runInstaller(javaPath, ['-jar', installerPath, 'install', 'server', cfg.mcVersion, lv, `--install-dir=${dir}`, '--download-server'], dir, line => emitLog(id, line, 'install'));
-      fs.rmSync(installerPath, { force: true });
+      try {
+        await runInstaller(javaPath, ['-jar', installerPath, 'install', 'server', cfg.mcVersion, lv, `--install-dir=${dir}`, '--download-server'], dir, line => emitLog(id, line, 'install'));
+      } finally {
+        // 安装失败也清理安装包，避免服务器目录里残留几十 MB 的临时 jar
+        fs.rmSync(installerPath, { force: true });
+      }
       if (!findInstalledJar(dir)) throw new Error('Quilt 安装完成但找不到服务端启动 jar。');
     } else {
       const loader = cfg.loader;
@@ -456,8 +461,11 @@ export async function prepareServer(id: string): Promise<ServerInfo> {
       emitLog(id, `正在下载 ${loader === 'forge' ? 'Forge' : 'NeoForge'} 安装器（${forgeId}）…`, 'install');
       await downloadFile(installerUrl, installerPath, `${loader} 安装器`);
       emitLog(id, '正在静默安装服务端（可能需要 1–5 分钟）…', 'install');
-      await runInstaller(javaPath, ['-jar', installerPath, '--installServer', dir], dir, line => emitLog(id, line, 'install'));
-      fs.rmSync(installerPath, { force: true });
+      try {
+        await runInstaller(javaPath, ['-jar', installerPath, '--installServer', dir], dir, line => emitLog(id, line, 'install'));
+      } finally {
+        fs.rmSync(installerPath, { force: true });
+      }
       if (!findForgeArgs(dir, loader)) throw new Error(`${loader} 安装完成但找不到启动参数文件，请查看安装日志。`);
     }
 
@@ -473,11 +481,23 @@ export async function prepareServer(id: string): Promise<ServerInfo> {
 
 function runInstaller(javaPath: string, args: string[], cwd: string, onLine: (line: string) => void): Promise<void> {
   return new Promise((resolve, reject) => {
+    let settled = false;
+    const finish = (err?: Error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if (err) reject(err); else resolve();
+    };
     const child = spawn(javaPath, args, { cwd, windowsHide: true });
+    // 安装器不会自己退出时不能让「安装服务端」永远转圈：20 分钟后强制结束
+    const timer = setTimeout(() => {
+      try { child.kill('SIGKILL'); } catch { /* 进程可能已退出 */ }
+      finish(new Error('安装器超过 20 分钟没有结束，已强制停止。请检查网络后重试，或手动运行安装器。'));
+    }, 20 * 60 * 1000);
     child.stdout.on('data', d => String(d).split(/\r?\n/).filter(Boolean).forEach(onLine));
     child.stderr.on('data', d => String(d).split(/\r?\n/).filter(Boolean).forEach(onLine));
-    child.on('error', reject);
-    child.on('close', code => code === 0 ? resolve() : reject(new Error(`安装器退出码 ${code}，请查看上面的安装日志。`)));
+    child.on('error', e => finish(e));
+    child.on('close', code => finish(code === 0 ? undefined : new Error(`安装器退出码 ${code}，请查看上面的安装日志。`)));
   });
 }
 
@@ -540,7 +560,8 @@ function jvmArgsFor(cfg: ServerConfig): string[] {
 export async function startServer(id: string): Promise<ServerInfo> {
   const cfg = readConfig(id);
   const rt = runtimeOf(id);
-  if (rt.child || rt.status === 'running' || rt.status === 'starting') throw new Error('服务器已经在运行中');
+  if (rt.child || rt.status === 'running' || rt.status === 'starting' || rt.status === 'stopping') throw new Error('服务器已经在运行中');
+  if (rt.status === 'preparing') throw new Error('服务端正在安装，请等安装完成后再启动');
   if (!cfg.eulaAccepted) throw new Error('请先阅读并同意 Minecraft 服务器 EULA（界面中勾选后再启动）。');
   const dir = paths.serverDir(id);
   if (!cfg.prepared) await prepareServer(id);
@@ -672,11 +693,17 @@ export function sendCommand(id: string, command: string): boolean {
 export function listServerBackups(id: string): ServerBackupInfo[] {
   const dir = paths.serverBackupsDir(id);
   if (!fs.existsSync(dir)) return [];
-  return fs.readdirSync(dir).filter(f => f.endsWith('.zip')).map(f => {
+  const out: ServerBackupInfo[] = [];
+  for (const f of fs.readdirSync(dir)) {
+    if (!f.endsWith('.zip')) continue;
     const p = path.join(dir, f);
-    const stat = fs.statSync(p);
-    return { name: f.replace(/\.zip$/, ''), filePath: p, sizeBytes: stat.size, createdAt: stat.mtimeMs };
-  }).sort((a, b) => b.createdAt - a.createdAt);
+    // 备份可能刚好被另一处操作删除：跳过而不是让整个列表报错
+    try {
+      const stat = fs.statSync(p);
+      out.push({ name: f.replace(/\.zip$/, ''), filePath: p, sizeBytes: stat.size, createdAt: stat.mtimeMs });
+    } catch { /* 文件已不存在 */ }
+  }
+  return out.sort((a, b) => b.createdAt - a.createdAt);
 }
 
 /** level-name 可被手动改成 ../xxx，必须校验解析后的世界目录仍在服务器目录内 */
@@ -691,6 +718,11 @@ function resolveServerWorldDir(id: string, worldName: string): string {
 }
 
 export function backupServerWorld(id: string, name?: string): ServerBackupInfo {
+  const rt = runtimeOf(id);
+  // 运行中的世界文件仍在被服务端写入，直接打包可能得到缺区块/半写入的损坏存档
+  if (rt.child || (rt.status !== 'stopped' && rt.status !== 'crashed')) {
+    throw new Error('服务器运行中无法安全备份世界：世界文件仍在写入，打包出的存档可能损坏。请先停止服务器再备份。');
+  }
   readConfig(id);
   const props = readServerProperties(id);
   const worldName = props['level-name'] || 'world';
@@ -707,7 +739,7 @@ export function backupServerWorld(id: string, name?: string): ServerBackupInfo {
 
 export function restoreServerWorld(id: string, backupName: string): { restoredFiles: number } {
   const rt = runtimeOf(id);
-  if (rt.child) throw new Error('请先停止服务器再恢复世界备份');
+  if (rt.child || (rt.status !== 'stopped' && rt.status !== 'crashed')) throw new Error('请先停止服务器再恢复世界备份');
   readConfig(id);
   const props = readServerProperties(id);
   const worldName = props['level-name'] || 'world';

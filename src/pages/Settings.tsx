@@ -12,6 +12,8 @@ function deepMerge<T>(base: T, patch: any): T {
   if (typeof base !== 'object' || base === null || Array.isArray(base)) return patch as T;
   const out: any = { ...(base as any) };
   for (const key of Object.keys(patch)) {
+    // 与主进程一致：跳过 __proto__ 等键，避免设置对象原型被污染
+    if (key === '__proto__' || key === 'constructor' || key === 'prototype') continue;
     out[key] = key in (base as any) ? deepMerge((base as any)[key], patch[key]) : patch[key];
   }
   return out;

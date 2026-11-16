@@ -91,7 +91,6 @@ export function duplicateInstance(id: string): InstanceConfig {
   const srcDir = paths.instanceDir(id);
   const destDir = paths.instanceDir(copyId);
   if (!fs.existsSync(srcDir)) throw new Error('实例目录不存在');
-  fs.cpSync(srcDir, destDir, { recursive: true });
   const cfg: InstanceConfig = {
     ...source,
     id: copyId,
@@ -100,7 +99,15 @@ export function duplicateInstance(id: string): InstanceConfig {
     lastPlayedAt: null,
     playTimeSeconds: 0,
   };
-  writeJson(paths.instanceFile(copyId), cfg);
+  try {
+    fs.cpSync(srcDir, destDir, { recursive: true });
+    writeJson(paths.instanceFile(copyId), cfg);
+  } catch (e) {
+    // 复制到一半失败（磁盘满/文件被占用）时清理残留：
+    // 否则残留目录里还是原实例的 instance.json，列表里可能出现一个指向原实例的“幽灵实例”
+    try { fs.rmSync(destDir, { recursive: true, force: true }); } catch { /* 清理失败不掩盖原错误 */ }
+    throw e;
+  }
   return cfg;
 }
 

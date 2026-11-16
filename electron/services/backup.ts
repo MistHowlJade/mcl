@@ -30,7 +30,8 @@ export function listBackups(instanceId: string): BackupInfo[] {
   for (const name of fs.readdirSync(dir)) {
     if (!name.endsWith('.zip')) continue;
     const file = path.join(dir, name);
-    const stat = fs.statSync(file);
+    let stat: fs.Stats;
+    try { stat = fs.statSync(file); } catch { continue; } // 可能刚被自动清理
     // 从文件名还原元数据：<kind>-<ts>.zip
     const m = name.match(/^(auto|manual|pre-restore|world)-(\d+)/);
     const metaPath = file.replace(/\.zip$/, '.json');
@@ -56,13 +57,19 @@ export async function createBackup(instanceId: string, kind: BackupInfo['kind'],
   const gameDir = instance.gameDir;
   const included = collectIncludedFiles(gameDir);
   if (included.length === 0) return null; // 没有存档可备份
-  const worldNames = included.includes('saves') ? fs.readdirSync(path.join(gameDir, 'saves')).filter(d => fs.statSync(path.join(gameDir, 'saves', d)).isDirectory()) : [];
+  const worldNames = included.includes('saves')
+    ? fs.readdirSync(path.join(gameDir, 'saves')).filter(d => {
+      try { return fs.statSync(path.join(gameDir, 'saves', d)).isDirectory(); } catch { return false; }
+    })
+    : [];
 
   // 构造打包清单：saves/ 整个目录 + 根目录的配置文件
   const { zipWrite } = await import('./zip');
   const files: Array<{ name: string; data: Buffer; mtime: Date }> = [];
   const walkAdd = (absDir: string, relPrefix: string) => {
-    for (const entry of fs.readdirSync(absDir, { withFileTypes: true })) {
+    let entries: fs.Dirent[] = [];
+    try { entries = fs.readdirSync(absDir, { withFileTypes: true }); } catch { return; }
+    for (const entry of entries) {
       const abs = path.join(absDir, entry.name);
       const rel = `${relPrefix}/${entry.name}`;
       if (entry.isDirectory()) walkAdd(abs, rel);
@@ -71,8 +78,10 @@ export async function createBackup(instanceId: string, kind: BackupInfo['kind'],
   };
   for (const inc of included) {
     const abs = path.join(gameDir, inc);
-    if (fs.statSync(abs).isDirectory()) walkAdd(abs, inc);
-    else files.push({ name: inc, data: fs.readFileSync(abs), mtime: fs.statSync(abs).mtime });
+    try {
+      if (fs.statSync(abs).isDirectory()) walkAdd(abs, inc);
+      else files.push({ name: inc, data: fs.readFileSync(abs), mtime: fs.statSync(abs).mtime });
+    } catch { /* 文件可能在备份瞬间被删除 */ }
   }
   if (files.length === 0) return null; // 空目录（如只有一个空 saves/）不产生空备份
 
@@ -144,14 +153,14 @@ export async function restoreBackup(backupId: string, instanceId: string): Promi
   let meta: { kind?: string; worldNames?: string[] } = {};
   const metaPath = zipPath.replace(/\.zip$/, '.json');
   try { if (fs.existsSync(metaPath)) meta = JSON.parse(fs.readFileSync(metaPath, 'utf8')); } catch { /* ignore */ }
-  if (meta.kind === 'world') {
-    const entries = zipList(buf).map(e => e.name.replace(/\\/g, '/'));
-    const alreadyPrefixed = entries.some(n => n === 'saves' || n.startsWith('saves/'));
-    if (!alreadyPrefixed) {
-      const worldName = path.basename(meta.worldNames?.[0] || `restored-${backupId}`);
-      targetDir = path.join(gameDir, 'saves', worldName);
-      fs.mkdirSync(targetDir, { recursive: true });
-    }
+  const entries = zipList(buf).map(e => e.name.replace(/\\/g, '/'));
+  const alreadyPrefixed = entries.some(n => n === 'saves' || n.startsWith('saves/'));
+  // 元数据丢失时不把世界包倒进游戏根目录：没有 saves/ 前缀且带 level.dat 的就是单个世界
+  const looksLikeWorld = meta.kind === 'world' || (!meta.kind && !alreadyPrefixed && entries.includes('level.dat'));
+  if (looksLikeWorld && !alreadyPrefixed) {
+    const worldName = path.basename(meta.worldNames?.[0] || `restored-${backupId}`);
+    targetDir = path.join(gameDir, 'saves', worldName);
+    fs.mkdirSync(targetDir, { recursive: true });
   }
 
   // 只允许还原到白名单子目录（zipExtractAll 内部还会做目录穿越防护）

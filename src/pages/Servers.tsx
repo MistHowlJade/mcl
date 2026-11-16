@@ -2,9 +2,27 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { api, on } from '../lib/api';
 import { useToast } from '../components/Toast';
 import { ConfirmModal, Modal, Tip, Toggle, formatBytes, timeAgo } from '../components/Modal';
-import type { LanWorld, ServerBackupInfo, ServerInfo, ServerLoader, ServerProperties, ServerStatus } from '../../electron/shared/types';
+import type { LanWorld, ServerBackupInfo, ServerConfig, ServerInfo, ServerLoader, ServerProperties, ServerStatus } from '../../electron/shared/types';
 
 type Tab = 'console' | 'settings' | 'properties' | 'backups';
+
+interface ServerSettingsDraft {
+  name: string;
+  port: number;
+  memoryMB: number;
+  javaPath: string;
+  jvmArgsExtra: string;
+}
+
+function draftFromConfig(cfg: Pick<ServerConfig, 'name' | 'port' | 'memoryMB' | 'javaPath' | 'jvmArgsExtra'>): ServerSettingsDraft {
+  return {
+    name: cfg.name,
+    port: cfg.port,
+    memoryMB: cfg.memoryMB,
+    javaPath: cfg.javaPath ?? '',
+    jvmArgsExtra: cfg.jvmArgsExtra ?? '',
+  };
+}
 
 const STATUS_INFO: Record<ServerStatus, { label: string; cls: string }> = {
   stopped: { label: '已停止', cls: '' },
@@ -45,6 +63,7 @@ export default function Servers() {
   const [command, setCommand] = useState('');
   const [properties, setProperties] = useState<ServerProperties>({});
   const [propDraft, setPropDraft] = useState<ServerProperties>({});
+  const [settingsDraft, setSettingsDraft] = useState<ServerSettingsDraft | null>(null);
   const [backups, setBackups] = useState<ServerBackupInfo[]>([]);
   const [creating, setCreating] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
@@ -52,8 +71,8 @@ export default function Servers() {
   const [eulaChecked, setEulaChecked] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<ServerInfo | null>(null);
   const [killTarget, setKillTarget] = useState<ServerInfo | null>(null);
-  const [restoreTarget, setRestoreTarget] = useState<ServerBackupInfo | null>(null);
-  const [backupDeleteTarget, setBackupDeleteTarget] = useState<ServerBackupInfo | null>(null);
+  const [restoreTarget, setRestoreTarget] = useState<{ backup: ServerBackupInfo; serverId: string } | null>(null);
+  const [backupDeleteTarget, setBackupDeleteTarget] = useState<{ backup: ServerBackupInfo; serverId: string } | null>(null);
   const [lanWorlds, setLanWorlds] = useState<LanWorld[]>([]);
   const [lanScanning, setLanScanning] = useState(false);
   const logRef = useRef<HTMLDivElement>(null);
@@ -67,14 +86,30 @@ export default function Servers() {
       const exists = prev.some(s => s.id === info.id);
       return exists ? prev.map(s => s.id === info.id ? info : s) : [info, ...prev];
     });
-    setServer(prev => prev?.id === info.id ? { ...prev, ...info } : prev);
+    // 状态事件只合并运行期字段：否则玩家进出/启动状态刷新会把设置页里正在编辑的
+    // 名称、端口、内存、Java 路径和 JVM 参数覆盖掉
+    setServer(prev => {
+      if (!prev || prev.id !== info.id) return prev;
+      return {
+        ...prev,
+        status: info.status,
+        pid: info.pid ?? null,
+        startedAt: info.startedAt ?? null,
+        players: info.players,
+        online: info.online,
+        diskBytes: info.diskBytes,
+        logTail: info.logTail,
+        lastStartedAt: info.lastStartedAt ?? prev.lastStartedAt,
+      };
+    });
   };
 
   const reloadServers = async () => {
     try {
       const list = await api.serversList();
       setServers(list);
-      setSelectedId(prev => prev ?? list[0]?.id ?? null);
+      // 服务器可能已被外部删除：选中项不存在时自动落到第一台，避免详情区一直报「服务器不存在」
+      setSelectedId(prev => (prev && list.some(s => s.id === prev)) ? prev : (list[0]?.id ?? null));
     } catch (e) { toast.toast(e instanceof Error ? e.message : String(e), 'error'); }
   };
 
@@ -90,8 +125,20 @@ export default function Servers() {
   }, []);
 
   useEffect(() => {
-    if (!selectedId) { setServer(null); setLogs([]); return; }
+    if (!selectedId) {
+      setServer(null);
+      setSettingsDraft(null);
+      setLogs([]);
+      return;
+    }
     let cancelled = false;
+    // 切换服务器时先清空旧的详情，避免新请求返回前误把上一台的设置显示/保存到新服务器
+    setServer(null);
+    setSettingsDraft(null);
+    setLogs([]);
+    setProperties({});
+    setPropDraft({});
+    setBackups([]);
     (async () => {
       try {
         const [info, log, props, bks] = await Promise.all([
@@ -99,6 +146,7 @@ export default function Servers() {
         ]);
         if (cancelled) return;
         setServer(info);
+        setSettingsDraft(info ? draftFromConfig(info) : null);
         setLogs(log);
         setProperties(props);
         setPropDraft(props);
@@ -113,25 +161,31 @@ export default function Servers() {
     if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight;
   }, [logs]);
 
-  const refreshDetail = async () => {
-    if (!selectedId) return;
+  const refreshDetail = async (): Promise<ServerInfo | null> => {
+    const id = selectedIdRef.current;
+    if (!id) return null;
     try {
-      const [info, log, bks] = await Promise.all([api.serverGet(selectedId), api.serverLog(selectedId, 300), api.serverBackups(selectedId)]);
+      const [info, log, bks] = await Promise.all([api.serverGet(id), api.serverLog(id, 300), api.serverBackups(id)]);
+      // 请求期间用户可能切到了另一台服务器：旧结果不能覆盖新选中项的日志/备份
+      if (selectedIdRef.current !== id) return null;
       if (info) { setServer(info); patchServerInList(info); }
       setLogs(log);
       setBackups(bks);
-    } catch { /* 刷新失败不打扰 */ }
+      return info;
+    } catch { return null; }
   };
 
-  const run = async (label: string, fn: () => Promise<unknown>, success?: string) => {
+  const run = async <T,>(label: string, fn: () => Promise<T>, success?: string): Promise<T | undefined> => {
     setBusy(label);
     try {
-      await fn();
+      const result = await fn();
       if (success) toast.toast(success, 'ok');
       await refreshDetail();
       await reloadServers();
+      return result;
     } catch (e) {
       toast.toast(e instanceof Error ? e.message : String(e), 'error');
+      return undefined;
     } finally {
       setBusy(null);
     }
@@ -175,20 +229,23 @@ export default function Servers() {
       setPropDraft(next);
       toast.toast('server.properties 已保存。部分设置需要重启服务器生效。', 'ok');
       // 端口可能在属性页被改过，服务端会同步 server.json；刷新一次让顶栏/设置页显示一致
-      await refreshDetail();
+      const info = await refreshDetail();
+      if (info) setSettingsDraft(prev => (prev ? { ...prev, port: info.port } : prev));
       await reloadServers();
     } catch (e) { toast.toast(e instanceof Error ? e.message : String(e), 'error'); }
   };
 
   const saveServerConfig = async () => {
-    if (!server) return;
-    await run('save', () => api.serverUpdate(server.id, {
-      name: server.name,
-      port: server.port,
-      memoryMB: server.memoryMB,
-      javaPath: server.javaPath ?? null,
-      jvmArgsExtra: server.jvmArgsExtra ?? '',
+    if (!server || !settingsDraft) return;
+    const saved = await run('save', () => api.serverUpdate(server.id, {
+      name: settingsDraft.name,
+      port: settingsDraft.port,
+      memoryMB: settingsDraft.memoryMB,
+      javaPath: settingsDraft.javaPath.trim() || null,
+      jvmArgsExtra: settingsDraft.jvmArgsExtra,
     }), '服务器设置已保存');
+    // 服务端会去掉首尾空格/裁剪名称长度：保存后以返回值为准刷新草稿
+    if (saved) setSettingsDraft(draftFromConfig(saved));
   };
 
   const doDelete = async () => {
@@ -201,6 +258,7 @@ export default function Servers() {
       toast.toast(r.ok ? `服务器已删除${r.backupPath ? '，删除前已自动打包备份' : ''}` : '服务器不存在', 'ok');
       setSelectedId(null);
       setServer(null);
+      setSettingsDraft(null);
       await reloadServers();
     } catch (e) { toast.toast(e instanceof Error ? e.message : String(e), 'error'); }
     finally { setBusy(null); }
@@ -208,6 +266,8 @@ export default function Servers() {
 
   const busyNow = !!busy;
   const status = server ? STATUS_INFO[server.status] : null;
+  // 只有完全停止（或已崩溃）时世界文件才不再变化，备份/恢复才不会拿到半写入的区块
+  const worldLocked = !!server && server.status !== 'stopped' && server.status !== 'crashed';
 
   const scanLan = async () => {
     setLanScanning(true);
@@ -357,35 +417,35 @@ export default function Servers() {
             </div>
           )}
 
-          {tab === 'settings' && (
+          {tab === 'settings' && settingsDraft && (
             <div className="mt">
               <div className="setting-row">
                 <div className="label">服务器名称</div>
-                <div className="control"><input className="input" style={{ maxWidth: 320 }} value={server.name} onChange={e => setServer({ ...server, name: e.target.value })} /></div>
+                <div className="control"><input className="input" style={{ maxWidth: 320 }} value={settingsDraft.name} onChange={e => setSettingsDraft({ ...settingsDraft, name: e.target.value })} /></div>
               </div>
               <div className="setting-row">
                 <div className="label">端口<Tip text="玩家连接端口。修改后需要重启服务器，并确保防火墙/路由器放行。端口冲突会导致启动失败。" /></div>
                 <div className="control">
-                  <input className="input" style={{ width: 120 }} type="number" min={1} max={65535} value={server.port} onChange={e => setServer({ ...server, port: parseInt(e.target.value, 10) || 25565 })} />
+                  <input className="input" style={{ width: 120 }} type="number" min={1} max={65535} value={settingsDraft.port} onChange={e => setSettingsDraft({ ...settingsDraft, port: parseInt(e.target.value, 10) || 25565 })} />
                   <button className="btn small" onClick={async () => {
                     try {
-                      const ok = await api.serverCheckPort(server.port);
-                      toast.toast(ok ? `端口 ${server.port} 可用` : `端口 ${server.port} 已被占用`, ok ? 'ok' : 'error');
+                      const ok = await api.serverCheckPort(settingsDraft.port);
+                      toast.toast(ok ? `端口 ${settingsDraft.port} 可用` : `端口 ${settingsDraft.port} 已被占用`, ok ? 'ok' : 'error');
                     } catch (e) { toast.toast(String(e), 'error'); }
                   }}>检查端口</button>
                 </div>
               </div>
               <div className="setting-row">
                 <div className="label">最大内存（MB）<Tip text="服务端比客户端更吃内存：原版 2G 起，模组服建议 4G–8G。设置过大会导致系统换页反而更卡。" /></div>
-                <div className="control"><input className="input" style={{ width: 130 }} type="number" min={512} max={32768} step={256} value={server.memoryMB} onChange={e => setServer({ ...server, memoryMB: parseInt(e.target.value, 10) || 2048 })} /></div>
+                <div className="control"><input className="input" style={{ width: 130 }} type="number" min={512} max={32768} step={256} value={settingsDraft.memoryMB} onChange={e => setSettingsDraft({ ...settingsDraft, memoryMB: parseInt(e.target.value, 10) || 2048 })} /></div>
               </div>
               <div className="setting-row">
                 <div className="label">Java 路径<Tip text="留空 = 由 MCL 按 Minecraft 版本自动匹配/下载。只有想强制使用某个 Java 时才填写。" /></div>
-                <div className="control"><input className="input" style={{ maxWidth: 420 }} placeholder="留空 = 自动管理" value={server.javaPath ?? ''} onChange={e => setServer({ ...server, javaPath: e.target.value || null })} /></div>
+                <div className="control"><input className="input" style={{ maxWidth: 420 }} placeholder="留空 = 自动管理" value={settingsDraft.javaPath} onChange={e => setSettingsDraft({ ...settingsDraft, javaPath: e.target.value })} /></div>
               </div>
               <div className="setting-row">
                 <div className="label">附加 JVM 参数<Tip text="每行一条或空格分隔。例如 -XX:+UseG1GC。不确定就不要填。" /></div>
-                <div className="control"><textarea className="input" style={{ width: '100%', maxWidth: 480, minHeight: 70 }} value={server.jvmArgsExtra ?? ''} onChange={e => setServer({ ...server, jvmArgsExtra: e.target.value })} /></div>
+                <div className="control"><textarea className="input" style={{ width: '100%', maxWidth: 480, minHeight: 70 }} value={settingsDraft.jvmArgsExtra} onChange={e => setSettingsDraft({ ...settingsDraft, jvmArgsExtra: e.target.value })} /></div>
               </div>
               <div className="row mt" style={{ justifyContent: 'flex-end' }}>
                 <button className="btn primary" disabled={busyNow} onClick={saveServerConfig}>保存服务器设置</button>
@@ -424,8 +484,8 @@ export default function Servers() {
           {tab === 'backups' && (
             <div className="mt">
               <div className="row spread">
-                <p className="faint">备份会把世界文件夹（level-name）打包成 ZIP，存在服务器目录的 backups/ 下。恢复前请先停止服务器。</p>
-                <button className="btn primary" disabled={busyNow} onClick={() => run('backup', () => api.serverBackup(server.id), '世界备份已创建')}>＋ 备份世界</button>
+                <p className="faint">备份会把世界文件夹（level-name）打包成 ZIP，存在服务器目录的 backups/ 下。服务器运行中无法备份或恢复：世界文件仍在写入，打包出的存档可能损坏。请先停止服务器。</p>
+                <button className="btn primary" disabled={busyNow || worldLocked} title={worldLocked ? '请先停止服务器' : undefined} onClick={() => run('backup', () => api.serverBackup(server.id), '世界备份已创建')}>＋ 备份世界</button>
               </div>
               {backups.length === 0 ? (
                 <div className="empty"><div className="big">💾</div>还没有备份</div>
@@ -437,8 +497,8 @@ export default function Servers() {
                         <div style={{ fontWeight: 650 }}>{b.name}</div>
                         <div className="faint">{formatBytes(b.sizeBytes)} · {timeAgo(b.createdAt)}</div>
                       </div>
-                      <button className="btn small" disabled={busyNow} onClick={() => setRestoreTarget(b)}>恢复…</button>
-                      <button className="btn small danger" onClick={() => setBackupDeleteTarget(b)}>删除</button>
+                      <button className="btn small" disabled={busyNow || worldLocked} title={worldLocked ? '请先停止服务器' : undefined} onClick={() => setRestoreTarget({ backup: b, serverId: server.id })}>恢复…</button>
+                      <button className="btn small danger" onClick={() => setBackupDeleteTarget({ backup: b, serverId: server.id })}>删除</button>
                     </div>
                   ))}
                 </div>
@@ -501,32 +561,33 @@ export default function Servers() {
         />
       )}
 
-      {restoreTarget && server && (
+      {restoreTarget && (
         <ConfirmModal
           title="恢复世界备份"
-          message={`将用备份「${restoreTarget.name}」覆盖当前世界。\n\n请确认服务器已停止。恢复前建议先手动备份当前世界。`}
+          message={`将用备份「${restoreTarget.backup.name}」覆盖当前世界。\n\n请确认服务器已停止。恢复前建议先手动备份当前世界。`}
           confirmText="恢复"
           danger
           onCancel={() => setRestoreTarget(null)}
           onConfirm={() => {
-            const b = restoreTarget;
+            // 使用打开确认框时记录的服务器 id，避免确认前切换服务器导致恢复到错误的实例
+            const target = restoreTarget;
             setRestoreTarget(null);
-            void run('restore', () => api.serverRestoreBackup(server.id, b.name), '世界已恢复');
+            void run('restore', () => api.serverRestoreBackup(target.serverId, target.backup.name), '世界已恢复');
           }}
         />
       )}
 
-      {backupDeleteTarget && server && (
+      {backupDeleteTarget && (
         <ConfirmModal
           title="删除世界备份"
-          message={`确定删除备份「${backupDeleteTarget.name}」？此操作不可撤销。`}
+          message={`确定删除备份「${backupDeleteTarget.backup.name}」？此操作不可撤销。`}
           confirmText="删除"
           danger
           onCancel={() => setBackupDeleteTarget(null)}
           onConfirm={() => {
-            const b = backupDeleteTarget;
+            const target = backupDeleteTarget;
             setBackupDeleteTarget(null);
-            void run('deleteBackup', async () => { await api.serverDeleteBackup(server.id, b.name); }, '备份已删除');
+            void run('deleteBackup', async () => { await api.serverDeleteBackup(target.serverId, target.backup.name); }, '备份已删除');
           }}
         />
       )}

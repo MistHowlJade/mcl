@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { api } from '../lib/api';
 import { useToast } from '../components/Toast';
 import type { CrashDiagnosis, CrashFix, InstanceInfo } from '../../electron/shared/types';
@@ -10,6 +10,7 @@ export default function Crash() {
   const [pasted, setPasted] = useState('');
   const [busyFix, setBusyFix] = useState<string | null>(null);
   const [exported, setExported] = useState<string | null>(null);
+  const analyzeSeq = useRef(0);
   const toast = useToast();
 
   useEffect(() => {
@@ -21,14 +22,33 @@ export default function Crash() {
   }, []);
 
   const analyzeLatest = async () => {
-    if (!instanceId) return;
-    try { setDiagnosis(await api.crashLatest(instanceId)); } catch (e) { toast.toast(String(e), 'error'); }
+    if (!instanceId) { setDiagnosis(null); return; }
+    const seq = ++analyzeSeq.current;
+    try {
+      const d = await api.crashLatest(instanceId);
+      if (seq === analyzeSeq.current) setDiagnosis(d);
+    } catch (e) {
+      if (seq === analyzeSeq.current) toast.toast(String(e), 'error');
+    }
   };
-  useEffect(() => { void analyzeLatest(); /* eslint-disable-next-line */ }, [instanceId]);
+  useEffect(() => {
+    // 切实例先清空诊断，否则「修复」按钮会把上一个实例的诊断动作作用到新实例
+    analyzeSeq.current++;
+    setDiagnosis(null);
+    setExported(null);
+    void analyzeLatest();
+    /* eslint-disable-next-line */
+  }, [instanceId]);
 
   const analyzePasted = async () => {
     if (!pasted.trim()) return;
-    try { setDiagnosis(await api.crashAnalyzeText(pasted)); } catch (e) { toast.toast(String(e), 'error'); }
+    const seq = ++analyzeSeq.current;
+    try {
+      const d = await api.crashAnalyzeText(pasted);
+      if (seq === analyzeSeq.current) setDiagnosis(d);
+    } catch (e) {
+      if (seq === analyzeSeq.current) toast.toast(String(e), 'error');
+    }
   };
 
   const applyFix = async (fix: CrashFix) => {

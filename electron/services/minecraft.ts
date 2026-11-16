@@ -298,14 +298,30 @@ async function ensureForgeLikeInstalled(gameDir: string, loader: 'forge' | 'neof
   const reports = await dl.run([{ id: 'loader-installer', url: installerUrl, dest: installerPath, name: `${loader} 安装器` }]);
   if (!reports[0]?.ok) throw new Error(`${loader} 安装器下载失败：${reports[0]?.error ?? '未知错误'}\nURL：${installerUrl}`);
   emit('正在静默安装（可能需要 1–5 分钟，期间会打印安装日志）…');
-  await new Promise<void>((resolve, reject) => {
-    const child = spawn(javaPath, ['-jar', installerPath, '--installClient', gameDir], { cwd: gameDir, windowsHide: true });
-    child.stdout.on('data', d => emit(`[installer] ${String(d).trim()}`));
-    child.stderr.on('data', d => emit(`[installer] ${String(d).trim()}`));
-    child.on('close', code => code === 0 ? resolve() : reject(new Error(`${loader} 安装器退出码 ${code}`)));
-    child.on('error', reject);
-  });
-  fs.rmSync(installerPath, { force: true });
+  try {
+    await new Promise<void>((resolve, reject) => {
+      let settled = false;
+      const finish = (err?: Error) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        if (err) reject(err); else resolve();
+      };
+      const child = spawn(javaPath, ['-jar', installerPath, '--installClient', gameDir], { cwd: gameDir, windowsHide: true });
+      // 安装器可能卡在交互提示或半死连接上：超时强制结束，避免启动按钮永远停在「安装中」
+      const timer = setTimeout(() => {
+        try { child.kill('SIGKILL'); } catch { /* 进程可能已退出 */ }
+        finish(new Error(`${loader} 安装器超过 20 分钟没有结束，已强制停止。请检查网络后重试，或手动运行安装器。`));
+      }, 20 * 60 * 1000);
+      child.stdout.on('data', d => emit(`[installer] ${String(d).trim()}`));
+      child.stderr.on('data', d => emit(`[installer] ${String(d).trim()}`));
+      child.on('close', code => finish(code === 0 ? undefined : new Error(`${loader} 安装器退出码 ${code}`)));
+      child.on('error', e => finish(e));
+    });
+  } finally {
+    // 安装失败也清理安装包，避免实例目录里残留几十 MB 的临时 jar
+    fs.rmSync(installerPath, { force: true });
+  }
   const installed = fs.existsSync(versionsDirRel) ? fs.readdirSync(versionsDirRel).filter(existingFilter) : [];
   const hit = loaderVersion ? (installed.find(d => d.includes(loaderVersion)) ?? installed[0]) : installed[0];
   if (!hit) throw new Error(`${loader} 安装完成但找不到版本目录，请查看安装日志。`);

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { api, on } from '../lib/api';
 import { useToast } from '../components/Toast';
 import { Modal, Tip, formatBytes, timeAgo } from '../components/Modal';
@@ -63,13 +63,32 @@ function InstalledTab({ instance }: { instance: InstanceInfo }) {
   const [checking, setChecking] = useState(false);
   const [healthReport, setHealthReport] = useState<{ scanned: number; issues: ModHealthIssue[] } | null>(null);
   const toast = useToast();
-  const reload = () => api.modrinthInstalled(instance.id).then(setMods).catch(e => toast.toast(String(e), 'error'));
-  useEffect(() => { void reload(); /* eslint-disable-next-line */ }, [instance.id]);
+  const reloadSeq = useRef(0);
+  const instanceRef = useRef(instance.id);
+  const reload = async () => {
+    const seq = ++reloadSeq.current;
+    try {
+      const list = await api.modrinthInstalled(instance.id);
+      if (seq === reloadSeq.current && instanceRef.current === instance.id) setMods(list);
+    } catch (e) {
+      if (seq === reloadSeq.current) toast.toast(String(e), 'error');
+    }
+  };
+  useEffect(() => {
+    instanceRef.current = instance.id;
+    reloadSeq.current++;              // 让上一个实例还没返回的请求作废
+    setMods([]);
+    setHealthReport(null);
+    void reload();
+    /* eslint-disable-next-line */
+  }, [instance.id]);
 
   const checkHealth = async () => {
+    const id = instance.id;
     setHealthReport(null);
     try {
-      const report = await api.modsHealth(instance.id);
+      const report = await api.modsHealth(id);
+      if (instanceRef.current !== id) return;
       setHealthReport(report);
       if (report.issues.length === 0) toast.toast(`体检通过：扫描 ${report.scanned} 个模组，没有发现异常`);
     } catch (e) { toast.toast(String(e), 'error'); }
@@ -77,13 +96,15 @@ function InstalledTab({ instance }: { instance: InstanceInfo }) {
 
   const checkUpdates = async () => {
     if (instance.noModUpdate) { toast.toast('该实例已开启"禁止 Mod 自动更新"，已跳过检查', 'info'); return; }
+    const id = instance.id;
     setChecking(true);
     try {
-      const result = await api.modrinthCheckUpdates(instance.id, instance.mcVersion, instance.loader === 'vanilla' ? undefined : instance.loader);
+      const result = await api.modrinthCheckUpdates(id, instance.mcVersion, instance.loader === 'vanilla' ? undefined : instance.loader);
+      if (instanceRef.current !== id) return;
       setMods(result);
       const n = result.filter(m => m.updateAvailable).length;
       toast.toast(n > 0 ? `有 ${n} 个模组可更新` : '所有模组都是最新版本');
-    } catch (e) { toast.toast(String(e), 'error'); } finally { setChecking(false); }
+    } catch (e) { toast.toast(String(e), 'error'); } finally { if (instanceRef.current === id) setChecking(false); }
   };
 
   const applyFix = async (issue: ModHealthIssue) => {
@@ -155,14 +176,29 @@ function SearchTab({ instance }: { instance: InstanceInfo }) {
   const [searching, setSearching] = useState(false);
   const [installing, setInstalling] = useState<string | null>(null);
   const toast = useToast();
+  const searchSeq = useRef(0);
   const loader = instance.loader === 'vanilla' ? undefined : instance.loader;
+
+  useEffect(() => {
+    // 切换实例后旧实例的搜索结果/安装状态不再适用
+    searchSeq.current++;
+    setResults([]);
+    setSearching(false);
+    setInstalling(null);
+  }, [instance.id]);
 
   const search = async () => {
     if (!query.trim()) return;
+    const seq = ++searchSeq.current;
     setSearching(true);
     try {
-      setResults(await api.modrinthSearch(query.trim(), { loader, gameVersion: instance.mcVersion, index }));
-    } catch (e) { toast.toast(`搜索失败：${e instanceof Error ? e.message : e}`, 'error'); } finally { setSearching(false); }
+      const list = await api.modrinthSearch(query.trim(), { loader, gameVersion: instance.mcVersion, index });
+      if (seq === searchSeq.current) setResults(list);
+    } catch (e) {
+      if (seq === searchSeq.current) toast.toast(`搜索失败：${e instanceof Error ? e.message : e}`, 'error');
+    } finally {
+      if (seq === searchSeq.current) setSearching(false);
+    }
   };
 
   const install = async (r: ModSearchResult) => {

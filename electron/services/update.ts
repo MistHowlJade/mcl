@@ -77,18 +77,18 @@ export async function checkUpdate(): Promise<UpdateInfo> {
   } catch {
     throw new Error('GitHub 返回内容无法解析，请稍后再试。');
   }
-  const latest = String(release.tag_name ?? release.name ?? '').trim() || null;
+  const latest = (typeof release.tag_name === 'string' ? release.tag_name : typeof release.name === 'string' ? release.name : '').trim() || null;
   const hasUpdate = !!latest && compareVersions(latest, current) > 0;
-  const assets = (release.assets ?? [])
-    .filter(a => a.name && a.browser_download_url && !/\.(sha\d*|sig|blockmap|yml|yaml|json|txt)$/i.test(a.name))
-    .map(a => ({ name: a.name!, url: a.browser_download_url!, sizeBytes: a.size ?? null }));
+  const assets = (Array.isArray(release.assets) ? release.assets : [])
+    .filter(a => typeof a?.name === 'string' && typeof a?.browser_download_url === 'string' && !/\.(sha\d*|sig|blockmap|yml|yaml|json|txt)$/i.test(a.name))
+    .map(a => ({ name: a.name!, url: a.browser_download_url!, sizeBytes: typeof a.size === 'number' ? a.size : null }));
   return {
     current,
     latest,
     hasUpdate,
-    url: release.html_url ?? RELEASES_URL,
-    notes: (release.body ?? '').slice(0, 4000) || null,
-    publishedAt: release.published_at ?? null,
+    url: typeof release.html_url === 'string' ? release.html_url : RELEASES_URL,
+    notes: typeof release.body === 'string' ? (release.body.slice(0, 4000) || null) : null,
+    publishedAt: typeof release.published_at === 'string' ? release.published_at : null,
     assets,
   };
 }

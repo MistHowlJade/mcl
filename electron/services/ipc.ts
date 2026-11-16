@@ -166,14 +166,16 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('accounts:createOffline', (_e, name: string, skinDataUrl?: string | null) => authService.createOfflineAccount(name, skinDataUrl ?? null));
   ipcMain.handle('accounts:beginMicrosoft', async () => {
     const session = await authService.beginMicrosoftLogin();
-    // 后台完成轮询链路；结果通过事件推给渲染进程
+    // 后台完成轮询链路；结果通过事件推给渲染进程（带 userCode 供前端忽略旧尝试）
     void authService.finishMicrosoftLogin(session).then(result => {
-      sendToAll('accounts:microsoft-result', { ok: true, account: result.account, warn: result.warn ?? null });
+      sendToAll('accounts:microsoft-result', { ok: true, userCode: session.userCode, account: result.account, warn: result.warn ?? null });
     }).catch(err => {
-      sendToAll('accounts:microsoft-result', { ok: false, error: err instanceof Error ? err.message : String(err) });
+      const message = err instanceof Error ? err.message : String(err);
+      sendToAll('accounts:microsoft-result', { ok: false, userCode: session.userCode, canceled: message.includes('登录已取消'), error: message });
     });
     return session;
   });
+  ipcMain.handle('accounts:cancelMicrosoft', (_e, userCode: string) => { authService.cancelMicrosoftLogin(userCode); return true; });
   /* ---------- 皮肤 / 披风 ---------- */
   const pickPng = async (title: string): Promise<string | null> => {
     const win = BrowserWindow.getFocusedWindow();
@@ -264,7 +266,14 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('backup:list', (_e, instanceId: string) => backups.listBackups(instanceId));
   ipcMain.handle('backup:create', (_e, instanceId: string, name?: string) => backups.createBackup(instanceId, 'manual', name));
   ipcMain.handle('backup:delete', (_e, backupId: string, instanceId?: string) => { backups.deleteBackup(backupId, instanceId); return true; });
-  ipcMain.handle('backup:restore', (_e, backupId: string, instanceId: string) => backups.restoreBackup(backupId, instanceId));
+  ipcMain.handle('backup:restore', (_e, backupId: string, instanceId: string) => {
+    // 游戏运行中恢复会被游戏进程覆盖，甚至在写存档时损坏世界
+    const busyStates = ['preparing', 'downloading', 'launching', 'running'];
+    if (minecraft.launchState.instanceId === instanceId && busyStates.includes(minecraft.launchState.status)) {
+      throw new Error('这个实例正在运行，无法恢复备份。请先退出游戏，否则游戏进程会继续写入存档。');
+    }
+    return backups.restoreBackup(backupId, instanceId);
+  });
 
   /* ---------- 崩溃分析 ---------- */
   ipcMain.handle('crash:latest', (_e, instanceId: string) => crashService.analyzeCrash(instanceId));
