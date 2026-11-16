@@ -20,7 +20,8 @@ export default function Logs() {
   useEffect(() => {
     api.instancesList().then(list => {
       setInstances(list);
-      if (!instanceId && list.length) setInstanceId(list[0].id);
+      // localStorage 里的实例可能已被删除：失效时自动落到第一台
+      setInstanceId(prev => (prev && list.some(i => i.id === prev)) ? prev : (list[0]?.id ?? null));
     }).catch(e => toast.toast(String(e), 'error'));
     /* eslint-disable-next-line */
   }, []);

@@ -622,6 +622,15 @@ function CreateServerModal({ onClose, onCreated }: { onClose: () => void; onCrea
     v.id.toLowerCase().includes(search.toLowerCase()),
   ).slice(0, 160), [versions, search, showSnapshots]);
 
+  useEffect(() => {
+    // 搜索过滤掉当前选中项时，select 显示的第一项与 state 不一致，会创建错版本
+    if (filtered.length === 0) {
+      if (mcVersion) setMcVersion('');
+    } else if (!filtered.some(v => v.id === mcVersion)) {
+      setMcVersion(filtered[0].id);
+    }
+  }, [filtered, mcVersion]);
+
   const submit = async () => {
     if (!mcVersion) { toast.toast('请选择 Minecraft 版本', 'error'); return; }
     setCreating(true);

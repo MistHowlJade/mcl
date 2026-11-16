@@ -75,6 +75,14 @@ export function InstanceCard({ inst, onReload, onDiskUsage, onDelete, onExport }
   const [mcVersion, setMcVersion] = useState(inst.mcVersion === 'unknown' ? '' : inst.mcVersion);
   const toast = useToast();
 
+  useEffect(() => {
+    // 父组件刷新后同步外部改名/版本；正在编辑时不覆盖用户输入
+    if (!editing) {
+      setName(inst.name);
+      setMcVersion(inst.mcVersion === 'unknown' ? '' : inst.mcVersion);
+    }
+  }, [inst.name, inst.mcVersion, editing]);
+
   const duplicate = async () => {
     setDuplicating(true);
     try {
@@ -316,7 +324,10 @@ function CreateInstanceModal({ onClose, onCreated }: { onClose: () => void; onCr
   }, []);
 
   useEffect(() => {
-    if (mcVersion) api.javaRecommended(mcVersion).then(r => setRecommendedJava(r.major)).catch(() => setRecommendedJava(null));
+    if (!mcVersion) { setRecommendedJava(null); return; }
+    let cancelled = false;
+    api.javaRecommended(mcVersion).then(r => { if (!cancelled) setRecommendedJava(r.major); }).catch(() => { if (!cancelled) setRecommendedJava(null); });
+    return () => { cancelled = true; };
   }, [mcVersion]);
 
   const filtered = useMemo(() => {
@@ -325,6 +336,16 @@ function CreateInstanceModal({ onClose, onCreated }: { onClose: () => void; onCr
       v.id.toLowerCase().includes(search.toLowerCase()),
     ).slice(0, 120);
   }, [versions, search, showSnapshots]);
+
+  useEffect(() => {
+    // 搜索把当前选中版本过滤掉时，select 会显示第一项但 state 仍是旧版本：
+    // 自动同步到可见的第一项，避免“看着 1.7.10，实际创建 1.20.1”
+    if (filtered.length === 0) {
+      if (mcVersion) setMcVersion('');
+    } else if (!filtered.some(v => v.id === mcVersion)) {
+      setMcVersion(filtered[0].id);
+    }
+  }, [filtered, mcVersion]);
 
   const submit = async () => {
     if (!mcVersion) { toast.toast('请选择 Minecraft 版本', 'error'); return; }

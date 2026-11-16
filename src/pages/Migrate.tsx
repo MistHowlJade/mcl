@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { api } from '../lib/api';
 import { useToast } from '../components/Toast';
 import { formatBytes } from '../components/Modal';
@@ -12,6 +12,7 @@ export default function Migrate() {
   const [result, setResult] = useState<MigrationResult | null>(null);
   const [busy, setBusy] = useState(false);
   const toast = useToast();
+  const previewSeq = useRef(0);
 
   useEffect(() => {
     api.migrateDetect().then(setCandidates).catch(e => toast.toast(String(e), 'error'));
@@ -19,18 +20,28 @@ export default function Migrate() {
   }, []);
 
   const loadPreview = async (root: string) => {
+    // 连点两个目录时旧预览可能后返回：只接受最后一次
+    const seq = ++previewSeq.current;
     setBusy(true);
     setResult(null);
     setSelectedPath(root);
     try {
       const p = await api.migratePreview(root);
+      if (seq !== previewSeq.current) return;
       setPreview(p);
       setSelected(p.instances.map(i => i.name));
       if (p.instances.length === 0) toast.toast('这个目录里没有识别出可迁移的实例', 'info');
-    } catch (e) { toast.toast(String(e), 'error'); setPreview(null); } finally { setBusy(false); }
+    } catch (e) {
+      if (seq !== previewSeq.current) return;
+      toast.toast(String(e), 'error');
+      setPreview(null);
+    } finally {
+      if (seq === previewSeq.current) setBusy(false);
+    }
   };
 
   const pickFolder = async () => {
+    if (busy) return;
     try {
       const folder = await api.pickFolder();
       if (folder) await loadPreview(folder);
@@ -40,7 +51,7 @@ export default function Migrate() {
   };
 
   const doImport = async () => {
-    if (!selectedPath || selected.length === 0) return;
+    if (busy || !selectedPath || selected.length === 0) return;
     setBusy(true);
     try {
       const r = await api.migrateImport(selectedPath, selected);
@@ -59,14 +70,14 @@ export default function Migrate() {
           <h1>迁移中心</h1>
           <div className="sub">从 HMCL / PCL2 / Prism / MultiMC / .minecraft 一键搬家——存档、模组、配置全带走</div>
         </div>
-        <button className="btn" onClick={pickFolder}>📁 手动选择目录…</button>
+        <button className="btn" onClick={pickFolder} disabled={busy}>📁 手动选择目录…</button>
       </div>
 
       <div className="panel">
         <div className="panel-title">自动检测到的启动器数据</div>
         <div className="grid cols-2">
           {candidates.map(c => (
-            <button key={c.launcher + c.path} className={`panel`} style={{ textAlign: 'left', cursor: c.exists ? 'pointer' : 'not-allowed', opacity: c.exists ? 1 : 0.45, border: `1px solid ${selectedPath === c.path ? 'var(--accent-strong)' : 'var(--border-soft)'}` }} onClick={() => c.exists && loadPreview(c.path)} disabled={!c.exists}>
+            <button key={c.launcher + c.path} className={`panel`} style={{ textAlign: 'left', cursor: c.exists ? 'pointer' : 'not-allowed', opacity: c.exists ? 1 : 0.45, border: `1px solid ${selectedPath === c.path ? 'var(--accent-strong)' : 'var(--border-soft)'}` }} onClick={() => c.exists && loadPreview(c.path)} disabled={!c.exists || busy}>
               <div className="row spread"><strong>{c.launcher}</strong>{c.exists ? <span className="tag green">已找到</span> : <span className="tag">未安装</span>}</div>
               <div className="faint" style={{ marginTop: 4 }}>{c.hint}</div>
               <div className="mono" style={{ marginTop: 6, color: 'var(--text-faint)', fontSize: 11, wordBreak: 'break-all' }}>{c.path}</div>

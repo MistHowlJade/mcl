@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { api, mediaUrl } from '../lib/api';
 import { useToast } from '../components/Toast';
 import { ConfirmModal, Modal, formatBytes, timeAgo } from '../components/Modal';
@@ -17,15 +17,19 @@ export default function Content() {
   const [content, setContent] = useState<ContentList | null>(null);
   const [tab, setTab] = useState<ContentKind>('resourcepacks');
   const [loading, setLoading] = useState(false);
-  const [deleteTarget, setDeleteTarget] = useState<{ kind: ContentKind; item: ContentItem } | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<{ kind: ContentKind; item: ContentItem; instanceId: string } | null>(null);
   const [onlineOpen, setOnlineOpen] = useState(false);
+  const [instancesReady, setInstancesReady] = useState(false);
   const toast = useToast();
+  const instanceIdRef = useRef(instanceId);
+  const reloadSeq = useRef(0);
 
   useEffect(() => {
     api.instancesList().then(list => {
       setInstances(list);
-      if (!instanceId && list.length) setInstanceId(list[0].id);
-    }).catch(e => toast.toast(String(e), 'error'));
+      // localStorage 里的实例可能已被删除：失效时自动落到第一台
+      setInstanceId(prev => (prev && list.some(i => i.id === prev)) ? prev : (list[0]?.id ?? null));
+    }).catch(e => toast.toast(String(e), 'error')).finally(() => setInstancesReady(true));
     /* eslint-disable-next-line */
   }, []);
 
@@ -34,13 +38,32 @@ export default function Content() {
   }, [instanceId]);
 
   const reload = async () => {
-    if (!instanceId) return;
+    const id = instanceIdRef.current;
+    if (!id) { setContent(null); setLoading(false); return; }
+    // 快速切换实例时旧请求可能后返回：只接受最后一次请求的结果
+    const seq = ++reloadSeq.current;
     setLoading(true);
-    try { setContent(await api.contentList(instanceId)); }
-    catch (e) { toast.toast(e instanceof Error ? e.message : String(e), 'error'); }
-    finally { setLoading(false); }
+    try {
+      const list = await api.contentList(id);
+      if (seq === reloadSeq.current && instanceIdRef.current === id) setContent(list);
+    } catch (e) {
+      if (seq === reloadSeq.current) toast.toast(e instanceof Error ? e.message : String(e), 'error');
+    } finally {
+      if (seq === reloadSeq.current) setLoading(false);
+    }
   };
-  useEffect(() => { void reload(); /* eslint-disable-next-line */ }, [instanceId]);
+  useEffect(() => {
+    // 等实例列表确认过再加载内容：避免 localStorage 里的旧实例先报一次「实例不存在」
+    if (!instancesReady) return;
+    instanceIdRef.current = instanceId;
+    reloadSeq.current++;
+    // 切换实例时先清空上一台的内容和弹窗，避免把旧列表/删除目标作用到新实例
+    setContent(null);
+    setDeleteTarget(null);
+    setOnlineOpen(false);
+    void reload();
+    /* eslint-disable-next-line */
+  }, [instanceId, instancesReady]);
 
   const instance = useMemo(() => instances.find(i => i.id === instanceId) ?? null, [instances, instanceId]);
   const items = content?.[tab] ?? [];
@@ -70,15 +93,21 @@ export default function Content() {
   };
 
   const doDelete = async () => {
-    if (!deleteTarget || !instanceId) return;
+    if (!deleteTarget) return;
     try {
-      const r = await api.contentDelete(instanceId, deleteTarget.kind, deleteTarget.item.fileName);
+      // 用打开确认框时记录的实例 id，避免确认前切换实例后误删新实例的同名文件
+      const r = await api.contentDelete(deleteTarget.instanceId, deleteTarget.kind, deleteTarget.item.fileName);
       toast.toast(r.deleted
         ? (r.backupPath ? '已删除；删除前已自动备份到该实例的备份目录' : '已删除')
         : '内容不存在，可能已被手动删除', r.deleted ? 'ok' : 'info');
       setDeleteTarget(null);
       void reload();
     } catch (e) { toast.toast(e instanceof Error ? e.message : String(e), 'error'); }
+  };
+
+  const openDelete = (kind: ContentKind, item: ContentItem) => {
+    if (!instanceId) return;
+    setDeleteTarget({ kind, item, instanceId });
   };
 
   const backupWorld = async (item: ContentItem) => {
@@ -182,7 +211,7 @@ export default function Content() {
                   <div style={{ fontWeight: 650, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={item.name}>{item.name}</div>
                   <div className="faint">{formatBytes(item.sizeBytes)} · {timeAgo(item.mtime)}</div>
                 </div>
-                <button className="btn small danger" onClick={() => setDeleteTarget({ kind: tab, item })}>删除</button>
+                <button className="btn small danger" onClick={() => openDelete(tab, item)}>删除</button>
               </div>
             </div>
           ))}
@@ -217,7 +246,7 @@ export default function Content() {
                       <button className="btn small" onClick={() => api.contentOpenItem(item.path).catch(e => toast.toast(String(e), 'error'))}>打开</button>
                     </>
                   )}
-                  <button className="btn small danger" onClick={() => setDeleteTarget({ kind: tab, item })}>删除</button>
+                  <button className="btn small danger" onClick={() => openDelete(tab, item)}>删除</button>
                 </div>
               </div>
             ))}
@@ -270,8 +299,10 @@ function OnlineContentModal({ instance, kind, onClose, onInstalled }: {
   const [installingId, setInstallingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const toast = useToast();
+  const searchSeq = useRef(0);
 
   const search = async (q: string, gv: string) => {
+    const seq = ++searchSeq.current;
     setSearching(true);
     setError(null);
     try {
@@ -281,12 +312,14 @@ function OnlineContentModal({ instance, kind, onClose, onInstalled }: {
         index: q.trim() ? 'relevance' : 'downloads',
         limit: 30,
       });
+      if (seq !== searchSeq.current) return;
       setResults(list);
       if (list.length === 0) setError('没有找到匹配的内容。试试换个关键词，或清空游戏版本过滤。');
     } catch (e) {
+      if (seq !== searchSeq.current) return;
       setError(e instanceof Error ? e.message : String(e));
       setResults([]);
-    } finally { setSearching(false); }
+    } finally { if (seq === searchSeq.current) setSearching(false); }
   };
 
   useEffect(() => { void search('', instance.mcVersion === 'unknown' ? '' : instance.mcVersion); /* eslint-disable-next-line */ }, []);
