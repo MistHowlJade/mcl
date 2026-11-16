@@ -104,7 +104,9 @@ async function latestLoaderVersion(loader: LoaderType, mcVersion: string): Promi
         const last = matching[matching.length - 1];
         return last ? last.slice(mcVersion.length + 1) : null;
       }
-      const prefix = mcVersion.replace(/^1\./, '').replace(/\.0$/, '') + '.';
+      // 与启动器一致：1.21 → 21.0.x（只写 "21." 会错配到 21.1/21.2）
+      const parts = mcVersion.replace(/^1\./, '').split('.');
+      const prefix = parts.length < 2 ? `${parts[0] || '0'}.0.` : `${parts[0]}.${parts[1]}.`;
       const versions = await mavenVersions('https://maven.neoforged.net/releases/net/neoforged/neoforge/maven-metadata.xml');
       const matching = versions.filter(v => v.startsWith(prefix));
       return matching[matching.length - 1] ?? null;

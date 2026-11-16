@@ -403,13 +403,21 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('diagnostic:export', (_e, instanceId?: string | null) => diagnostic.exportDiagnostic(instanceId ?? null));
 
   /* ---------- 服务器管理 ---------- */
+  // 同一服务器的启动请求串行化：startServer 内部有多段 await（选 Java、查端口），
+  // 连点两次会在检查 child 之前都通过，最终 spawn 出两个抢同一端口的 Java 进程
+  const startingServers = new Set<string>();
   ipcMain.handle('server:list', () => serverService.listServers());
   ipcMain.handle('server:get', (_e, id: string) => serverService.getServer(id));
   ipcMain.handle('server:create', (_e, input: any) => serverService.createServer(input));
   ipcMain.handle('server:update', (_e, id: string, patch: any) => serverService.updateServer(id, patch));
   ipcMain.handle('server:delete', (_e, id: string, backup?: boolean) => serverService.deleteServer(id, backup !== false));
   ipcMain.handle('server:prepare', (_e, id: string) => serverService.prepareServer(id));
-  ipcMain.handle('server:start', (_e, id: string) => serverService.startServer(id));
+  ipcMain.handle('server:start', async (_e, id: string) => {
+    if (startingServers.has(id)) throw new Error('服务器正在启动中，请等状态变为「运行中」或报错后再试。');
+    startingServers.add(id);
+    try { return await serverService.startServer(id); }
+    finally { startingServers.delete(id); }
+  });
   ipcMain.handle('server:stop', (_e, id: string) => serverService.stopServer(id));
   ipcMain.handle('server:kill', (_e, id: string) => serverService.killServer(id));
   ipcMain.handle('server:sendCommand', (_e, id: string, command: string) => serverService.sendCommand(id, command));
