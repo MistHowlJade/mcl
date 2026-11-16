@@ -46,6 +46,14 @@ function assertInstanceIdle(instanceId: string, action: string): void {
   }
 }
 
+/** 云快照可能覆盖存档/配置：有游戏在运行时整体拒绝，避免两边同时写同一批文件 */
+function assertNoGameBusy(action: string): void {
+  const busyStates = ['preparing', 'downloading', 'launching', 'running'];
+  if (busyStates.includes(minecraft.launchState.status)) {
+    throw new Error(`游戏正在运行，无法${action}。请先退出游戏，避免覆盖正在写入的存档与配置。`);
+  }
+}
+
 // 服务事件 → 渲染进程
 export function bindServiceEvents(): void {
   minecraft.launchEvents.on('status', s => sendToAll('launch:status', s));
@@ -434,8 +442,15 @@ export function registerIpcHandlers(): void {
   /* ---------- 云同步 ---------- */
   ipcMain.handle('cloud:test', () => cloudService.testCloud());
   ipcMain.handle('cloud:inspect', () => cloudService.inspectCloud());
-  ipcMain.handle('cloud:upload', () => cloudService.uploadCloud());
-  ipcMain.handle('cloud:download', () => cloudService.downloadCloud());
+  ipcMain.handle('cloud:upload', () => {
+    // 包含存档时才需要拦运行中的游戏；只同步配置时允许游戏开着
+    if (getSettings().cloud.includeSaves) assertNoGameBusy('上传含存档的云快照');
+    return cloudService.uploadCloud();
+  });
+  ipcMain.handle('cloud:download', () => {
+    assertNoGameBusy('从云端恢复');
+    return cloudService.downloadCloud();
+  });
 
   /* ---------- 内容管理 ---------- */
   ipcMain.handle('content:list', (_e, instanceId: string) => contentService.listContent(instanceId));

@@ -330,9 +330,12 @@ async function latestQuiltLoader(mcVersion: string): Promise<string> {
 }
 
 function neoForgePrefix(mcVersion: string): string {
-  // NeoForge 1.20.1 沿用 Forge 的 47.x 版本号，其余版本从 MC 版本推导（1.21.4 → 21.4.）
+  // NeoForge 1.20.1 沿用 Forge 的 47.x 版本号，其余版本从 MC 版本推导（1.21 → 21.0.，1.21.4 → 21.4.）
   if (mcVersion === '1.20.1') return '47.';
-  return mcVersion.replace(/^1\./, '').replace(/\.0$/, '') + '.';
+  const parts = mcVersion.replace(/^1\./, '').split('.');
+  // 1.21 在 NeoForge 里是 21.0.x：只写 "21." 会匹配到 21.1/21.2 等其它 MC 版本
+  if (parts.length < 2) return `${parts[0] || '0'}.0.`;
+  return `${parts[0]}.${parts[1]}.`;
 }
 
 function findInstalledJar(dir: string): string | null {

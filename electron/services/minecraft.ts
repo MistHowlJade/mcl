@@ -19,7 +19,7 @@ import { getInstance, touchPlayed, updateInstance } from './instances';
 import { analyzeCrash } from './crash';
 import { EventEmitter } from 'events';
 import { fetchJson } from './net';
-import { LoaderType, MemoryPreset } from '../shared/types';
+import { LoaderType, MemoryPreset, CrashDiagnosis } from '../shared/types';
 
 export const launchEvents = new EventEmitter();
 
@@ -57,7 +57,12 @@ const safeRmDir = (dir: string) => { try { fs.rmSync(dir, { recursive: true, for
 /** 启动前：清理本启动器上次异常退出残留的游戏进程（痛点 #31） */
 export async function killResidualProcesses(): Promise<number[]> {
   const file = paths.residualPidsFile();
-  const pids = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) as number[] : [];
+  // pids 文件可能因上次异常退出写到一半：坏文件按“没有残留进程”处理，不能因此拦住启动
+  let pids: number[] = [];
+  try {
+    const parsed = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) : [];
+    if (Array.isArray(parsed)) pids = parsed.filter((p): p is number => typeof p === 'number');
+  } catch { pids = []; }
   const killed: number[] = [];
   for (const pid of pids) {
     if (!Number.isFinite(pid) || pid <= 0) continue;
@@ -78,17 +83,24 @@ export async function killResidualProcesses(): Promise<number[]> {
 }
 
 function trackPid(pid: number): void {
-  const file = paths.residualPidsFile();
-  let pids: number[] = [];
-  try { pids = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) as number[] : []; } catch { pids = []; }
-  pids.push(pid);
-  fs.writeFileSync(file, JSON.stringify(pids), 'utf8');
+  if (!Number.isFinite(pid) || pid <= 0) return;
+  try {
+    const file = paths.residualPidsFile();
+    let pids: number[] = [];
+    try {
+      const parsed = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) : [];
+      if (Array.isArray(parsed)) pids = parsed.filter((p): p is number => typeof p === 'number');
+    } catch { pids = []; }
+    pids.push(pid);
+    fs.writeFileSync(file, JSON.stringify(pids), 'utf8');
+  } catch { /* 记录失败不能影响正在启动的游戏 */ }
 }
 
 function untrackPid(pid: number): void {
-  const file = paths.residualPidsFile();
   try {
-    const pids = fs.existsSync(file) ? (JSON.parse(fs.readFileSync(file, 'utf8')) as number[]).filter(p => p !== pid) : [];
+    const file = paths.residualPidsFile();
+    const parsed = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) : [];
+    const pids = Array.isArray(parsed) ? parsed.filter((p: number) => p !== pid) : [];
     fs.writeFileSync(file, JSON.stringify(pids), 'utf8');
   } catch { /* ignore */ }
 }
@@ -233,11 +245,15 @@ async function fetchMavenVersions(url: string): Promise<string[]> {
   return Array.from(xml.matchAll(/<version>([^<]+)<\/version>/g)).map(m => m[1].trim());
 }
 
-/** NeoForge 版本号前缀：MC 1.20.1 → "20.1."；1.21 → "21."；1.21.4 → "21.4." */
+/** NeoForge 版本号前缀：MC 1.20.1 → "47."；1.21 → "21.0."；1.21.4 → "21.4." */
 function neoForgePrefix(mcVersion: string): string {
   // NeoForge 1.20.1 沿用 Forge 的 47.x 版本号
   if (mcVersion === '1.20.1') return '47.';
-  return mcVersion.replace(/^1\./, '').replace(/\.0$/, '') + '.';
+  // 1.21 这类没有补丁号的版本在 NeoForge 里是 21.0.x：
+  // 只写 "21." 会把 1.21 错配到 21.1/21.2 等其它 Minecraft 版本
+  const parts = mcVersion.replace(/^1\./, '').split('.');
+  if (parts.length < 2) return `${parts[0] || '0'}.0.`;
+  return `${parts[0]}.${parts[1]}.`;
 }
 
 /** Forge/NeoForge：下载安装器并静默安装到实例目录（使用实例自己的 libraries 目录） */
@@ -252,7 +268,11 @@ async function ensureForgeLikeInstalled(gameDir: string, loader: 'forge' | 'neof
   const existing = fs.existsSync(versionsDirRel) ? fs.readdirSync(versionsDirRel).filter(existingFilter) : [];
   if (existing.length > 0 && loaderVersion) {
     const hit = existing.find(d => d.includes(loaderVersion));
-    if (hit) return path.join(versionsDirRel, hit, `${hit}.json`);
+    if (hit) {
+      const jsonPath = path.join(versionsDirRel, hit, `${hit}.json`);
+      // 版本目录可能被手动删过 JSON：缺文件时重新安装，而不是把坏路径交给启动器
+      if (fs.existsSync(jsonPath)) return jsonPath;
+    }
   }
 
   let forgeId: string;
@@ -325,7 +345,9 @@ async function ensureForgeLikeInstalled(gameDir: string, loader: 'forge' | 'neof
   const installed = fs.existsSync(versionsDirRel) ? fs.readdirSync(versionsDirRel).filter(existingFilter) : [];
   const hit = loaderVersion ? (installed.find(d => d.includes(loaderVersion)) ?? installed[0]) : installed[0];
   if (!hit) throw new Error(`${loader} 安装完成但找不到版本目录，请查看安装日志。`);
-  return path.join(versionsDirRel, hit, `${hit}.json`);
+  const jsonPath = path.join(versionsDirRel, hit, `${hit}.json`);
+  if (!fs.existsSync(jsonPath)) throw new Error(`${loader} 安装完成但缺少版本 JSON（${hit}.json），请重试或手动运行安装器。`);
+  return jsonPath;
 }
 
 export async function launchInstance(instanceId: string, options: LaunchOptions = {}): Promise<void> {
@@ -403,7 +425,12 @@ export async function launchInstance(instanceId: string, options: LaunchOptions 
   if (instance.loader !== 'vanilla') {
     if (instance.loader === 'forge' || instance.loader === 'neoforge') {
       const jsonPath = await ensureForgeLikeInstalled(paths.gameDir(instanceId), instance.loader, instance.mcVersion, instance.loaderVersion, java.path, emitLog);
-      const profile = JSON.parse(fs.readFileSync(jsonPath, 'utf8'));
+      let profile: Record<string, any>;
+      try {
+        profile = JSON.parse(fs.readFileSync(jsonPath, 'utf8'));
+      } catch {
+        throw new Error(`${instance.loader === 'forge' ? 'Forge' : 'NeoForge'} 版本文件已损坏（${path.basename(jsonPath)}），请删除该实例 game/versions 下对应文件夹后重新启动，MCL 会自动重装。`);
+      }
       resolved = versionService.mergeProfile(resolved, profile);
     } else {
       resolved = await resolveLoaderProfile(resolved, instance.loader, instance.loaderVersion, instance.mcVersion);
@@ -460,7 +487,6 @@ export async function launchInstance(instanceId: string, options: LaunchOptions 
 
   // 7) Natives 到唯一目录（痛点 #56）
   const nativesDir = path.join(paths.nativesRoot(instanceId), `natives-${startedAt}`);
-  extractNatives(resolved, nativesDir);
 
   // 8) 自动备份存档（痛点 #47）
   if (settings.general.autoBackupBeforeLaunch) {
@@ -574,6 +600,13 @@ export async function launchInstance(instanceId: string, options: LaunchOptions 
   jvmArgs.push(mainClass, ...mcArgs);
 
   // 10) 启动！
+  // 校验都通过后再解压 natives：前面任何一步失败都不会留下半解压的临时目录
+  try {
+    extractNatives(resolved, nativesDir);
+  } catch (e) {
+    safeRmDir(nativesDir);
+    throw e;
+  }
   emitStatus('launching', '正在启动游戏…');
   emitLog(`[mcl] 启动参数：${java.path} ${jvmArgs.slice(0, 6).join(' ')} …（共 ${jvmArgs.length} 个参数）`);
   const child = spawn(java.path, jvmArgs, {
@@ -592,10 +625,15 @@ export async function launchInstance(instanceId: string, options: LaunchOptions 
   launchEvents.emit('status', { ...launchState });
 
   const sessionStart = Date.now();
+  // spawn 失败时 error 与 close 可能先后触发：只处理一次，避免游玩时长被记两遍/状态被覆盖
+  let finished = false;
   child.on('close', (code) => {
-    if (child.pid) untrackPid(child.pid);
+    if (finished) return;
+    finished = true;
+    if (child.pid) { try { untrackPid(child.pid); } catch { /* ignore */ } }
     const playSeconds = Math.floor((Date.now() - sessionStart) / 1000);
-    touchPlayed(instanceId, playSeconds);
+    // 统计写入失败不能拦住后续状态更新，否则界面会一直显示“运行中”
+    try { touchPlayed(instanceId, playSeconds); } catch { /* ignore */ }
     safeRmDir(nativesDir);
     launchState.pid = null;
     launchState.progress = null;
@@ -606,14 +644,30 @@ export async function launchInstance(instanceId: string, options: LaunchOptions 
       return;
     }
     // 崩溃：自动分析（痛点 #26/#27/#25），只分析本次启动产生的内容
-    const diagnosis = analyzeCrash(instanceId, path.join(paths.logsDir(), launchLogName), startedAt);
+    let diagnosis: CrashDiagnosis;
+    try {
+      diagnosis = analyzeCrash(instanceId, path.join(paths.logsDir(), launchLogName), startedAt);
+    } catch {
+      diagnosis = {
+        matched: false,
+        title: '游戏异常退出',
+        summary: '游戏进程异常结束，但读取日志时出错了。可以到「日志」页查看本次启动日志。',
+        detail: `退出码 ${code}`,
+        fixes: [],
+        sourceFile: path.join(paths.logsDir(), launchLogName),
+        excerpt: '',
+      };
+    }
     launchState.status = 'crashed';
     launchState.message = diagnosis.title;
     launchEvents.emit('status', { ...launchState });
     launchEvents.emit('crash', diagnosis);
   });
   child.on('error', (err) => {
-    if (child.pid) untrackPid(child.pid);
+    if (finished) return;
+    finished = true;
+    if (child.pid) { try { untrackPid(child.pid); } catch { /* ignore */ } }
+    safeRmDir(nativesDir);
     launchState.pid = null;
     launchState.progress = null;
     emitStatus('exited', `启动失败：${err.message}`);
