@@ -35,6 +35,17 @@ const sendToAll = (channel: string, payload: unknown) => {
   }
 };
 
+/**
+ * 运行中的实例会持续写存档/日志：复制、备份、导出、删世界前统一拒绝，
+ * 避免产出半写入的损坏文件，或删到游戏正在使用的世界。
+ */
+function assertInstanceIdle(instanceId: string, action: string): void {
+  const busyStates = ['preparing', 'downloading', 'launching', 'running'];
+  if (minecraft.launchState.instanceId === instanceId && busyStates.includes(minecraft.launchState.status)) {
+    throw new Error(`这个实例正在运行，无法${action}。请先退出游戏，等实例状态变为「已退出」后再试。`);
+  }
+}
+
 // 服务事件 → 渲染进程
 export function bindServiceEvents(): void {
   minecraft.launchEvents.on('status', s => sendToAll('launch:status', s));
@@ -125,13 +136,13 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('instances:get', (_e, id: string) => instances.getInstance(id));
   ipcMain.handle('instances:create', (_e, input: { name: string; mcVersion: string; loader: LoaderType; loaderVersion?: string | null; memoryPreset?: MemoryPreset; javaPath?: string | null }) => instances.createInstance(input));
   ipcMain.handle('instances:update', (_e, id: string, patch: any) => instances.updateInstance(id, patch));
-  ipcMain.handle('instances:duplicate', (_e, id: string) => instances.duplicateInstance(id));
+  ipcMain.handle('instances:duplicate', (_e, id: string) => {
+    assertInstanceIdle(id, '复制实例');
+    return instances.duplicateInstance(id);
+  });
   ipcMain.handle('instances:delete', async (_e, id: string) => {
     // 游戏运行时删除会把正在使用的存档/模组删到一半，先拒绝并给出人话提示
-    const busyStates = ['preparing', 'downloading', 'launching', 'running'];
-    if (minecraft.launchState.instanceId === id && busyStates.includes(minecraft.launchState.status)) {
-      throw new Error('这个实例正在运行，无法删除。请先退出游戏，等实例状态变为「已退出」后再试。');
-    }
+    assertInstanceIdle(id, '删除实例');
     const backupDir = path.join(paths.backupsDir(), 'deleted-instances');
     return instances.deleteInstance(id, backupDir);
   });
@@ -264,14 +275,15 @@ export function registerIpcHandlers(): void {
 
   /* ---------- 备份 ---------- */
   ipcMain.handle('backup:list', (_e, instanceId: string) => backups.listBackups(instanceId));
-  ipcMain.handle('backup:create', (_e, instanceId: string, name?: string) => backups.createBackup(instanceId, 'manual', name));
+  ipcMain.handle('backup:create', (_e, instanceId: string, name?: string) => {
+    // 运行中的世界文件仍在写入，手动备份会得到缺区块/半写入的存档
+    assertInstanceIdle(instanceId, '创建存档备份');
+    return backups.createBackup(instanceId, 'manual', name);
+  });
   ipcMain.handle('backup:delete', (_e, backupId: string, instanceId?: string) => { backups.deleteBackup(backupId, instanceId); return true; });
   ipcMain.handle('backup:restore', (_e, backupId: string, instanceId: string) => {
     // 游戏运行中恢复会被游戏进程覆盖，甚至在写存档时损坏世界
-    const busyStates = ['preparing', 'downloading', 'launching', 'running'];
-    if (minecraft.launchState.instanceId === instanceId && busyStates.includes(minecraft.launchState.status)) {
-      throw new Error('这个实例正在运行，无法恢复备份。请先退出游戏，否则游戏进程会继续写入存档。');
-    }
+    assertInstanceIdle(instanceId, '恢复存档备份');
     return backups.restoreBackup(backupId, instanceId);
   });
 
@@ -425,8 +437,15 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('content:list', (_e, instanceId: string) => contentService.listContent(instanceId));
   ipcMain.handle('content:toggleResourcePack', (_e, instanceId: string, fileName: string) => contentService.toggleResourcePack(instanceId, fileName));
   ipcMain.handle('content:toggleShaderPack', (_e, instanceId: string, fileName: string) => contentService.toggleShaderPack(instanceId, fileName));
-  ipcMain.handle('content:delete', (_e, instanceId: string, kind: any, fileName: string) => contentService.deleteContent(instanceId, kind, fileName));
-  ipcMain.handle('content:backupWorld', (_e, instanceId: string, worldName: string, displayName?: string) => contentService.backupWorld(instanceId, worldName, displayName));
+  ipcMain.handle('content:delete', (_e, instanceId: string, kind: any, fileName: string) => {
+    // 运行中删除世界会删到游戏正在写入的区块文件，先拒绝
+    if (kind === 'worlds') assertInstanceIdle(instanceId, '删除世界');
+    return contentService.deleteContent(instanceId, kind, fileName);
+  });
+  ipcMain.handle('content:backupWorld', (_e, instanceId: string, worldName: string, displayName?: string) => {
+    assertInstanceIdle(instanceId, '备份世界');
+    return contentService.backupWorld(instanceId, worldName, displayName);
+  });
   ipcMain.handle('content:openItem', (_e, p: string) => {
     const root = path.resolve(paths.dataRoot());
     const target = path.resolve(p);
@@ -474,6 +493,7 @@ export function registerIpcHandlers(): void {
     return contentService.importContent(instanceId, kind, result.filePaths);
   });
   ipcMain.handle('content:exportWorld', async (_e, instanceId: string, worldName: string) => {
+    assertInstanceIdle(instanceId, '导出世界');
     const win = BrowserWindow.getFocusedWindow();
     if (!win) throw new Error('窗口不可用');
     const safe = String(worldName).replace(/[<>:"/\\|?*]/g, '_');
@@ -491,6 +511,8 @@ export function registerIpcHandlers(): void {
     const instance = instances.getInstance(instanceId);
     if (!instance) throw new Error('实例不存在');
     if (!['mmc', 'mrpack', 'zip'].includes(String(format))) throw new Error('未知的导出格式');
+    // 运行中的存档/日志仍在写入，导出包会带上半写入文件
+    assertInstanceIdle(instanceId, '导出实例');
     const defaultName = exporter.defaultExportName(instance, format);
     const win = BrowserWindow.getFocusedWindow();
     const result = await dialog.showSaveDialog(win!, {
