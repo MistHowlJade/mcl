@@ -45,7 +45,17 @@ interface AccountsFile {
   activeId: string | null;
 }
 
-const load = (): AccountsFile => readJson<AccountsFile>(paths.accountsFile(), { accounts: [], activeId: null });
+const load = (): AccountsFile => {
+  const raw = readJson<any>(paths.accountsFile(), { accounts: [], activeId: null });
+  // accounts.json 可能被手工改坏/半写入：只保留字段完整的账号，坏条目跳过而不是让账号页崩溃
+  const accounts: StoredAccount[] = Array.isArray(raw?.accounts)
+    ? raw.accounts.filter((a: any) => a && typeof a.id === 'string' && typeof a.name === 'string' && typeof a.uuid === 'string' && (a.type === 'microsoft' || a.type === 'offline'))
+    : [];
+  const rawActive = typeof raw?.activeId === 'string' ? raw.activeId : null;
+  // activeId 指向已删除/不存在的账号时自动落到第一个，避免“有账号却显示未登录”
+  const activeId = rawActive && accounts.some(a => a.id === rawActive) ? rawActive : (accounts[0]?.id ?? null);
+  return { accounts, activeId };
+};
 const save = (data: AccountsFile) => writeJson(paths.accountsFile(), data);
 
 const publicView = (a: StoredAccount): Account => ({

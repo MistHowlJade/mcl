@@ -13,6 +13,17 @@ import { readJson, writeJson } from './store';
 
 const newId = () => crypto.randomBytes(8).toString('hex');
 
+/** instance.json 可能被手工改坏/半写入：字段不完整时跳过，别让实例列表或启动流程崩掉 */
+function isInstanceConfig(value: unknown): value is InstanceConfig {
+  if (!value || typeof value !== 'object') return false;
+  const cfg = value as Record<string, unknown>;
+  return typeof cfg.id === 'string' && /^[a-f0-9]{16}$/.test(cfg.id)
+    && typeof cfg.name === 'string'
+    && typeof cfg.mcVersion === 'string'
+    && typeof cfg.createdAt === 'number'
+    && ['vanilla', 'fabric', 'quilt', 'forge', 'neoforge'].includes(String(cfg.loader));
+}
+
 export function listInstanceFiles(): InstanceConfig[] {
   const dir = paths.instancesDir();
   if (!fs.existsSync(dir)) return [];
@@ -21,7 +32,8 @@ export function listInstanceFiles(): InstanceConfig[] {
     if (!entry.isDirectory()) continue;
     const file = paths.instanceFile(entry.name);
     const cfg = readJson<InstanceConfig | null>(file, null);
-    if (cfg) out.push(cfg);
+    // 目录名与配置里的 id 必须一致，否则会得到一个指向错误 game/ 目录的“幽灵实例”
+    if (isInstanceConfig(cfg) && cfg.id === entry.name) out.push(cfg);
   }
   return out.sort((a, b) => (b.lastPlayedAt ?? b.createdAt) - (a.lastPlayedAt ?? a.createdAt));
 }
@@ -45,8 +57,9 @@ export function listInstances(): InstanceInfo[] {
 }
 
 export function getInstance(id: string): InstanceInfo | null {
+  if (!/^[a-f0-9]{16}$/.test(String(id ?? ''))) return null;
   const cfg = readJson<InstanceConfig | null>(paths.instanceFile(id), null);
-  return cfg ? toInfo(cfg) : null;
+  return isInstanceConfig(cfg) && cfg.id === id ? toInfo(cfg) : null;
 }
 
 export function createInstance(input: {
@@ -77,7 +90,7 @@ export function createInstance(input: {
 export function updateInstance(id: string, patch: Partial<InstanceConfig>): InstanceConfig | null {
   const file = paths.instanceFile(id);
   const current = readJson<InstanceConfig | null>(file, null);
-  if (!current) return null;
+  if (!isInstanceConfig(current) || current.id !== id) return null;
   const merged: InstanceConfig = { ...current, ...patch, id: current.id, createdAt: current.createdAt };
   writeJson(file, merged);
   return merged;

@@ -74,7 +74,15 @@ function deepMerge<T>(base: T, patch: any): T {
 
 export function getSettings(): AppSettings {
   const raw = readJson<Partial<AppSettings>>(paths.configFile(), {});
-  return deepMerge(DEFAULT_SETTINGS, raw);
+  const merged = deepMerge(DEFAULT_SETTINGS, raw);
+  // config.json 可能被手工改坏（某分区变成 null/字符串）：回退默认分区，别让整个启动器崩掉
+  for (const key of Object.keys(DEFAULT_SETTINGS) as Array<keyof AppSettings>) {
+    const value = merged[key] as unknown;
+    if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+      (merged as any)[key] = DEFAULT_SETTINGS[key];
+    }
+  }
+  return merged;
 }
 
 export function updateSettings(patch: any): AppSettings {
