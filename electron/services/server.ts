@@ -181,15 +181,25 @@ export function updateServer(id: string, patch: Partial<ServerConfig>): ServerCo
 
 export async function deleteServer(id: string, backup = true): Promise<{ ok: boolean; backupPath?: string }> {
   const cfg = readConfig(id);
-  await killServer(id).catch(() => undefined);
+  const rt = runtimeOf(id);
+  // 安装器 Java 进程还在写服务器目录，此时删除会遇到文件占用并留下半成品
+  if (rt.status === 'preparing') throw new Error('服务端正在安装，无法删除。请等安装完成后再试。');
+  // 正在运行的服务端先正常 stop，让它把世界写盘；stopServer 超时会自动强制结束
+  if (rt.child) await stopServer(id).catch(() => killServer(id).catch(() => undefined));
   const dir = paths.serverDir(id);
   if (!fs.existsSync(dir)) return { ok: false };
   let backupPath: string | undefined;
   if (backup) {
     const destDir = path.join(paths.backupsDir(), 'deleted-servers');
     fs.mkdirSync(destDir, { recursive: true });
-    backupPath = path.join(destDir, `${cfg.name.replace(/[^\w\u4e00-\u9fa5-]/g, '_')}-${Date.now()}.zip`);
-    try { fs.writeFileSync(backupPath, zipFromDir(dir)); } catch { backupPath = undefined; }
+    backupPath = path.join(destDir, `${cfg.name.replace(/[^\w\u4e00-\u9fa5-]/g, '_')}-${id}-${Date.now()}.zip`);
+    try {
+      fs.writeFileSync(backupPath, zipFromDir(dir));
+    } catch {
+      // 备份失败就取消删除：确认框承诺了“先备份再删除”，不能把用户的世界直接删掉
+      try { fs.rmSync(backupPath, { force: true }); } catch { /* ignore */ }
+      throw new Error('删除前备份失败，已取消删除以免丢失数据。请检查磁盘空间，或关闭占用服务器文件的程序后重试。');
+    }
   }
   runtimes.delete(id);
   fs.rmSync(dir, { recursive: true, force: true });

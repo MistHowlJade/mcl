@@ -371,15 +371,17 @@ export default function Servers() {
               </div>
             </div>
             <div className="row" style={{ gap: 6, flexWrap: 'wrap' }}>
-              {server.status === 'running' || server.status === 'starting' || server.status === 'preparing' ? (
-                <button className="btn" disabled={busyNow} onClick={() => run('stop', () => api.serverStop(server.id), '已发送停止命令')}>{busy === 'stop' ? '停止中…' : '停止服务器'}</button>
+              {server.status === 'preparing' ? (
+                <button className="btn" disabled title="服务端正在下载/安装，完成后才能启动或停止">正在安装服务端…</button>
+              ) : server.status === 'running' || server.status === 'starting' || server.status === 'stopping' ? (
+                <button className="btn" disabled={busyNow || server.status === 'stopping'} onClick={() => run('stop', () => api.serverStop(server.id), '已发送停止命令')}>{busy === 'stop' || server.status === 'stopping' ? '停止中…' : '停止服务器'}</button>
               ) : (
                 <button className="btn primary" disabled={busyNow} onClick={() => start(server)}>{busy === 'start' ? '启动中…' : '启动服务器'}</button>
               )}
               <button className="btn danger" disabled={busyNow || !server.pid} onClick={() => setKillTarget(server)}>强制结束</button>
-              <button className="btn" disabled={busyNow} onClick={() => run('prepare', () => api.serverPrepare(server.id), '服务端已重新安装')}>{busy === 'prepare' ? '安装中…' : server.prepared ? '重新安装' : '安装服务端'}</button>
+              <button className="btn" disabled={busyNow || worldLocked} title={worldLocked ? (server.status === 'preparing' ? '正在安装服务端，请稍候' : '请先停止服务器') : undefined} onClick={() => run('prepare', () => api.serverPrepare(server.id), '服务端已重新安装')}>{busy === 'prepare' ? '安装中…' : server.prepared ? '重新安装' : '安装服务端'}</button>
               <button className="btn" onClick={() => api.serverOpenDir(server.id).catch(e => toast.toast(String(e), 'error'))}>打开目录</button>
-              <button className="btn danger" disabled={busyNow} onClick={() => setDeleteTarget(server)}>删除…</button>
+              <button className="btn danger" disabled={busyNow || server.status === 'preparing'} title={server.status === 'preparing' ? '正在安装服务端，请稍候' : undefined} onClick={() => setDeleteTarget(server)}>删除…</button>
             </div>
           </div>
 
@@ -542,7 +544,7 @@ export default function Servers() {
       {deleteTarget && (
         <ConfirmModal
           title="删除服务器"
-          message={`将删除服务器「${deleteTarget.name}」及其世界、模组、配置。\n\nMCL 会先把整个服务器目录打包到 backups/deleted-servers/，确认无误后再删除。`}
+          message={`将删除服务器「${deleteTarget.name}」及其世界、模组、配置。\n\n${deleteTarget.status === 'running' || deleteTarget.status === 'starting' ? '服务器正在运行：MCL 会先发送 stop 命令，等它保存世界并退出。\n\n' : ''}MCL 会先把整个服务器目录打包到 backups/deleted-servers/，备份失败会取消删除。`}
           confirmText="备份并删除"
           danger
           onCancel={() => setDeleteTarget(null)}

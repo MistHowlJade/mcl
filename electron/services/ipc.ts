@@ -93,7 +93,11 @@ export function registerIpcHandlers(): void {
   /* ---------- Shell ---------- */
   ipcMain.handle('shell:openPath', (_e, p: string) => {
     if (typeof p !== 'string' || !p) return '路径无效';
-    return shell.openPath(p);
+    // 只允许打开 MCL 数据目录内的路径：即使渲染进程被注入，也不能借 openPath 启动任意程序
+    const root = path.resolve(paths.dataRoot());
+    const target = path.resolve(p);
+    if (target !== root && !target.startsWith(root + path.sep)) return '只能打开 MCL 数据目录内的文件';
+    return shell.openPath(target);
   });
   ipcMain.handle('shell:openExternal', (_e, url: string) => {
     if (!isSafeExternal(url)) return;
@@ -469,6 +473,8 @@ export function registerIpcHandlers(): void {
     const win = BrowserWindow.getFocusedWindow();
     if (!win) throw new Error('窗口不可用');
     const isWorld = kind === 'worlds';
+    // 运行中导入世界可能与游戏正在写入的同名世界冲突，先拒绝
+    if (isWorld) assertInstanceIdle(instanceId, '导入世界');
     // 世界默认选文件夹；传 'file' 则选世界 ZIP
     const wantFolder = mode === 'folder' || (isWorld && mode !== 'file');
     if (wantFolder) {
