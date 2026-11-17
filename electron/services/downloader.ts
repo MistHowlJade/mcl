@@ -361,6 +361,7 @@ export class DownloadManager extends EventEmitter {
     this.canceled = false;
     this.active = 0;
     this.sizeCounted.clear();
+    this.progressMap.clear();
     const queue = [...tasks];
     let cursor = 0;
 

@@ -163,7 +163,15 @@ export function zipExtractEntry(buf: Buffer, entry: ZipEntry): Buffer {
   }
   const data = buf.subarray(dataStart, dataStart + entry.compressedSize);
   if (entry.method === 0) return Buffer.from(data);
-  if (entry.method === 8) return zlib.inflateRawSync(data);
+  if (entry.method === 8) {
+    // inflateRawSync 必须限制输出：中央目录声明的大小可能是假的（解压炸弹）
+    const limit = Math.min(Math.max(entry.uncompressedSize, 1), MAX_TOTAL_UNCOMPRESSED);
+    const out = zlib.inflateRawSync(data, { maxOutputLength: limit });
+    if (out.length !== entry.uncompressedSize) {
+      throw new Error(`ZIP 条目大小不符（声明 ${entry.uncompressedSize}，实际 ${out.length}）：${entry.name}`);
+    }
+    return out;
+  }
   throw new Error(`不支持的压缩方式（method=${entry.method}）：${entry.name}`);
 }
 

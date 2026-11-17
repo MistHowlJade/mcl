@@ -28,8 +28,9 @@ export default function Home({ onNavigate, onLaunchFail }: { onNavigate: (p: Pag
       setInstances(list);
       setAccountName(account?.name ?? null);
       // 用函数式更新读取最新选中项：退出/崩溃事件里调用的是挂载时的旧闭包，
-      // 直接读 selectedId 会把用户后来切换的实例重置成列表第一个
-      setSelectedId(prev => prev ?? list[0]?.id ?? null);
+      // 直接读 selectedId 会把用户后来切换的实例重置成列表第一个；
+      // localStorage 里的实例被删除时也要回退，否则界面显示第一个但选中 ID 已失效
+      setSelectedId(prev => (prev && list.some(i => i.id === prev)) ? prev : (list[0]?.id ?? null));
     } catch (e) {
       toast.toast(e instanceof Error ? e.message : String(e), 'error');
     } finally {

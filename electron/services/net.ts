@@ -26,9 +26,10 @@ export interface MirrorHealth { source: 'official' | 'bmclapi'; latencyMs: numbe
 
 export async function fetchWithTimeout(
   url: string,
-  options: { method?: string; headers?: Record<string, string>; body?: string | Buffer; timeoutMs?: number } = {},
+  options: { method?: string; headers?: Record<string, string>; body?: string | Buffer; timeoutMs?: number; redirectDepth?: number } = {},
 ): Promise<{ status: number; headers: http.IncomingHttpHeaders; body: Buffer }> {
   const timeoutMs = options.timeoutMs ?? 15000;
+  const redirectDepth = options.redirectDepth ?? 0;
   const req = await createProxiedRequest(url, {
     method: options.method ?? 'GET',
     headers: { 'User-Agent': USER_AGENT, ...(options.headers ?? {}) },
@@ -40,9 +41,24 @@ export async function fetchWithTimeout(
       const status = res.statusCode ?? 0;
       if ([301, 302, 303, 307, 308].includes(status) && res.headers.location) {
         res.resume();
-        const next = new URL(res.headers.location, url).toString();
-        fetchWithTimeout(next, { ...options, timeoutMs })
-          .then(resolve, reject);
+        // 防止恶意/配置错误的服务器无限重定向
+        if (redirectDepth >= 5) {
+          reject(new Error(`重定向次数过多：${url}`));
+          return;
+        }
+        let next: URL;
+        try { next = new URL(res.headers.location, url); } catch { reject(new Error(`重定向地址无效：${res.headers.location}`)); return; }
+        const nextOptions = { ...options, redirectDepth: redirectDepth + 1, timeoutMs };
+        // 跨域重定向时不携带 Authorization，避免 WebDAV/令牌被转到第三方主机
+        try {
+          if (new URL(url).origin !== next.origin && nextOptions.headers) {
+            const headers = { ...nextOptions.headers };
+            delete headers.Authorization;
+            delete headers.authorization;
+            nextOptions.headers = headers;
+          }
+        } catch { /* 原 URL 解析失败时保持原样 */ }
+        fetchWithTimeout(next.toString(), nextOptions).then(resolve, reject);
         return;
       }
       const chunks: Buffer[] = [];

@@ -62,6 +62,7 @@ export default function Mods() {
 function InstalledTab({ instance }: { instance: InstanceInfo }) {
   const [mods, setMods] = useState<InstalledMod[]>([]);
   const [checking, setChecking] = useState(false);
+  const [pending, setPending] = useState<string | null>(null);
   const [healthReport, setHealthReport] = useState<{ scanned: number; issues: ModHealthIssue[] } | null>(null);
   const toast = useToast();
   const reloadSeq = useRef(0);
@@ -80,6 +81,9 @@ function InstalledTab({ instance }: { instance: InstanceInfo }) {
     reloadSeq.current++;              // 让上一个实例还没返回的请求作废
     setMods([]);
     setHealthReport(null);
+    // 上一个实例的“检查更新/更新中”状态不能带到新实例，否则按钮会一直禁用
+    setChecking(false);
+    setPending(null);
     void reload();
     /* eslint-disable-next-line */
   }, [instance.id]);
@@ -118,6 +122,29 @@ function InstalledTab({ instance }: { instance: InstanceInfo }) {
     } catch (e) { toast.toast(String(e), 'error'); }
   };
 
+  const updateMod = async (mod: InstalledMod) => {
+    if (pending) return;
+    const id = instance.id;
+    setPending(`update:${mod.fileName}`);
+    try {
+      await api.modrinthUpdateMod(id, mod.fileName);
+      toast.toast(`已更新 ${mod.title ?? mod.fileName}`, 'ok');
+      if (instanceRef.current === id) await reload();
+    } catch (e) { toast.toast(e instanceof Error ? e.message : String(e), 'error'); }
+    finally { if (instanceRef.current === id) setPending(null); }
+  };
+
+  const toggleMod = async (mod: InstalledMod) => {
+    if (pending) return;
+    const id = instance.id;
+    setPending(`toggle:${mod.fileName}`);
+    try {
+      await api.modrinthToggle(id, mod.fileName);
+      if (instanceRef.current === id) await reload();
+    } catch (e) { toast.toast(e instanceof Error ? e.message : String(e), 'error'); }
+    finally { if (instanceRef.current === id) setPending(null); }
+  };
+
   return (
     <div className="panel">
       <div className="row spread" style={{ marginBottom: 12 }}>
@@ -145,8 +172,14 @@ function InstalledTab({ instance }: { instance: InstanceInfo }) {
                 <div className="faint">{mod.versionNumber ? `v${mod.versionNumber} · ` : ''}{formatBytes(mod.sizeBytes)} · {mod.installedAt ? timeAgo(mod.installedAt) : '手动放入'} {mod.projectId ? '' : '· 未知来源（手动放入）'}</div>
               </div>
               <div className="row" style={{ gap: 6, flexShrink: 0 }}>
-                {mod.updateAvailable && <button className="btn small primary" onClick={() => api.modrinthUpdateMod(instance.id, mod.fileName).then(() => { toast.toast('已更新'); void reload(); }).catch(e => toast.toast(String(e), 'error'))}>更新</button>}
-                <button className="btn small" onClick={() => api.modrinthToggle(instance.id, mod.fileName).then(() => void reload()).catch(e => toast.toast(String(e), 'error'))}>{mod.disabled ? '启用' : '禁用'}</button>
+                {mod.updateAvailable && (
+                  <button className="btn small primary" disabled={!!pending} onClick={() => updateMod(mod)}>
+                    {pending === `update:${mod.fileName}` ? '更新中…' : '更新'}
+                  </button>
+                )}
+                <button className="btn small" disabled={!!pending} onClick={() => toggleMod(mod)}>
+                  {pending === `toggle:${mod.fileName}` ? '处理中…' : (mod.disabled ? '启用' : '禁用')}
+                </button>
               </div>
             </div>
           ))}
@@ -161,7 +194,7 @@ function InstalledTab({ instance }: { instance: InstanceInfo }) {
                 <div className="fx-label">{issue.kind === 'duplicate' ? '重复模组' : issue.kind === 'zero-byte' ? '损坏文件' : issue.kind === 'foreign-loader' ? '加载器不匹配' : '异常'} · {issue.modName}</div>
                 <div className="fx-desc">{issue.detail}</div>
               </div>
-              {issue.fix?.action !== 'none' && <button className="btn small danger" onClick={() => applyFix(issue)}>隔离旧版</button>}
+              {issue.fix?.action !== 'none' && <button className="btn small danger" onClick={() => applyFix(issue)}>{issue.kind === 'duplicate' ? '隔离旧版' : '隔离文件'}</button>}
             </div>
           ))}
         </Modal>

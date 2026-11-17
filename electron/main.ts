@@ -106,6 +106,17 @@ async function createWindow(): Promise<void> {
     if (/^https?:\/\//i.test(url)) shell.openExternal(url);
     return { action: 'deny' };
   });
+  // 禁止当前窗口被导航到远程页面：preload 暴露了 IPC，远程页面绝不能在应用窗口里加载
+  win.webContents.on('will-navigate', (event, url) => {
+    let allowed = false;
+    try {
+      const target = new URL(url);
+      allowed = DEV_URL ? target.origin === new URL(DEV_URL).origin : target.protocol === 'file:';
+    } catch { allowed = false; }
+    if (allowed) return;
+    event.preventDefault();
+    if (/^https?:\/\//i.test(url)) void shell.openExternal(url);
+  });
 
   if (DEV_URL) {
     await win.loadURL(DEV_URL);

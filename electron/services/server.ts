@@ -50,6 +50,18 @@ const runtimeOf = (id: string): Runtime => {
 
 const newId = () => crypto.randomBytes(8).toString('hex');
 
+/** server.json 可能被手工改坏/半写入：字段不完整时跳过，避免服务器列表或启动流程崩掉 */
+function isServerConfig(value: unknown): value is ServerConfig {
+  if (!value || typeof value !== 'object') return false;
+  const cfg = value as Record<string, unknown>;
+  return typeof cfg.id === 'string' && /^[a-f0-9]{16}$/.test(cfg.id)
+    && typeof cfg.name === 'string'
+    && typeof cfg.mcVersion === 'string'
+    && ['vanilla', 'fabric', 'quilt', 'forge', 'neoforge'].includes(String(cfg.loader))
+    && Number.isInteger(cfg.port) && (cfg.port as number) >= 1 && (cfg.port as number) <= 65535
+    && typeof cfg.createdAt === 'number';
+}
+
 function walkBytes(dir: string): number {
   let total = 0;
   const walk = (d: string) => {
@@ -89,19 +101,21 @@ export function listServers(): ServerInfo[] {
   for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
     if (!entry.isDirectory()) continue;
     const cfg = readJson<ServerConfig | null>(paths.serverFile(entry.name), null);
-    if (cfg) out.push(toInfo(cfg));
+    // 目录名与配置里的 id 必须一致，否则会得到一个指向错误目录的“幽灵服务器”
+    if (isServerConfig(cfg) && cfg.id === entry.name) out.push(toInfo(cfg));
   }
   return out.sort((a, b) => b.createdAt - a.createdAt);
 }
 
 export function getServer(id: string): ServerInfo | null {
   const cfg = readJson<ServerConfig | null>(paths.serverFile(id), null);
-  return cfg ? toInfo(cfg) : null;
+  return isServerConfig(cfg) && cfg.id === id ? toInfo(cfg) : null;
 }
 
 function readConfig(id: string): ServerConfig {
+  if (!/^[a-f0-9]{16}$/.test(String(id ?? ''))) throw new Error('服务器不存在');
   const cfg = readJson<ServerConfig | null>(paths.serverFile(id), null);
-  if (!cfg) throw new Error('服务器不存在');
+  if (!isServerConfig(cfg) || cfg.id !== id) throw new Error('服务器不存在');
   return cfg;
 }
 

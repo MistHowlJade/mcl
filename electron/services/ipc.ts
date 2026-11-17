@@ -589,6 +589,13 @@ export function registerIpcHandlers(): void {
   };
   ipcMain.handle('app:cacheInfo', () => ({ dir: paths.cacheDir(), ...measureDir(paths.cacheDir()) }));
   ipcMain.handle('app:clearCache', () => {
+    // 正在下载时缓存里有 .part 分段，直接清掉会让本次启动/安装失败或从头再来
+    if (['preparing', 'downloading', 'launching'].includes(minecraft.launchState.status)) {
+      throw new Error('游戏正在下载/准备，清理缓存会打断本次启动。请等启动完成后再试。');
+    }
+    if (serverService.listServers().some(s => s.status === 'preparing')) {
+      throw new Error('有服务器正在安装，清理缓存会打断安装。请等安装完成后再试。');
+    }
     const dir = paths.cacheDir();
     const before = measureDir(dir);
     if (fs.existsSync(dir)) {

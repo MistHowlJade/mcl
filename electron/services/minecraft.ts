@@ -68,7 +68,9 @@ export async function killResidualProcesses(): Promise<number[]> {
     if (!Number.isFinite(pid) || pid <= 0) continue;
     const alive = await new Promise<boolean>((resolve) => {
       execFile('tasklist', ['/FI', `PID eq ${pid}`, '/NH', '/FO', 'CSV'], { timeout: 8000, windowsHide: true }, (err, stdout) => {
-        resolve(!err && (stdout ?? '').includes(String(pid)));
+        const output = String(stdout ?? '');
+        // 系统重启后 PID 可能被复用：只结束仍以 java/javaw 运行的进程，绝不误杀别的程序
+        resolve(!err && output.includes(String(pid)) && /"java(?:w)?\.exe"/i.test(output));
       });
     });
     if (alive) {
