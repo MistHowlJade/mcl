@@ -10,9 +10,15 @@ import { ContentInstallResult, ContentProjectType, InstalledMod, ModSearchResult
 import { readJson, writeJson } from './store';
 import { DownloadManager } from './downloader';
 import { importWorldZip } from './content';
+import { getInstance } from './instances';
 
 const API = 'https://api.modrinth.com/v2';
 const HEADERS = { 'User-Agent': USER_AGENT, Accept: 'application/json' };
+
+/** 实例 ID 来自渲染进程：先确认实例存在，路径拼接才不会跑到数据目录之外 */
+function assertInstance(instanceId: string): void {
+  if (!getInstance(instanceId)) throw new Error('实例不存在');
+}
 
 export async function searchMods(query: string, opts: { loader?: string; gameVersion?: string; projectType?: 'mod' | 'modpack'; limit?: number; index?: 'relevance' | 'downloads' | 'follows' | 'updated' } = {}): Promise<ModSearchResult[]> {
   return searchContent(query, { ...opts, projectType: opts.projectType ?? 'mod' });
@@ -81,7 +87,12 @@ const sanitizeRemoteName = (name: string): string => {
 const installedModsPath = (instanceId: string) => paths.installedModsFile(instanceId);
 
 export function readInstalledMods(instanceId: string): InstalledMod[] {
-  return readJson<InstalledMod[]>(installedModsPath(instanceId), []);
+  assertInstance(instanceId);
+  const raw = readJson<unknown>(installedModsPath(instanceId), []);
+  // 文件可能被手工改坏成 null/对象：按空列表处理，避免 Mods 页面整页报错
+  return Array.isArray(raw)
+    ? raw.filter((m): m is InstalledMod => !!m && typeof m === 'object' && typeof (m as InstalledMod).fileName === 'string')
+    : [];
 }
 
 function writeInstalledMods(instanceId: string, mods: InstalledMod[]): void {
@@ -103,6 +114,7 @@ interface ModrinthDependency {
 
 /** 安装模组：自动递归安装 required 前置（深度 ≤4、循环保护），optional 仅列出 */
 export async function installMod(instanceId: string, projectId: string, versionId?: string, opts: { loader?: string; gameVersion?: string } = {}): Promise<InstallResult> {
+  assertInstance(instanceId);
   const visited = new Set<string>();
   const installed: InstalledMod[] = [];
   const optionalMap = new Map<string, string>();
@@ -198,6 +210,9 @@ export async function installContent(
   kind: 'resourcepacks' | 'shaderpacks' | 'worlds',
   opts: { gameVersion?: string; loader?: string } = {},
 ): Promise<ContentInstallResult> {
+  assertInstance(instanceId);
+  // kind 在 IPC 边界只是 TS 类型，运行时要再确认一次，否则可拼接出实例目录之外的路径
+  if (!['resourcepacks', 'shaderpacks', 'worlds'].includes(kind)) throw new Error('不支持的内容类型');
   const versions = await getProjectVersions(projectId, {
     // 世界存档通常不标注游戏版本
     gameVersion: kind === 'worlds' ? undefined : opts.gameVersion,
@@ -285,12 +300,16 @@ export async function updateMod(instanceId: string, fileName: string): Promise<I
 }
 
 export function toggleModDisabled(instanceId: string, fileName: string): boolean {
+  assertInstance(instanceId);
+  // 只允许操作 mods 目录里的 jar：fileName 不能带目录分隔符或 ..
+  const base = path.basename(String(fileName ?? ''));
+  if (!/^[^\\/]+\.jar(\.disabled)?$/i.test(base)) throw new Error('模组文件名不合法');
   const modsDir = path.join(paths.gameDir(instanceId), 'mods');
-  const enabled = path.join(modsDir, fileName);
+  const enabled = path.join(modsDir, base);
   const disabled = enabled + '.disabled';
   if (fs.existsSync(enabled)) {
     if (fs.existsSync(disabled)) {
-      throw new Error(`mods 目录同时存在 ${fileName} 和 ${fileName}.disabled，请先手动删除一个重复文件`);
+      throw new Error(`mods 目录同时存在 ${base} 和 ${base}.disabled，请先手动删除一个重复文件`);
     }
     fs.renameSync(enabled, disabled);
     return true;
@@ -300,6 +319,7 @@ export function toggleModDisabled(instanceId: string, fileName: string): boolean
 }
 
 export function listModFiles(instanceId: string): Array<{ fileName: string; sizeBytes: number; disabled: boolean }> {
+  assertInstance(instanceId);
   const modsDir = path.join(paths.gameDir(instanceId), 'mods');
   if (!fs.existsSync(modsDir)) return [];
   return fs.readdirSync(modsDir)

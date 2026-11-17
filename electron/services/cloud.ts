@@ -138,7 +138,10 @@ function listServersConfig(): ServerConfig[] {
   for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
     if (!entry.isDirectory()) continue;
     const cfg = readJson<ServerConfig | null>(paths.serverFile(entry.name), null);
-    if (!cfg) continue;
+    // 损坏/半写入的 server.json 不上传：云端恢复时也会跳过它，没必要污染快照
+    if (!cfg || typeof cfg !== 'object') continue;
+    if (!/^[a-f0-9]{16}$/.test(String(cfg.id ?? '')) || cfg.id !== entry.name) continue;
+    if (typeof cfg.name !== 'string' || typeof cfg.mcVersion !== 'string') continue;
     out.push({ ...cfg, javaPath: null, prepared: false, eulaAccepted: false });
   }
   return out;
@@ -422,7 +425,10 @@ export async function downloadCloud(): Promise<CloudApplyResult> {
     if (!file) throw new Error('Gist 中找不到 mcl-config.json');
     let content: string | null = file.content ?? null;
     if (file.truncated && file.raw_url) {
-      const raw = await fetchWithTimeout(file.raw_url, { headers: gistHeaders(), timeoutMs: 30000 });
+      // raw_url 在 gist.githubusercontent.com：不要把 GitHub Token 发给另一个主机
+      let rawHeaders: Record<string, string> = {};
+      try { if (new URL(file.raw_url).origin === new URL(GIST_API).origin) rawHeaders = gistHeaders(); } catch { /* 非法 URL 交给 fetch 报错 */ }
+      const raw = await fetchWithTimeout(file.raw_url, { headers: rawHeaders, timeoutMs: 30000 });
       content = raw.body.toString('utf8');
     }
     if (!content) throw new Error('Gist 文件内容为空');

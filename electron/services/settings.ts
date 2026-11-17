@@ -73,8 +73,10 @@ function deepMerge<T>(base: T, patch: any): T {
 }
 
 export function getSettings(): AppSettings {
-  const raw = readJson<Partial<AppSettings>>(paths.configFile(), {});
-  const merged = deepMerge(DEFAULT_SETTINGS, raw);
+  const raw = readJson<unknown>(paths.configFile(), {});
+  // 根节点必须是对象：config.json 写成 null/数组/字符串时直接回退默认，否则深合并会返回 null
+  const patch = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw as Partial<AppSettings> : {};
+  const merged = deepMerge(DEFAULT_SETTINGS, patch);
   // config.json 可能被手工改坏（某分区变成 null/字符串）：回退默认分区，别让整个启动器崩掉
   for (const key of Object.keys(DEFAULT_SETTINGS) as Array<keyof AppSettings>) {
     const value = merged[key] as unknown;
@@ -87,7 +89,9 @@ export function getSettings(): AppSettings {
 
 export function updateSettings(patch: any): AppSettings {
   const current = getSettings();
-  const merged = deepMerge(current, patch);
+  // IPC/云快照传来的 patch 不一定是对象：null 会被 deepMerge 当成“整个设置变 null”
+  const safePatch = patch && typeof patch === 'object' && !Array.isArray(patch) ? patch : {};
+  const merged = deepMerge(current, safePatch);
   writeJson(paths.configFile(), merged);
   return merged;
 }

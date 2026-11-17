@@ -15,6 +15,8 @@ export interface LogFileInfo {
 
 export function listLogs(instanceId?: string | null): LogFileInfo[] {
   const out: LogFileInfo[] = [];
+  // instanceId 来自渲染进程：非法 ID 当作“没有选实例”，避免 ../ 读到别处
+  const validId = typeof instanceId === 'string' && /^[a-f0-9]{16}$/.test(instanceId) ? instanceId : null;
   if (fs.existsSync(paths.logsDir())) {
     for (const f of fs.readdirSync(paths.logsDir())) {
       if (!/\.(log|txt)$/i.test(f)) continue;
@@ -25,8 +27,8 @@ export function listLogs(instanceId?: string | null): LogFileInfo[] {
       } catch { /* 文件可能在列目录瞬间被清理 */ }
     }
   }
-  if (instanceId) {
-    const gameLog = path.join(paths.gameDir(instanceId), 'logs', 'latest.log');
+  if (validId) {
+    const gameLog = path.join(paths.gameDir(validId), 'logs', 'latest.log');
     try {
       const stat = fs.statSync(gameLog);
       out.push({ name: 'latest.log (游戏)', sizeBytes: stat.size, mtime: stat.mtimeMs, kind: 'game' });
@@ -37,8 +39,9 @@ export function listLogs(instanceId?: string | null): LogFileInfo[] {
 
 export function readLog(name: string, instanceId?: string | null, maxBytes = 1024 * 1024): string {
   let full: string | null = null;
-  if (name === 'latest.log (游戏)' && instanceId) {
-    full = path.join(paths.gameDir(instanceId), 'logs', 'latest.log');
+  const validId = typeof instanceId === 'string' && /^[a-f0-9]{16}$/.test(instanceId) ? instanceId : null;
+  if (name === 'latest.log (游戏)' && validId) {
+    full = path.join(paths.gameDir(validId), 'logs', 'latest.log');
   } else {
     // 只允许读取 logs 目录下的 .log/.txt，防止通过 ../ 读取任意文件
     const safe = path.basename(String(name ?? ''));

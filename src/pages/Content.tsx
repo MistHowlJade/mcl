@@ -94,13 +94,15 @@ export default function Content() {
 
   const doDelete = async () => {
     if (!deleteTarget) return;
+    // 先关确认框：避免连点两次导致第二次删除返回“内容不存在”，把成功提示盖掉
+    const target = deleteTarget;
+    setDeleteTarget(null);
     try {
       // 用打开确认框时记录的实例 id，避免确认前切换实例后误删新实例的同名文件
-      const r = await api.contentDelete(deleteTarget.instanceId, deleteTarget.kind, deleteTarget.item.fileName);
+      const r = await api.contentDelete(target.instanceId, target.kind, target.item.fileName);
       toast.toast(r.deleted
         ? (r.backupPath ? '已删除；删除前已自动备份到该实例的备份目录' : '已删除')
         : '内容不存在，可能已被手动删除', r.deleted ? 'ok' : 'info');
-      setDeleteTarget(null);
       void reload();
     } catch (e) { toast.toast(e instanceof Error ? e.message : String(e), 'error'); }
   };

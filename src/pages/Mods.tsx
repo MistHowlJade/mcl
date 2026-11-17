@@ -12,12 +12,21 @@ export default function Mods() {
   const [instanceId, setInstanceId] = useState<string | null>(() => localStorage.getItem('mcl:selectedInstance'));
   const toast = useToast();
 
-  useEffect(() => {
-    api.instancesList().then(list => {
+  const reloadInstances = async (): Promise<InstanceInfo[]> => {
+    try {
+      const list = await api.instancesList();
       setInstances(list);
       // localStorage 里的实例可能已被删除：失效时自动落到第一台
       setInstanceId(prev => (prev && list.some(i => i.id === prev)) ? prev : (list[0]?.id ?? null));
-    }).catch(e => toast.toast(String(e), 'error'));
+      return list;
+    } catch (e) {
+      toast.toast(String(e), 'error');
+      return [];
+    }
+  };
+
+  useEffect(() => {
+    void reloadInstances();
     /* eslint-disable-next-line */
   }, []);
   const instance = useMemo(() => instances.find(i => i.id === instanceId) ?? null, [instances, instanceId]);
@@ -54,7 +63,7 @@ export default function Mods() {
 
       {tab === 'installed' && instance && <InstalledTab instance={instance} />}
       {tab === 'search' && instance && <SearchTab instance={instance} />}
-      {tab === 'import' && <ImportTab />}
+      {tab === 'import' && <ImportTab onImported={id => { void reloadInstances().then(() => setInstanceId(id)); }} />}
     </div>
   );
 }
@@ -236,6 +245,7 @@ function SearchTab({ instance }: { instance: InstanceInfo }) {
   };
 
   const install = async (r: ModSearchResult) => {
+    if (installing) return;
     setInstalling(r.projectId);
     try {
       const result = await api.modrinthInstall(instance.id, r.projectId, null, { loader, gameVersion: instance.mcVersion });
@@ -269,7 +279,7 @@ function SearchTab({ instance }: { instance: InstanceInfo }) {
               <div className="faint" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.description}</div>
               <div className="faint" style={{ marginTop: 2 }}>⬇ {r.downloads.toLocaleString()} · ❤ {r.follows.toLocaleString()} · 支持 {r.gameVersions.slice(0, 4).join(' / ')}</div>
             </div>
-            <button className="btn small primary" onClick={() => install(r)} disabled={!loader || installing === r.projectId}>{installing === r.projectId ? '安装中…' : '安装'}</button>
+            <button className="btn small primary" onClick={() => install(r)} disabled={!loader || !!installing}>{installing === r.projectId ? '安装中…' : '安装'}</button>
           </div>
         ))}
       </div>
@@ -277,7 +287,7 @@ function SearchTab({ instance }: { instance: InstanceInfo }) {
   );
 }
 
-function ImportTab() {
+function ImportTab({ onImported }: { onImported?: (instanceId: string) => void }) {
   const [logs, setLogs] = useState<string[]>([]);
   const [importing, setImporting] = useState(false);
   const [result, setResult] = useState<any>(null);
@@ -289,7 +299,12 @@ function ImportTab() {
     setImporting(true); setResult(null); setLogs([]);
     try {
       const res = await api.modpackImportDialog();
-      if (res) { setResult(res); toast.toast(res.instanceId ? '整合包导入完成' : '导入失败', res.instanceId ? 'ok' : 'error'); }
+      if (res) {
+        setResult(res);
+        // 导入会创建新实例：刷新下拉框并选中它，否则要切页面才能看到
+        if (res.instanceId) onImported?.(res.instanceId);
+        toast.toast(res.instanceId ? '整合包导入完成' : '导入失败', res.instanceId ? 'ok' : 'error');
+      }
     } catch (e) { toast.toast(String(e), 'error'); } finally { setImporting(false); }
   };
 

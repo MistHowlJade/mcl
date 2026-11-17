@@ -23,7 +23,11 @@ function collectIncludedFiles(gameDir: string): string[] {
   return includes;
 }
 
+/** 实例 ID 来自渲染进程，必须先校验，避免 ../ 把备份目录指到数据目录之外 */
+const isInstanceId = (id: string): boolean => /^[a-f0-9]{16}$/.test(String(id ?? ''));
+
 export function listBackups(instanceId: string): BackupInfo[] {
+  if (!isInstanceId(instanceId)) return [];
   const dir = paths.instanceBackupsDir(instanceId);
   if (!fs.existsSync(dir)) return [];
   const out: BackupInfo[] = [];
@@ -32,20 +36,25 @@ export function listBackups(instanceId: string): BackupInfo[] {
     const file = path.join(dir, name);
     let stat: fs.Stats;
     try { stat = fs.statSync(file); } catch { continue; } // 可能刚被自动清理
-    // 从文件名还原元数据：<kind>-<ts>.zip
+    // 从文件名还原元数据：<kind>-<ts>.zip；meta.json 可能被手工改坏，逐字段校验
     const m = name.match(/^(auto|manual|pre-restore|world)-(\d+)/);
     const metaPath = file.replace(/\.zip$/, '.json');
     let meta: Partial<BackupInfo> = {};
     try { if (fs.existsSync(metaPath)) meta = JSON.parse(fs.readFileSync(metaPath, 'utf8')); } catch { /* ignore */ }
+    const metaName = typeof meta.name === 'string' && meta.name.trim() ? meta.name : name;
+    const worldNames = Array.isArray(meta.worldNames)
+      ? meta.worldNames.filter((w): w is string => typeof w === 'string')
+      : [];
+    const createdAt = typeof meta.createdAt === 'number' && Number.isFinite(meta.createdAt) ? meta.createdAt : stat.mtimeMs;
     out.push({
       id: name.replace(/\.zip$/, ''),
       instanceId,
-      name: meta.name ?? name,
+      name: metaName,
       filePath: file,
       sizeBytes: stat.size,
-      createdAt: meta.createdAt ?? stat.mtimeMs,
+      createdAt,
       kind: (m?.[1] as BackupInfo['kind']) ?? 'manual',
-      worldNames: meta.worldNames ?? [],
+      worldNames,
     });
   }
   return out.sort((a, b) => b.createdAt - a.createdAt);
@@ -107,7 +116,9 @@ export async function createBackup(instanceId: string, kind: BackupInfo['kind'],
 }
 
 export function pruneOldBackups(instanceId: string): void {
-  const keep = getSettings().general.backupKeep;
+  const raw = getSettings().general.backupKeep;
+  // 配置损坏成 NaN/负数时兜底：slice(NaN) 会把自动备份全删光
+  const keep = Number.isFinite(raw) ? Math.max(1, Math.min(200, Math.floor(raw))) : 10;
   const autos = listBackups(instanceId).filter(b => b.kind === 'auto');
   for (const old of autos.slice(keep)) {
     fs.rmSync(old.filePath, { force: true });
@@ -138,6 +149,7 @@ export function deleteBackup(id: string, instanceId?: string): void {
 }
 
 export async function restoreBackup(backupId: string, instanceId: string): Promise<{ restoredFiles: number }> {
+  if (!isInstanceId(instanceId)) throw new Error('实例不存在');
   const dir = paths.instanceBackupsDir(instanceId);
   const safeId = path.basename(String(backupId ?? ''));
   const zipPath = path.join(dir, `${safeId}.zip`);
@@ -158,7 +170,8 @@ export async function restoreBackup(backupId: string, instanceId: string): Promi
   // 元数据丢失时不把世界包倒进游戏根目录：没有 saves/ 前缀且带 level.dat 的就是单个世界
   const looksLikeWorld = meta.kind === 'world' || (!meta.kind && !alreadyPrefixed && entries.includes('level.dat'));
   if (looksLikeWorld && !alreadyPrefixed) {
-    const worldName = path.basename(meta.worldNames?.[0] || `restored-${backupId}`);
+    const recordedName = Array.isArray(meta.worldNames) && typeof meta.worldNames[0] === 'string' ? meta.worldNames[0] : '';
+    const worldName = path.basename(recordedName || `restored-${safeId}`);
     targetDir = path.join(gameDir, 'saves', worldName);
     fs.mkdirSync(targetDir, { recursive: true });
   }

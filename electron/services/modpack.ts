@@ -162,7 +162,13 @@ export async function importModpack(zipPath: string, targetName?: string, onLog?
     const instance = createInstance({ name: targetName ?? manifest?.name ?? 'CurseForge 整合包', mcVersion, loader, loaderVersion, memoryPreset: 'heavy' as MemoryPreset });
     const game = paths.gameDir(instance.id);
     copyOverrides('overrides', game);
-    const files: Array<{ projectID: number; fileID: number }> = Array.isArray(manifest?.files) ? manifest.files : [];
+    const rawCfFiles = Array.isArray(manifest?.files) ? manifest.files : [];
+    // 清单里的 projectID/fileID 必须是正整数：否则会拼出 /mods/undefined/files/undefined 的无效请求
+    const files: Array<{ projectID: number; fileID: number }> = rawCfFiles.filter((f: any) =>
+      Number.isInteger(f?.projectID) && f.projectID > 0 && Number.isInteger(f?.fileID) && f.fileID > 0);
+    if (files.length !== rawCfFiles.length) {
+      warnings.push(`已跳过 ${rawCfFiles.length - files.length} 个缺少有效 projectID/fileID 的条目。`);
+    }
     const apiKey = getSettings().curseforge.apiKey.trim();
     if (apiKey) {
       log(`使用 CurseForge API 下载 ${files.length} 个模组…`);

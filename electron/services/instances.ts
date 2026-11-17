@@ -44,8 +44,11 @@ function countDirEntries(dir: string): number {
 
 export function toInfo(cfg: InstanceConfig): InstanceInfo {
   const game = paths.gameDir(cfg.id);
+  // memoryPreset 可能被手工改坏：内存预设查表是直接用下标，非法值会让启动/实例页直接崩
+  const memoryPreset: MemoryPreset = cfg.memoryPreset === 'low' || cfg.memoryPreset === 'heavy' ? cfg.memoryPreset : 'standard';
   return {
     ...cfg,
+    memoryPreset,
     gameDir: game,
     modsCount: countDirEntries(path.join(game, 'mods')),
     savesCount: countDirEntries(path.join(game, 'saves')),
@@ -128,7 +131,13 @@ export function touchPlayed(id: string, seconds: number): void {
   updateInstance(id, { lastPlayedAt: Date.now(), playTimeSeconds: (readJson<InstanceConfig | null>(paths.instanceFile(id), null)?.playTimeSeconds ?? 0) + seconds });
 }
 
+/** 所有接受实例 ID 的写操作都必须先过这里：path.join 不会拦住 ../../ 路径穿越 */
+function assertInstanceId(id: string): void {
+  if (!/^[a-f0-9]{16}$/.test(String(id ?? ''))) throw new Error('实例不存在');
+}
+
 export function deleteInstance(id: string, backupDir?: string): { ok: boolean; backupPath?: string } {
+  assertInstanceId(id);
   const dir = paths.instanceDir(id);
   if (!fs.existsSync(dir)) return { ok: false };
   if (backupDir) {
@@ -147,6 +156,7 @@ export function deleteInstance(id: string, backupDir?: string): { ok: boolean; b
 
 /** 实例磁盘占用（含共享库不计重复） */
 export function instanceDiskBytes(id: string): number {
+  assertInstanceId(id);
   const dir = paths.gameDir(id);
   let total = 0;
   const walk = (d: string) => {

@@ -159,8 +159,16 @@ export function registerIpcHandlers(): void {
     return instances.deleteInstance(id, backupDir);
   });
   ipcMain.handle('instances:diskUsage', (_e, id: string) => ({ instance: instances.instanceDiskBytes(id), shared: instances.sharedDiskBytes() }));
-  ipcMain.handle('instances:openGameDir', (_e, id: string) => shell.openPath(paths.gameDir(id)));
-  ipcMain.handle('instances:openInstanceDir', (_e, id: string) => shell.openPath(paths.instanceDir(id)));
+  ipcMain.handle('instances:openGameDir', (_e, id: string) => {
+    const instance = instances.getInstance(id);
+    if (!instance) throw new Error('实例不存在');
+    return shell.openPath(instance.gameDir);
+  });
+  ipcMain.handle('instances:openInstanceDir', (_e, id: string) => {
+    const instance = instances.getInstance(id);
+    if (!instance) throw new Error('实例不存在');
+    return shell.openPath(paths.instanceDir(instance.id));
+  });
 
   /* ---------- 启动 ---------- */
   ipcMain.handle('launch:start', async (_e, instanceId: string, accountId?: string | null) => {
@@ -441,7 +449,11 @@ export function registerIpcHandlers(): void {
     return saved;
   });
   ipcMain.handle('server:log', (_e, id: string, maxLines?: number) => serverService.readServerLog(id, maxLines ?? 400));
-  ipcMain.handle('server:openDir', (_e, id: string) => shell.openPath(paths.serverDir(id)));
+  ipcMain.handle('server:openDir', (_e, id: string) => {
+    const server = serverService.getServer(id);
+    if (!server) throw new Error('服务器不存在');
+    return shell.openPath(server.dir);
+  });
   ipcMain.handle('server:backups', (_e, id: string) => serverService.listServerBackups(id));
   ipcMain.handle('server:backup', (_e, id: string, name?: string) => serverService.backupServerWorld(id, name));
   ipcMain.handle('server:restoreBackup', (_e, id: string, name: string) => serverService.restoreServerWorld(id, name));

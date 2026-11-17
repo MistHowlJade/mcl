@@ -116,15 +116,27 @@ function readConfig(id: string): ServerConfig {
   if (!/^[a-f0-9]{16}$/.test(String(id ?? ''))) throw new Error('服务器不存在');
   const cfg = readJson<ServerConfig | null>(paths.serverFile(id), null);
   if (!isServerConfig(cfg) || cfg.id !== id) throw new Error('服务器不存在');
-  return cfg;
+  // 校验只覆盖关键字段：其余字段可能被手工改坏，启动前统一兜底，避免拼出 NaN 的 JVM 参数
+  const memoryMB = Number.isFinite(cfg.memoryMB) ? Math.max(512, Math.min(32768, Math.round(cfg.memoryMB))) : 2048;
+  return {
+    ...cfg,
+    memoryMB,
+    loaderVersion: typeof cfg.loaderVersion === 'string' && cfg.loaderVersion.trim() ? cfg.loaderVersion : null,
+    javaPath: typeof cfg.javaPath === 'string' ? cfg.javaPath : null,
+    jvmArgsExtra: typeof cfg.jvmArgsExtra === 'string' ? cfg.jvmArgsExtra : '',
+    prepared: cfg.prepared === true,
+    eulaAccepted: cfg.eulaAccepted === true,
+  };
 }
 
 function toInfo(cfg: ServerConfig): ServerInfo {
   const rt = runtimeOf(cfg.id);
   const logFile = path.join(paths.serverDir(cfg.id), 'logs', 'latest.log');
   const logTail = rt.logTail.length > 0 ? rt.logTail.slice(-200) : tailFile(logFile);
+  const memoryMB = Number.isFinite(cfg.memoryMB) ? Math.max(512, Math.min(32768, Math.round(cfg.memoryMB))) : 2048;
   return {
     ...cfg,
+    memoryMB,
     dir: paths.serverDir(cfg.id),
     status: rt.status,
     pid: rt.child?.pid ?? null,
@@ -263,6 +275,7 @@ function writeDefaultProperties(id: string, port: number): void {
 }
 
 export function readServerProperties(id: string): ServerProperties {
+  readConfig(id);
   const file = path.join(paths.serverDir(id), 'server.properties');
   const out: ServerProperties = {};
   if (!fs.existsSync(file)) return out;
@@ -278,9 +291,12 @@ export function readServerProperties(id: string): ServerProperties {
 
 /** 更新 server.properties：保留注释与未知键，只改传入的键 */
 export function saveServerProperties(id: string, patch: ServerProperties): ServerProperties {
+  readConfig(id);
   const file = path.join(paths.serverDir(id), 'server.properties');
   const lines = fs.existsSync(file) ? fs.readFileSync(file, 'utf8').split(/\r?\n/) : [];
-  const remaining = new Map(Object.entries(patch));
+  // 值里出现换行会额外写进一行属性（甚至覆盖别的键），写盘前统一去掉
+  const clean = (value: unknown) => String(value ?? '').replace(/[\r\n]+/g, ' ');
+  const remaining = new Map(Object.entries(patch).map(([k, v]) => [clean(k), clean(v)]));
   const out = lines.map(line => {
     const trimmed = line.trim();
     if (!trimmed || trimmed.startsWith('#') || !trimmed.includes('=')) return line;
@@ -718,6 +734,7 @@ export function sendCommand(id: string, command: string): boolean {
 /* ============================== 世界备份 ============================== */
 
 export function listServerBackups(id: string): ServerBackupInfo[] {
+  readConfig(id);
   const dir = paths.serverBackupsDir(id);
   if (!fs.existsSync(dir)) return [];
   const out: ServerBackupInfo[] = [];
@@ -778,6 +795,7 @@ export function restoreServerWorld(id: string, backupName: string): { restoredFi
 }
 
 export function deleteServerBackup(id: string, backupName: string): void {
+  readConfig(id);
   const zipPath = path.join(paths.serverBackupsDir(id), `${path.basename(backupName)}.zip`);
   fs.rmSync(zipPath, { force: true });
 }
@@ -785,6 +803,7 @@ export function deleteServerBackup(id: string, backupName: string): void {
 /* ============================== 日志 ============================== */
 
 export function readServerLog(id: string, maxLines = 400): string[] {
+  readConfig(id);
   const rt = runtimeOf(id);
   if (rt.logTail.length > 0) return rt.logTail.slice(-maxLines);
   return tailFile(path.join(paths.serverDir(id), 'logs', 'latest.log'), maxLines);

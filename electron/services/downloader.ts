@@ -69,10 +69,11 @@ export class DownloadManager extends EventEmitter {
     this.opts = {
       source: opts.source,
       customMirror: opts.customMirror ?? '',
-      maxThreads: Math.max(1, Math.min(64, opts.maxThreads)),
-      segmentSizeMB: Math.max(1, opts.segmentSizeMB ?? 4),
-      retries: Math.max(0, opts.retries ?? 3),
-      timeoutMs: Math.max(3000, opts.timeoutMs ?? 15000),
+      // 配置可能被手工改坏：非数字会让 while (active < maxThreads) 永远不成立，下载队列直接卡死
+      maxThreads: Number.isFinite(opts.maxThreads) ? Math.max(1, Math.min(64, Math.floor(opts.maxThreads))) : 4,
+      segmentSizeMB: Number.isFinite(opts.segmentSizeMB) ? Math.max(1, Math.min(512, opts.segmentSizeMB!)) : 4,
+      retries: Number.isFinite(opts.retries) ? Math.max(0, Math.min(10, Math.floor(opts.retries!))) : 3,
+      timeoutMs: Number.isFinite(opts.timeoutMs) ? Math.max(3000, Math.min(300000, opts.timeoutMs!)) : 15000,
     };
   }
 

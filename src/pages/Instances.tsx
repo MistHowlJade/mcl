@@ -55,11 +55,13 @@ export default function Instances() {
           danger
           onCancel={() => setDeleteTarget(null)}
           onConfirm={() => {
-            api.instanceDelete(deleteTarget.id).then(r => {
+            const target = deleteTarget;
+            // 先关确认框：备份+删除需要时间，连点会触发第二次删除
+            setDeleteTarget(null);
+            api.instanceDelete(target.id).then(r => {
               toast.toast(r.ok ? '实例已备份并删除' : '删除失败', r.ok ? 'ok' : 'error');
-              setDeleteTarget(null);
               void reload();
-            }).catch(e => { toast.toast(String(e), 'error'); setDeleteTarget(null); });
+            }).catch(e => { toast.toast(String(e), 'error'); void reload(); });
           }}
         />
       )}

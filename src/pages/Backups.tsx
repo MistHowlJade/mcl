@@ -115,10 +115,12 @@ export default function Backups() {
           confirmText="恢复"
           onCancel={() => setRestoreTarget(null)}
           onConfirm={() => {
+            // 先关确认框，避免连点两次恢复：第二次会多打一份恢复前备份并重复解压
+            const target = restoreTarget;
+            setRestoreTarget(null);
             // 用备份自身的 instanceId，避免切换实例后把旧列表里的备份恢复到新实例
-            api.backupRestore(restoreTarget.id, restoreTarget.instanceId).then(r => {
+            api.backupRestore(target.id, target.instanceId).then(r => {
               toast.toast(`恢复完成：${r.restoredFiles} 个文件`, 'ok');
-              setRestoreTarget(null);
               void reload();
             }).catch(e => toast.toast(String(e), 'error'));
           }}
@@ -131,7 +133,11 @@ export default function Backups() {
           confirmText="删除"
           danger
           onCancel={() => setDeleteTarget(null)}
-          onConfirm={() => { api.backupDelete(deleteTarget.id, deleteTarget.instanceId).then(() => { toast.toast('已删除'); setDeleteTarget(null); void reload(); }).catch(e => toast.toast(String(e), 'error')); }}
+          onConfirm={() => {
+            const target = deleteTarget;
+            setDeleteTarget(null);
+            api.backupDelete(target.id, target.instanceId).then(() => { toast.toast('已删除'); void reload(); }).catch(e => toast.toast(String(e), 'error'));
+          }}
         />
       )}
     </div>

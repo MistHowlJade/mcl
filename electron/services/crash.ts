@@ -199,6 +199,7 @@ function readTail(file: string, bytes = 512 * 1024): string {
 }
 
 export function analyzeCrash(instanceId: string, logPath?: string, startedAt?: number): CrashDiagnosis {
+  if (!/^[a-f0-9]{16}$/.test(String(instanceId ?? ''))) throw new Error('实例不存在');
   const game = paths.gameDir(instanceId);
   const crashReport = findLatestCrashReport(game, startedAt);
   const logFallback = logPath ?? path.join(game, 'logs', 'latest.log');
