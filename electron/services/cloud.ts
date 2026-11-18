@@ -69,6 +69,14 @@ function sanitizeSettings(settings: AppSettings): AppSettings {
   return clone;
 }
 
+/** 与实例/服务端创建时的校验保持一致：版本号会进入 URL 与安装器参数 */
+const isMcVersion = (v: unknown): v is string => typeof v === 'string'
+  && v.length > 0 && v.length <= 128
+  && /^[0-9A-Za-z_\-[\]]+(\.[0-9A-Za-z_\-[\]]+)*$/.test(v);
+/** 加载器版本只允许普通版本号字符：不能以 - 开头，避免被当成额外的安装器参数 */
+const isLoaderVersion = (v: unknown): v is string => typeof v === 'string'
+  && /^[0-9A-Za-z][0-9A-Za-z._+\-]{0,63}$/.test(v);
+
 function webdavEndpoint(): string {
   const s = getSettings().cloud;
   const raw = (s.webdavUrl || '').trim();
@@ -108,7 +116,12 @@ function gistHeaders(): Record<string, string> {
 
 function buildManifest(includeSaves: boolean): { manifest: CloudManifest; saveDirs: Array<{ instanceId: string; dir: string }> } {
   const settings = getSettings();
-  const instances = listInstanceFiles().map(cfg => JSON.parse(JSON.stringify(cfg)));
+  // 本机 Java 路径属于设备信息：不随快照上传，恢复时也保留目标机器自己的选择
+  const instances = listInstanceFiles().map(cfg => {
+    const copy = JSON.parse(JSON.stringify(cfg)) as Record<string, any>;
+    copy.javaPath = null;
+    return copy;
+  });
   const servers = listServersConfig();
   const saveDirs: Array<{ instanceId: string; dir: string }> = [];
   if (includeSaves) {
@@ -185,7 +198,10 @@ function mergeSettings(incoming: AppSettings): void {
 
 function applyManifest(manifest: CloudManifest, saveArchives?: Map<string, Buffer>): CloudApplyResult {
   if (!manifest || typeof manifest !== 'object') throw new Error('这不是 MCL 云同步快照（内容为空或格式错误）');
-  const warnings: string[] = Array.isArray(manifest.warnings) ? [...manifest.warnings] : [];
+  // warnings 会直接渲染到界面：快照可能被手工改坏，非字符串条目必须过滤，否则 React 渲染对象会白屏
+  const warnings: string[] = Array.isArray(manifest.warnings)
+    ? manifest.warnings.filter((w): w is string => typeof w === 'string')
+    : [];
   if (manifest.format !== 'mcl-cloud' || manifest.version !== 1) {
     throw new Error('这不是 MCL 云同步快照（格式不匹配）');
   }
@@ -204,10 +220,10 @@ function applyManifest(manifest: CloudManifest, saveArchives?: Map<string, Buffe
     if (!/^[a-f0-9]{16}$/.test(id)) { warnings.push('已跳过非法实例 ID'); continue; }
     const existingFile = paths.instanceFile(id);
     const existing = readJson<any | null>(existingFile, null);
-    const mcVersion = typeof raw.mcVersion === 'string' && raw.mcVersion.trim()
-      ? raw.mcVersion.trim()
-      : (typeof existing?.mcVersion === 'string' ? existing.mcVersion : '');
-    if (!mcVersion) { warnings.push(`已跳过缺少 MC 版本的实例 ${id}`); continue; }
+    const rawVersion = typeof raw.mcVersion === 'string' ? raw.mcVersion.trim() : '';
+    const existingVersion = typeof existing?.mcVersion === 'string' ? existing.mcVersion : '';
+    const mcVersion = isMcVersion(rawVersion) ? rawVersion : (isMcVersion(existingVersion) ? existingVersion : '');
+    if (!mcVersion) { warnings.push(`已跳过缺少有效 MC 版本的实例 ${id}`); continue; }
     const loaderRaw = raw.loader ?? existing?.loader;
     const loader = ['vanilla', 'fabric', 'quilt', 'forge', 'neoforge'].includes(loaderRaw) ? loaderRaw : 'vanilla';
     const loaderVersionRaw = raw.loaderVersion ?? existing?.loaderVersion;
@@ -221,12 +237,13 @@ function applyManifest(manifest: CloudManifest, saveArchives?: Map<string, Buffe
         || `${mcVersion}${loader !== 'vanilla' ? ' · ' + loader : ''}`,
       mcVersion,
       loader,
-      loaderVersion: loader === 'vanilla' || typeof loaderVersionRaw !== 'string' || !loaderVersionRaw ? null : loaderVersionRaw,
+      loaderVersion: loader === 'vanilla' || !isLoaderVersion(loaderVersionRaw) ? null : loaderVersionRaw,
       memoryPreset: presetRaw === 'low' || presetRaw === 'standard' || presetRaw === 'heavy' ? presetRaw : 'standard',
       createdAt: Number.isFinite(existing?.createdAt) ? existing.createdAt : (Number.isFinite(raw.createdAt) ? raw.createdAt : Date.now()),
       lastPlayedAt: Number.isFinite(raw.lastPlayedAt) ? raw.lastPlayedAt : (Number.isFinite(existing?.lastPlayedAt) ? existing.lastPlayedAt : null),
       playTimeSeconds: Number.isFinite(raw.playTimeSeconds) ? Math.max(0, raw.playTimeSeconds) : (Number.isFinite(existing?.playTimeSeconds) ? existing.playTimeSeconds : 0),
-      javaPath: typeof raw.javaPath === 'string' ? raw.javaPath : (typeof existing?.javaPath === 'string' ? existing.javaPath : null),
+      // Java 路径是本机设备信息：绝不采用快照里的值，只保留目标机器已有配置
+      javaPath: typeof existing?.javaPath === 'string' ? existing.javaPath : null,
     };
     if (merged.javaPath && !fs.existsSync(String(merged.javaPath))) merged.javaPath = null;
     fs.mkdirSync(paths.gameDir(id), { recursive: true });
@@ -248,13 +265,19 @@ function applyManifest(manifest: CloudManifest, saveArchives?: Map<string, Buffe
     const port = Number(raw.port ?? existing?.port ?? 25565);
     const memoryMB = Number(raw.memoryMB ?? existing?.memoryMB ?? 4096);
     const mcVersionRaw = raw.mcVersion ?? existing?.mcVersion;
+    const rawVersion = typeof mcVersionRaw === 'string' ? mcVersionRaw.trim() : '';
+    const existingVersion = typeof existing?.mcVersion === 'string' ? existing.mcVersion : '';
+    const serverVersion = isMcVersion(rawVersion) ? rawVersion : (isMcVersion(existingVersion) ? existingVersion : '');
+    if (!serverVersion) { warnings.push(`已跳过缺少有效 MC 版本的服务器 ${id}`); continue; }
     const merged = {
       ...(existing ?? {}),
       ...raw,
       id,
       name: (typeof nameRaw === 'string' ? nameRaw.trim().slice(0, 80) : '') || 'MCL 服务器',
-      mcVersion: typeof mcVersionRaw === 'string' && mcVersionRaw.trim() ? mcVersionRaw.trim() : '1.20.1',
+      mcVersion: serverVersion,
       loader: ['vanilla', 'fabric', 'quilt', 'forge', 'neoforge'].includes(loaderRaw) ? loaderRaw : 'vanilla',
+      loaderVersion: isLoaderVersion(raw.loaderVersion) ? raw.loaderVersion
+        : (isLoaderVersion(existing?.loaderVersion) ? existing.loaderVersion : null),
       port: Number.isInteger(port) && port >= 1 && port <= 65535 ? port : 25565,
       memoryMB: Number.isFinite(memoryMB) ? Math.max(512, Math.min(32768, Math.round(memoryMB))) : 4096,
       createdAt: Number.isFinite(existing?.createdAt) ? existing.createdAt : (Number.isFinite(raw.createdAt) ? raw.createdAt : Date.now()),

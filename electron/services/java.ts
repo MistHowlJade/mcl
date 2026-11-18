@@ -16,6 +16,8 @@ import { JavaInfo } from '../shared/types';
 
 /** 根据 MC 版本推荐 Java 主版本 */
 export function recommendedJavaMajor(mcVersion: string): number {
+  // IPC/配置里的版本号可能是非字符串：不能让它把 .match 抛错带崩检测
+  if (typeof mcVersion !== 'string') return 17;
   const m = mcVersion.match(/^(\d+)\.(\d+)(?:\.(\d+))?/);
   if (!m) return 17;
   const major = parseInt(m[1], 10);
@@ -227,6 +229,8 @@ async function downloadToFile(url: string, dest: string, onProgress?: (n: number
 
 /** 下载并安装 Temurin JRE，返回 java 可执行文件路径 */
 export async function installJava(major: number, onProgress?: (stage: 'fetch' | 'downloading' | 'extracting', received?: number, total?: number) => void): Promise<string> {
+  // 主版本会进入 Adoptium URL 与本地目录名：必须是合理整数，否则可被拼出 ../ 路径
+  if (!Number.isInteger(major) || major < 8 || major > 30) throw new Error('Java 主版本不合法（只支持 8–30）');
   onProgress?.('fetch');
   const info = await getAdoptiumJreUrl(major);
   if (!info) throw new Error(`无法从 Adoptium 获取 Java ${major} 的下载地址`);
@@ -242,24 +246,42 @@ export async function installJava(major: number, onProgress?: (stage: 'fetch' | 
     }
   }
   onProgress?.('extracting');
+  // 先解压到临时目录并校验成功，再替换旧 JRE：
+  // 直接删除旧目录会在下载/解压失败时把玩家原本能用的 Java 一起弄没。
   const destDir = path.join(javaDir(), `temurin-${major}`);
-  fs.rmSync(destDir, { recursive: true, force: true });
-  fs.mkdirSync(destDir, { recursive: true });
-  if (info.isTarGz) {
-    // Linux/macOS 的 Temurin 发行包是 tar.gz，用系统 tar 解压（保留可执行位）
-    await new Promise<void>((resolve, reject) => {
-      execFile('tar', ['-xzf', tmp, '-C', destDir], { timeout: 120000 }, (err) => err ? reject(new Error(`tar 解压失败：${err.message}`)) : resolve());
-    });
-  } else {
-    const buf = fs.readFileSync(tmp);
-    zipExtractAll(buf, destDir);
+  const stagingDir = path.join(javaDir(), `temurin-${major}-staging-${Date.now()}`);
+  fs.mkdirSync(stagingDir, { recursive: true });
+  let innerRel = '';
+  try {
+    if (info.isTarGz) {
+      // Linux/macOS 的 Temurin 发行包是 tar.gz，用系统 tar 解压（保留可执行位）
+      await new Promise<void>((resolve, reject) => {
+        execFile('tar', ['-xzf', tmp, '-C', stagingDir], { timeout: 120000 }, (err) => err ? reject(new Error(`tar 解压失败：${err.message}`)) : resolve());
+      });
+    } else {
+      zipExtractAll(fs.readFileSync(tmp), stagingDir);
+    }
+    // Temurin 包内层为 jdk-xx/ 或 jre-xx/ 目录
+    const inner = fs.readdirSync(stagingDir).find(d => fs.statSync(path.join(stagingDir, d)).isDirectory());
+    innerRel = inner ? path.join(inner, 'bin', javaExeName()) : path.join('bin', javaExeName());
+    if (!fs.existsSync(path.join(stagingDir, innerRel))) {
+      throw new Error(`Java 安装包结构异常：找不到 bin/${javaExeName()}`);
+    }
+    const backupDir = `${destDir}.old-${Date.now()}`;
+    const hadOld = fs.existsSync(destDir);
+    if (hadOld) fs.renameSync(destDir, backupDir);
+    try {
+      fs.renameSync(stagingDir, destDir);
+    } catch (e) {
+      if (hadOld) { try { fs.renameSync(backupDir, destDir); } catch { /* 还原失败时至少保留备份目录 */ } }
+      throw e;
+    }
+    if (hadOld) { try { fs.rmSync(backupDir, { recursive: true, force: true }); } catch { /* 清理失败不影响使用 */ } }
+  } finally {
+    try { fs.rmSync(tmp, { force: true }); } catch { /* ignore */ }
+    try { if (fs.existsSync(stagingDir)) fs.rmSync(stagingDir, { recursive: true, force: true }); } catch { /* ignore */ }
   }
-  fs.rmSync(tmp, { force: true });
-  // Temurin 包内层为 jdk-xx/ 或 jre-xx/ 目录
-  const inner = fs.readdirSync(destDir).find(d => fs.statSync(path.join(destDir, d)).isDirectory());
-  const home = inner ? path.join(destDir, inner) : destDir;
-  const exe = path.join(home, 'bin', javaExeName());
-  if (!fs.existsSync(exe)) throw new Error(`Java 安装包结构异常：找不到 bin/${javaExeName()}`);
+  const exe = path.join(destDir, innerRel);
   try { fs.chmodSync(exe, 0o755); } catch { /* Windows 无需 chmod */ }
   return exe;
 }

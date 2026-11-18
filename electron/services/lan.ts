@@ -43,12 +43,14 @@ export function scanLanWorlds(timeoutMs = 4500): Promise<LanWorld[]> {
       const text = msg.toString('utf8');
       const motdRaw = /\[MOTD\]([\s\S]*?)\[\/MOTD\]/i.exec(text)?.[1] ?? 'Minecraft 局域网世界';
       const motd = motdRaw.replace(/\u00a7[\da-fk-or]/gi, '').replace(/\s+/g, ' ').trim() || 'Minecraft 局域网世界';
-      const port = parseInt(/\[AD\]([\s\S]*?)\[\/AD\]/i.exec(text)?.[1] ?? '', 10) || 25565;
-      const key = `${rinfo.address}:${port}`;
+      const port = parseInt(/\[AD\]([\s\S]*?)\[\/AD\]/i.exec(text)?.[1] ?? '', 10);
+      // 端口来自局域网广播，可能是恶意/损坏数据：超出范围时按默认端口显示
+      const safePort = Number.isInteger(port) && port >= 1 && port <= 65535 ? port : 25565;
+      const key = `${rinfo.address}:${safePort}`;
       found.set(key, {
         motd,
         address: rinfo.address,
-        port,
+        port: safePort,
         local: locals.has(rinfo.address),
       });
     });

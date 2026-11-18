@@ -651,15 +651,21 @@ export async function startServer(id: string): Promise<ServerInfo> {
   }
 
   const javaPath = await resolveJava(fresh);
-  const args = jvmArgsFor(fresh);
+  let args: string[];
   if (forgeLoader) {
     const userArgsFile = path.join(dir, 'user_jvm_args.txt');
-    fs.writeFileSync(userArgsFile, `${args.join('\n')}\n`, 'utf8');
+    fs.writeFileSync(userArgsFile, `${jvmArgsFor(fresh).join('\n')}\n`, 'utf8');
     const forgeArgs = findForgeArgs(dir, forgeLoader)!;
-    args.push(`@${path.relative(dir, userArgsFile).replace(/\\/g, '/')}`, `@${path.relative(dir, forgeArgs).replace(/\\/g, '/')}`, 'nogui');
+    // JVM 参数已经写进 user_jvm_args.txt；命令行只引用参数文件。
+    // 若再把 jvmArgsFor 放进命令行，每个参数会重复一次（-javaagent 之类会加载两遍）。
+    args = [
+      `@${path.relative(dir, userArgsFile).replace(/\\/g, '/')}`,
+      `@${path.relative(dir, forgeArgs).replace(/\\/g, '/')}`,
+      'nogui',
+    ];
   } else {
     const jar = findInstalledJar(dir, fresh.loader)!;
-    args.push('-jar', path.basename(jar), 'nogui');
+    args = [...jvmArgsFor(fresh), '-jar', path.basename(jar), 'nogui'];
   }
 
   setStatus(id, 'starting');
@@ -671,6 +677,12 @@ export async function startServer(id: string): Promise<ServerInfo> {
   rt.players.clear();
   updateServer(id, { lastStartedAt: rt.startedAt });
 
+  // 玩家进出/进程退出时 server.json 可能正好被删除或改坏：
+  // 事件回调里抛异常会直接崩掉主进程，这里统一静默跳过。
+  const emitStatusSafe = () => {
+    try { serverEvents.emit('status', toInfo(readConfig(id))); } catch { /* 配置已不存在 */ }
+  };
+
   const handleLines = (text: string) => {
     for (const raw of String(text).split(/\r?\n/)) {
       const line = raw.trimEnd();
@@ -680,13 +692,12 @@ export async function startServer(id: string): Promise<ServerInfo> {
       const join = line.match(/(?:^|\]: )([A-Za-z0-9_]{1,16}) joined the game/);
       if (join) {
         rt.players.add(join[1]);
-        const current = readConfig(id);
-        serverEvents.emit('status', toInfo(current));
+        emitStatusSafe();
       }
       const leave = line.match(/(?:^|\]: )([A-Za-z0-9_]{1,16}) left the game/);
       if (leave) {
         rt.players.delete(leave[1]);
-        serverEvents.emit('status', toInfo(readConfig(id)));
+        emitStatusSafe();
       }
       if (/Stopping server/.test(line)) setStatus(id, 'stopping');
     }
@@ -697,7 +708,7 @@ export async function startServer(id: string): Promise<ServerInfo> {
     emitLog(id, `[mcl] 进程错误：${err.message}`);
     rt.status = 'crashed';
     rt.child = null;
-    serverEvents.emit('status', toInfo(readConfig(id)));
+    emitStatusSafe();
   });
   child.on('close', code => {
     const intentional = rt.stopping || code === 0;
@@ -707,7 +718,7 @@ export async function startServer(id: string): Promise<ServerInfo> {
     rt.players.clear();
     rt.status = intentional ? 'stopped' : 'crashed';
     rt.stopping = false;
-    serverEvents.emit('status', toInfo(readConfig(id)));
+    emitStatusSafe();
   });
   return getServer(id)!;
 }
