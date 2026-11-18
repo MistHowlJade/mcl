@@ -179,10 +179,12 @@ export function zipExtractAll(buf: Buffer, destDir: string, stripPrefix?: string
   const entries = zipList(buf);
   const written: string[] = [];
   const root = path.resolve(destDir);
+  // Windows 打包的 ZIP 条目可能用反斜杠：必须先统一分隔符再做前缀剥离，
+  // 否则调用方按 / 计算的前缀（如世界 ZIP 的 world/）永远匹配不上，解压会多套一层目录。
+  const prefix = (stripPrefix ?? '').replace(/\\/g, '/');
   for (const entry of entries) {
-    let rel = entry.name;
-    if (stripPrefix && rel.startsWith(stripPrefix)) rel = rel.slice(stripPrefix.length);
-    rel = rel.replace(/\\/g, '/');
+    let rel = entry.name.replace(/\\/g, '/');
+    if (prefix && rel.startsWith(prefix)) rel = rel.slice(prefix.length);
     if (!rel || rel.endsWith('/')) continue;
     const target = path.resolve(root, rel);
     if (!target.startsWith(root + path.sep) && target !== root) {

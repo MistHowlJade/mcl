@@ -26,6 +26,17 @@ function collectIncludedFiles(gameDir: string): string[] {
 /** 实例 ID 来自渲染进程，必须先校验，避免 ../ 把备份目录指到数据目录之外 */
 const isInstanceId = (id: string): boolean => /^[a-f0-9]{16}$/.test(String(id ?? ''));
 
+/** 备份元数据可能被手工改坏：JSON.parse('null') 不抛错但会让 meta.name 直接崩，必须校验是对象 */
+function readBackupMeta(file: string): Partial<BackupInfo> {
+  try {
+    if (!fs.existsSync(file)) return {};
+    const parsed = JSON.parse(fs.readFileSync(file, 'utf8'));
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as Partial<BackupInfo> : {};
+  } catch {
+    return {};
+  }
+}
+
 export function listBackups(instanceId: string): BackupInfo[] {
   if (!isInstanceId(instanceId)) return [];
   const dir = paths.instanceBackupsDir(instanceId);
@@ -39,8 +50,7 @@ export function listBackups(instanceId: string): BackupInfo[] {
     // 从文件名还原元数据：<kind>-<ts>.zip；meta.json 可能被手工改坏，逐字段校验
     const m = name.match(/^(auto|manual|pre-restore|world)-(\d+)/);
     const metaPath = file.replace(/\.zip$/, '.json');
-    let meta: Partial<BackupInfo> = {};
-    try { if (fs.existsSync(metaPath)) meta = JSON.parse(fs.readFileSync(metaPath, 'utf8')); } catch { /* ignore */ }
+    const meta = readBackupMeta(metaPath);
     const metaName = typeof meta.name === 'string' && meta.name.trim() ? meta.name : name;
     const worldNames = Array.isArray(meta.worldNames)
       ? meta.worldNames.filter((w): w is string => typeof w === 'string')
@@ -162,9 +172,8 @@ export async function restoreBackup(backupId: string, instanceId: string): Promi
   // 世界单独备份（内容管理的「备份世界」/删除前自动备份）是“世界目录内部”打包，
   // 需要还原到 saves/<世界名>/；完整存档备份则直接还原到游戏根目录。
   let targetDir = gameDir;
-  let meta: { kind?: string; worldNames?: string[] } = {};
   const metaPath = zipPath.replace(/\.zip$/, '.json');
-  try { if (fs.existsSync(metaPath)) meta = JSON.parse(fs.readFileSync(metaPath, 'utf8')); } catch { /* ignore */ }
+  const meta = readBackupMeta(metaPath);
   const entries = zipList(buf).map(e => e.name.replace(/\\/g, '/'));
   const alreadyPrefixed = entries.some(n => n === 'saves' || n.startsWith('saves/'));
   // 元数据丢失时不把世界包倒进游戏根目录：没有 saves/ 前缀且带 level.dat 的就是单个世界

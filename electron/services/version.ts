@@ -398,11 +398,20 @@ export interface DownloadPlan {
 export async function buildDownloadPlan(entry: VersionManifestEntry, source: DownloadSource, customMirror?: string, includeAssets = true): Promise<DownloadPlan> {
   const resolved = await resolveVersion(entry, source, customMirror);
   const tasks: DownloadPlan['tasks'] = [];
+  // 同一目标文件只允许一个任务：旧版资源索引里多个虚拟资源会共用同一个 objects/<hash> 文件，
+  // 库也可能在 inheritsFrom 合并后重复出现。重复任务会并发写同一个 .part，把文件写坏。
+  const seenDest = new Set<string>();
+  const pushTask = (task: DownloadPlan['tasks'][number]): void => {
+    const key = process.platform === 'win32' ? task.dest.toLowerCase() : task.dest;
+    if (seenDest.has(key)) return;
+    seenDest.add(key);
+    tasks.push(task);
+  };
 
   // 客户端 jar（旧版 jar 也走 downloads.client）
   const client = resolved.downloads?.client;
   if (client) {
-    tasks.push({
+    pushTask({
       id: `client:${entry.id}`,
       url: client.url,
       sha1: client.sha1,
@@ -413,7 +422,7 @@ export async function buildDownloadPlan(entry: VersionManifestEntry, source: Dow
   }
   // 库
   for (const lib of collectLibraries(resolved)) {
-    tasks.push({
+    pushTask({
       id: `lib:${lib.path}`,
       url: lib.url,
       sha1: lib.sha1,
@@ -429,7 +438,7 @@ export async function buildDownloadPlan(entry: VersionManifestEntry, source: Dow
     assetIndexId = indexId;
     for (const obj of objects) {
       const hash = obj.hash;
-      tasks.push({
+      pushTask({
         id: `asset:${hash}`,
         url: `https://resources.download.minecraft.net/${hash.slice(0, 2)}/${hash}`,
         sha1: hash,
