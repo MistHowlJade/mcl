@@ -152,6 +152,13 @@ export function listContent(instanceId: string): ContentList {
 
 /* ------------------------------ 开关 ------------------------------ */
 
+/** 资源包/光影文件名来自渲染进程：不能带路径分隔符或换行（会注入 options/iris 配置的其它行） */
+function assertPackFileName(fileName: string): void {
+  if (typeof fileName !== 'string' || !fileName || /[\\/\r\n]/.test(fileName)) {
+    throw new Error('文件名不合法');
+  }
+}
+
 function writeOptionLine(gameDir: string, key: string, value: string): void {
   const file = path.join(gameDir, 'options.txt');
   const { lines } = readOptions(gameDir);
@@ -164,6 +171,7 @@ function writeOptionLine(gameDir: string, key: string, value: string): void {
 export function toggleResourcePack(instanceId: string, fileName: string): boolean {
   const instance = getInstance(instanceId);
   if (!instance) throw new Error('实例不存在');
+  assertPackFileName(fileName);
   const enabled = enabledResourcePacks(instance.gameDir);
   const key = `file/${fileName}`;
   const alt = `file/${fileName.replace(/\.zip$/i, '')}`;
@@ -180,6 +188,7 @@ export function toggleResourcePack(instanceId: string, fileName: string): boolea
 export function toggleShaderPack(instanceId: string, fileName: string): boolean {
   const instance = getInstance(instanceId);
   if (!instance) throw new Error('实例不存在');
+  assertPackFileName(fileName);
   const game = instance.gameDir;
   const current = enabledShaderPack(game);
   const next = current === fileName || current === fileName.replace(/\.zip$/i, '') ? '' : fileName;
@@ -267,6 +276,8 @@ export function exportWorldZip(instanceId: string, worldName: string, destPath: 
 export function importContent(instanceId: string, kind: ContentKind, sourcePaths: string[]): { imported: number; skipped: string[] } {
   const instance = getInstance(instanceId);
   if (!instance) throw new Error('实例不存在');
+  if (!['resourcepacks', 'shaderpacks', 'screenshots', 'worlds'].includes(kind)) throw new Error('未知的内容类型');
+  if (!Array.isArray(sourcePaths)) throw new Error('没有选择要导入的文件');
   const map: Record<ContentKind, string> = {
     resourcepacks: path.join(instance.gameDir, 'resourcepacks'),
     shaderpacks: path.join(instance.gameDir, 'shaderpacks'),
@@ -313,6 +324,7 @@ export function importContent(instanceId: string, kind: ContentKind, sourcePaths
 export function deleteContent(instanceId: string, kind: ContentKind, fileName: string): { deleted: boolean; backupPath?: string } {
   const instance = getInstance(instanceId);
   if (!instance) throw new Error('实例不存在');
+  if (!['resourcepacks', 'shaderpacks', 'screenshots', 'worlds'].includes(kind)) throw new Error('未知的内容类型');
   const map: Record<ContentKind, string> = {
     resourcepacks: path.join(instance.gameDir, 'resourcepacks'),
     shaderpacks: path.join(instance.gameDir, 'shaderpacks'),

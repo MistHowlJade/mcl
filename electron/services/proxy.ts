@@ -20,12 +20,18 @@ export interface ProxyConfig {
   password?: string;
 }
 
+/** 代理 URL 里可能有非法 % 转义：decodeURIComponent 会抛 URIError，不能让它把整个网络层带崩 */
+function safeDecode(value: string): string {
+  try { return decodeURIComponent(value); } catch { return value; }
+}
+
 /** 读取当前代理；未启用或配置非法时返回 null（走直连） */
 function readProxy(requireDownloads: boolean): ProxyConfig | null {
   const settings = getSettings();
   if (settings.network.proxyMode !== 'manual') return null;
   if (requireDownloads && !settings.network.applyToDownloads) return null;
-  const raw = settings.network.proxyUrl.trim();
+  // 配置可能被手工改坏：null/数字会让 .trim() 直接抛错，导致所有网络请求失败
+  const raw = typeof settings.network.proxyUrl === 'string' ? settings.network.proxyUrl.trim() : '';
   if (!raw) return null;
   let parsed: URL;
   try {
@@ -38,8 +44,10 @@ function readProxy(requireDownloads: boolean): ProxyConfig | null {
   if (!host) return null;
   const port = parseInt(parsed.port || (parsed.protocol === 'https:' ? '443' : '80'), 10);
   if (!Number.isInteger(port) || port < 1 || port > 65535) return null;
-  const username = settings.network.proxyUsername || decodeURIComponent(parsed.username || '');
-  const password = settings.network.proxyPassword || decodeURIComponent(parsed.password || '');
+  const configuredUser = typeof settings.network.proxyUsername === 'string' ? settings.network.proxyUsername : '';
+  const configuredPass = typeof settings.network.proxyPassword === 'string' ? settings.network.proxyPassword : '';
+  const username = configuredUser || safeDecode(parsed.username || '');
+  const password = configuredPass || safeDecode(parsed.password || '');
   const authHeader = username ? `Basic ${Buffer.from(`${username}:${password}`).toString('base64')}` : undefined;
   return { host, port, secure: parsed.protocol === 'https:', authHeader, username: username || undefined, password: password || undefined };
 }

@@ -65,19 +65,33 @@ export function getInstance(id: string): InstanceInfo | null {
   return isInstanceConfig(cfg) && cfg.id === id ? toInfo(cfg) : null;
 }
 
+const LOADER_TYPES: LoaderType[] = ['vanilla', 'fabric', 'quilt', 'forge', 'neoforge'];
+const MEMORY_PRESETS: MemoryPreset[] = ['low', 'standard', 'heavy'];
+const isLoaderType = (v: unknown): v is LoaderType => LOADER_TYPES.includes(v as LoaderType);
+const isMemoryPreset = (v: unknown): v is MemoryPreset => MEMORY_PRESETS.includes(v as MemoryPreset);
+/** 版本号会进入 URL/目录名：拒绝路径分隔符、. / ..、以及只有点的名字 */
+const isMcVersion = (v: unknown): v is string => typeof v === 'string'
+  && v.length > 0 && v.length <= 128
+  && /^[0-9A-Za-z_\-[\]]+(\.[0-9A-Za-z_\-[\]]+)*$/.test(v);
+
 export function createInstance(input: {
   name: string; mcVersion: string; loader: LoaderType; loaderVersion?: string | null;
   memoryPreset?: MemoryPreset; javaPath?: string | null;
 }): InstanceConfig {
+  // IPC 参数只是 TS 类型：运行时也要挡住空值/非法加载器，否则会写出启动不了的实例
+  if (!input || typeof input !== 'object') throw new Error('创建实例的参数不完整');
+  if (!isMcVersion(input.mcVersion)) throw new Error('Minecraft 版本号格式不正确');
+  if (!isLoaderType(input.loader)) throw new Error('不支持的模组加载器');
+  const name = typeof input.name === 'string' ? input.name.trim().slice(0, 80) : '';
   const id = newId();
   const cfg: InstanceConfig = {
     id,
-    name: input.name.trim() || `${input.mcVersion}${input.loader !== 'vanilla' ? '-' + input.loader : ''}`,
+    name: name || `${input.mcVersion}${input.loader !== 'vanilla' ? '-' + input.loader : ''}`,
     mcVersion: input.mcVersion,
     loader: input.loader,
-    loaderVersion: input.loaderVersion ?? null,
-    javaPath: input.javaPath ?? null,
-    memoryPreset: input.memoryPreset ?? 'standard',
+    loaderVersion: typeof input.loaderVersion === 'string' && input.loaderVersion.trim() ? input.loaderVersion.trim() : null,
+    javaPath: typeof input.javaPath === 'string' && input.javaPath.trim() ? input.javaPath.trim() : null,
+    memoryPreset: isMemoryPreset(input.memoryPreset) ? input.memoryPreset : 'standard',
     createdAt: Date.now(),
     lastPlayedAt: null,
     playTimeSeconds: 0,
@@ -91,10 +105,29 @@ export function createInstance(input: {
 }
 
 export function updateInstance(id: string, patch: Partial<InstanceConfig>): InstanceConfig | null {
+  if (!/^[a-f0-9]{16}$/.test(String(id ?? ''))) return null;
   const file = paths.instanceFile(id);
   const current = readJson<InstanceConfig | null>(file, null);
   if (!isInstanceConfig(current) || current.id !== id) return null;
-  const merged: InstanceConfig = { ...current, ...patch, id: current.id, createdAt: current.createdAt };
+  const p = (patch && typeof patch === 'object' ? patch : {}) as Partial<InstanceConfig>;
+  const merged: InstanceConfig = { ...current, id: current.id, createdAt: current.createdAt };
+  // 逐字段校验后再落盘：非法值会让实例从列表里消失（isInstanceConfig 要求 loader 合法）
+  if (typeof p.name === 'string' && p.name.trim()) merged.name = p.name.trim().slice(0, 80);
+  if (isMcVersion(p.mcVersion)) merged.mcVersion = p.mcVersion;
+  if (isLoaderType(p.loader)) merged.loader = p.loader;
+  if ('loaderVersion' in p) merged.loaderVersion = typeof p.loaderVersion === 'string' && p.loaderVersion.trim() ? p.loaderVersion.trim() : null;
+  if ('javaPath' in p) merged.javaPath = typeof p.javaPath === 'string' && p.javaPath.trim() ? p.javaPath.trim() : null;
+  if ('memoryPreset' in p) merged.memoryPreset = isMemoryPreset(p.memoryPreset) ? p.memoryPreset : 'standard';
+  if (typeof p.jvmArgsExtra === 'string') merged.jvmArgsExtra = p.jvmArgsExtra;
+  if (typeof p.noModUpdate === 'boolean') merged.noModUpdate = p.noModUpdate;
+  if (p.resolution === null || (p.resolution && Number.isInteger(p.resolution.width) && Number.isInteger(p.resolution.height)
+    && p.resolution.width > 0 && p.resolution.height > 0)) {
+    merged.resolution = p.resolution;
+  }
+  if ('lastPlayedAt' in p) merged.lastPlayedAt = typeof p.lastPlayedAt === 'number' && Number.isFinite(p.lastPlayedAt) ? p.lastPlayedAt : null;
+  if (typeof p.playTimeSeconds === 'number' && Number.isFinite(p.playTimeSeconds) && p.playTimeSeconds >= 0) {
+    merged.playTimeSeconds = p.playTimeSeconds;
+  }
   writeJson(file, merged);
   return merged;
 }

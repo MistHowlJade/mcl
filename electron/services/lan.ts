@@ -35,7 +35,9 @@ export function scanLanWorlds(timeoutMs = 4500): Promise<LanWorld[]> {
       resolve([...found.values()].sort((a, b) => a.motd.localeCompare(b.motd)));
     };
 
-    timer = setTimeout(finish, Math.max(1500, Math.min(15000, timeoutMs)));
+    // NaN/Infinity 会让 setTimeout 立刻触发或永不触发；统一夹到 1.5–15 秒
+    const wait = Number.isFinite(timeoutMs) ? Math.max(1500, Math.min(15000, Math.floor(timeoutMs))) : 4500;
+    timer = setTimeout(finish, wait);
     socket.once('error', finish);
     socket.on('message', (msg, rinfo) => {
       const text = msg.toString('utf8');

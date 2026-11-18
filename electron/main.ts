@@ -7,6 +7,7 @@
 import { app, BrowserWindow, shell, protocol } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
+import { fileURLToPath } from 'url';
 import { registerIpcHandlers, bindServiceEvents } from './services/ipc';
 import { dataRoot, ensureLayout } from './services/paths';
 import { getSettings } from './services/settings';
@@ -98,7 +99,9 @@ async function createWindow(): Promise<void> {
 
   win.once('ready-to-show', () => {
     win.show();
-    win.webContents.setZoomFactor(Math.min(2, Math.max(0.75, settings.general.zoomFactor || 1)));
+    // 配置可能被手工改坏或来自旧版云快照：非数字会让 setZoomFactor 抛错，窗口直接起不来
+    const rawZoom = Number(settings.general.zoomFactor);
+    win.webContents.setZoomFactor(Number.isFinite(rawZoom) ? Math.min(2, Math.max(0.75, rawZoom)) : 1);
   });
 
   // 外部链接一律交给系统浏览器，不在应用内打开（防钓鱼）
@@ -107,11 +110,17 @@ async function createWindow(): Promise<void> {
     return { action: 'deny' };
   });
   // 禁止当前窗口被导航到远程页面：preload 暴露了 IPC，远程页面绝不能在应用窗口里加载
+  const indexPath = path.resolve(__dirname, '..', 'dist', 'index.html');
   win.webContents.on('will-navigate', (event, url) => {
     let allowed = false;
     try {
       const target = new URL(url);
-      allowed = DEV_URL ? target.origin === new URL(DEV_URL).origin : target.protocol === 'file:';
+      if (DEV_URL) {
+        allowed = target.origin === new URL(DEV_URL).origin;
+      } else {
+        // 生产环境只允许停在打包好的 index.html：任意 file:// 页面也会拿到 preload 的 IPC
+        allowed = target.protocol === 'file:' && path.resolve(fileURLToPath(target)) === indexPath;
+      }
     } catch { allowed = false; }
     if (allowed) return;
     event.preventDefault();

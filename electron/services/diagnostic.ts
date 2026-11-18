@@ -76,8 +76,10 @@ export async function exportDiagnostic(instanceId?: string | null): Promise<stri
     for (const { f } of logs) files.push({ name: `logs/${f}`, absPath: path.join(paths.logsDir(), f) });
   }
   // 2) 崩溃报告（最近 5 个）
-  if (instanceId) {
-    const crashDir = path.join(paths.gameDir(instanceId), 'crash-reports');
+  // instanceId 来自渲染进程：只接受真实存在的实例，避免 ../ 把别的目录打进诊断包
+  const validInstanceId = typeof instanceId === 'string' && listInstances().some(i => i.id === instanceId) ? instanceId : null;
+  if (validInstanceId) {
+    const crashDir = path.join(paths.gameDir(validInstanceId), 'crash-reports');
     if (fs.existsSync(crashDir)) {
       const crashes = fs.readdirSync(crashDir)
         .filter(f => f.endsWith('.txt'))
@@ -86,7 +88,7 @@ export async function exportDiagnostic(instanceId?: string | null): Promise<stri
         .sort((a, b) => b.m - a.m).slice(0, 5);
       for (const { f } of crashes) files.push({ name: `crash-reports/${f}`, absPath: path.join(crashDir, f) });
     }
-    const latestLog = path.join(paths.gameDir(instanceId), 'logs', 'latest.log');
+    const latestLog = path.join(paths.gameDir(validInstanceId), 'logs', 'latest.log');
     if (fs.existsSync(latestLog)) files.push({ name: 'game-logs/latest.log', absPath: latestLog });
   }
   // 3) 环境与设置（脱敏）

@@ -108,6 +108,7 @@ export function listServers(): ServerInfo[] {
 }
 
 export function getServer(id: string): ServerInfo | null {
+  if (!/^[a-f0-9]{16}$/.test(String(id ?? ''))) return null;
   const cfg = readJson<ServerConfig | null>(paths.serverFile(id), null);
   return isServerConfig(cfg) && cfg.id === id ? toInfo(cfg) : null;
 }
@@ -148,6 +149,13 @@ function toInfo(cfg: ServerConfig): ServerInfo {
   };
 }
 
+const SERVER_LOADERS: ServerLoader[] = ['vanilla', 'fabric', 'quilt', 'forge', 'neoforge'];
+const isServerLoader = (v: unknown): v is ServerLoader => SERVER_LOADERS.includes(v as ServerLoader);
+/** 版本号会进入 URL/目录名：拒绝 . / .. 与路径分隔符 */
+const isMcVersion = (v: unknown): v is string => typeof v === 'string'
+  && v.length > 0 && v.length <= 128
+  && /^[0-9A-Za-z_\-[\]]+(\.[0-9A-Za-z_\-[\]]+)*$/.test(v);
+
 export function createServer(input: {
   name: string;
   mcVersion: string;
@@ -157,20 +165,23 @@ export function createServer(input: {
   memoryMB?: number;
   javaPath?: string | null;
 }): ServerConfig {
-  if (!/^[0-9A-Za-z_\-.[\]]+$/.test(input.mcVersion)) throw new Error('Minecraft 版本号格式不正确');
+  if (!input || typeof input !== 'object') throw new Error('创建服务器的参数不完整');
+  if (!isMcVersion(input.mcVersion)) throw new Error('Minecraft 版本号格式不正确');
+  if (!isServerLoader(input.loader)) throw new Error('不支持的服务器类型');
   const port = input.port ?? 25565;
   if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('端口必须是 1–65535 之间的整数');
-  const memoryMB = Math.max(512, Math.min(32768, input.memoryMB ?? 2048));
+  const memoryMB = Number.isFinite(input.memoryMB) ? Math.max(512, Math.min(32768, Math.round(input.memoryMB!))) : 2048;
   const id = newId();
+  const name = typeof input.name === 'string' ? input.name.trim().slice(0, 80) : '';
   const cfg: ServerConfig = {
     id,
-    name: input.name.trim() || `${input.mcVersion} 服务器`,
+    name: name || `${input.mcVersion} 服务器`,
     mcVersion: input.mcVersion,
     loader: input.loader,
-    loaderVersion: input.loaderVersion ?? null,
+    loaderVersion: typeof input.loaderVersion === 'string' && input.loaderVersion.trim() ? input.loaderVersion.trim() : null,
     port,
     memoryMB,
-    javaPath: input.javaPath ?? null,
+    javaPath: typeof input.javaPath === 'string' && input.javaPath.trim() ? input.javaPath.trim() : null,
     jvmArgsExtra: '',
     eulaAccepted: false,
     prepared: false,
@@ -185,17 +196,28 @@ export function createServer(input: {
 
 export function updateServer(id: string, patch: Partial<ServerConfig>): ServerConfig {
   const current = readConfig(id);
-  const next: ServerConfig = {
-    ...current,
-    ...patch,
-    id: current.id,
-    createdAt: current.createdAt,
-  };
-  if (!Number.isInteger(next.port) || next.port < 1 || next.port > 65535) throw new Error('端口必须是 1–65535 之间的整数');
-  next.memoryMB = Number.isFinite(next.memoryMB) ? Math.max(512, Math.min(32768, Math.round(next.memoryMB))) : current.memoryMB;
+  const p = (patch && typeof patch === 'object' ? patch : {}) as Partial<ServerConfig>;
+  const next: ServerConfig = { ...current, id: current.id, createdAt: current.createdAt };
+  if ('port' in p) {
+    if (!Number.isInteger(p.port) || p.port! < 1 || p.port! > 65535) throw new Error('端口必须是 1–65535 之间的整数');
+    next.port = p.port!;
+  }
+  if ('memoryMB' in p) {
+    next.memoryMB = Number.isFinite(p.memoryMB) ? Math.max(512, Math.min(32768, Math.round(p.memoryMB!))) : current.memoryMB;
+  }
   // 名称不能被清空：空名字会让服务器列表和通知里出现空白项
-  const name = String(next.name ?? '').trim();
-  next.name = name ? name.slice(0, 80) : current.name;
+  if ('name' in p) {
+    const name = typeof p.name === 'string' ? p.name.trim() : '';
+    next.name = name ? name.slice(0, 80) : current.name;
+  }
+  if (isMcVersion(p.mcVersion)) next.mcVersion = p.mcVersion;
+  if (isServerLoader(p.loader)) next.loader = p.loader;
+  if ('loaderVersion' in p) next.loaderVersion = typeof p.loaderVersion === 'string' && p.loaderVersion.trim() ? p.loaderVersion.trim() : null;
+  if ('javaPath' in p) next.javaPath = typeof p.javaPath === 'string' && p.javaPath.trim() ? p.javaPath.trim() : null;
+  if (typeof p.jvmArgsExtra === 'string') next.jvmArgsExtra = p.jvmArgsExtra;
+  if (typeof p.eulaAccepted === 'boolean') next.eulaAccepted = p.eulaAccepted;
+  if (typeof p.prepared === 'boolean') next.prepared = p.prepared;
+  if ('lastStartedAt' in p) next.lastStartedAt = typeof p.lastStartedAt === 'number' && Number.isFinite(p.lastStartedAt) ? p.lastStartedAt : null;
   writeJson(paths.serverFile(id), next);
   // 端口同时写进 server.properties，否则启动检查用新端口、服务端实际监听旧端口
   if (next.port !== current.port) {

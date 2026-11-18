@@ -53,9 +53,15 @@ export interface VersionManifest {
 
 export async function getVersionManifest(source: DownloadSource, customMirror?: string): Promise<VersionManifest> {
   const cache = readJson<{ at: number; manifest: VersionManifest } | null>(manifestCacheFile(), null);
-  if (cache && Date.now() - cache.at < 30 * 60 * 1000) return cache.manifest;
+  if (cache && Date.now() - cache.at < 30 * 60 * 1000
+    && cache.manifest && Array.isArray(cache.manifest.versions)) {
+    return cache.manifest;
+  }
   const url = resolveSourceUrl(OFFICIAL.versionManifest, source, customMirror);
   const manifest = await fetchJson<VersionManifest>(url, { timeoutMs: 20000 });
+  if (!manifest || !Array.isArray(manifest.versions)) {
+    throw new Error('版本清单格式不正确（缺少 versions 列表），请更换下载源或稍后重试。');
+  }
   try {
     writeJson(manifestCacheFile(), { at: Date.now(), manifest });
   } catch { /* 缓存失败不阻塞 */ }
@@ -177,6 +183,7 @@ function localVersionJsonPath(id: string): string {
 }
 
 export async function fetchVersionJson(entry: VersionManifestEntry, source: DownloadSource, customMirror?: string): Promise<Record<string, any>> {
+  if (!isSafePathSegment(entry.id)) throw new Error(`版本 id 非法：${String(entry.id)}`);
   const local = localVersionJsonPath(entry.id);
   if (fs.existsSync(local)) {
     const cached = readJson<Record<string, any> | null>(local, null);
@@ -193,7 +200,9 @@ export async function fetchVersionJson(entry: VersionManifestEntry, source: Down
 export async function resolveVersion(entry: VersionManifestEntry, source: DownloadSource, customMirror?: string, depth = 0): Promise<Record<string, any>> {
   if (depth > 5) throw new Error('inheritsFrom 嵌套过深');
   const raw = await fetchVersionJson(entry, source, customMirror);
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error(`版本 JSON 格式不正确：${entry.id}`);
   if (raw.inheritsFrom) {
+    if (typeof raw.inheritsFrom !== 'string') throw new Error(`版本 JSON 的 inheritsFrom 字段非法：${entry.id}`);
     const parentEntry = await findManifestEntry(raw.inheritsFrom, source, customMirror);
     const parent = await resolveVersion(parentEntry, source, customMirror, depth + 1);
     return mergeVersionJson(raw, parent);
@@ -205,10 +214,32 @@ async function findManifestEntry(id: string, source: DownloadSource, customMirro
   const manifest = await getVersionManifest(source, customMirror);
   const hit = manifest.versions.find(v => v.id === id);
   if (!hit) throw new Error(`清单中找不到版本：${id}`);
+  if (!isSafePathSegment(hit.id)) throw new Error(`版本清单包含非法版本 id：${String(hit.id)}`);
   return hit;
 }
 
 /* ---------- 库与 natives ---------- */
+
+/** 版本 id / 索引 id 会直接拼进数据目录，不能是 . / .. 或带路径分隔符 */
+function isSafePathSegment(id: unknown): id is string {
+  return typeof id === 'string'
+    && id.length > 0 && id.length <= 128
+    && /^[0-9A-Za-z_\-[\]]+(\.[0-9A-Za-z_\-[\]]+)*$/.test(id);
+}
+
+/** 版本元数据/资源索引是远程内容：entry.path 可能是 ../../ 或绝对路径 */
+function isSafeRelativePath(rel: unknown): rel is string {
+  if (typeof rel !== 'string' || !rel || rel.length > 1024) return false;
+  const norm = rel.replace(/\\/g, '/');
+  if (norm.startsWith('/') || /^[A-Za-z]:/.test(norm)) return false;
+  return norm.split('/').every(seg => !!seg && seg !== '.' && seg !== '..');
+}
+
+const assertSafeRelPath = (rel: string, what: string): string => {
+  if (!isSafeRelativePath(rel)) throw new Error(`${what}包含非法文件路径：${rel}`);
+  return rel.replace(/\\/g, '/');
+};
+
 const mavenToPath = (name: string): string => {
   const parts = name.split(':');
   if (parts.length < 3) throw new Error(`非法 maven 坐标：${name}`);
@@ -217,7 +248,7 @@ const mavenToPath = (name: string): string => {
   const classifier = rest.length > 0 && !rest[0].startsWith('@') ? rest[0] : null;
   const groupPath = group.replace(/\./g, '/');
   const file = classifier ? `${artifact}-${version}-${classifier}.${ext}` : `${artifact}-${version}.${ext}`;
-  return path.join(groupPath, artifact, version, file).replace(/\\/g, '/');
+  return assertSafeRelPath(path.join(groupPath, artifact, version, file).replace(/\\/g, '/'), 'maven 坐标');
 };
 
 function osNativeKey(): string {
@@ -234,7 +265,7 @@ export function collectLibraries(resolved: Record<string, any>): LibraryDownload
     // artifact 主体
     const artifact = lib.downloads?.artifact;
     if (artifact) {
-      const rel = (artifact.path as string | undefined) ?? mavenToPath(name);
+      const rel = assertSafeRelPath((artifact.path as string | undefined) ?? mavenToPath(name), '库文件');
       out.push({
         name,
         url: artifact.url ?? `${OFFICIAL.libraries}/${rel}`,
@@ -256,7 +287,7 @@ export function collectLibraries(resolved: Record<string, any>): LibraryDownload
     const wanted = osNativeKey();
     const nativeEntry = classifiers[wanted] ?? classifiers[`natives-${process.platform === 'win32' ? 'windows' : 'linux'}`];
     if (nativeEntry) {
-      const rel = (nativeEntry.path as string | undefined) ?? mavenToPath(name);
+      const rel = assertSafeRelPath((nativeEntry.path as string | undefined) ?? mavenToPath(name), 'natives 文件');
       out.push({
         name,
         url: nativeEntry.url ?? `${OFFICIAL.libraries}/${rel}`,
@@ -292,6 +323,7 @@ export async function fetchAssetIndex(resolved: Record<string, any>, source: Dow
   if (typeof ai === 'string' || !ai.url) {
     // 旧版：assetIndex 字段是名字，需要自行从 launchermeta 拿？兜底：按名字走缓存或报错
     const indexId = typeof ai === 'string' ? ai : ai?.id;
+    if (!isSafePathSegment(indexId)) throw new Error(`资源索引 id 非法：${String(indexId)}`);
     const localIndex = path.join(assetsIndexDir(), `${indexId}.json`);
     if (fs.existsSync(localIndex)) {
       const cached = readJson(localIndex, { objects: {} as Record<string, { hash: string; size: number }> });
@@ -299,6 +331,7 @@ export async function fetchAssetIndex(resolved: Record<string, any>, source: Dow
     }
     throw new Error(`该版本使用旧式资源索引（${indexId}），首次导入请连接网络`);
   }
+  if (!isSafePathSegment(ai.id)) throw new Error(`资源索引 id 非法：${String(ai.id)}`);
   const url = resolveSourceUrl(ai.url, source, customMirror);
   const fallbackUrl = ai.url; // 官方源兜底
   let indexJson: { objects: Record<string, { hash: string; size: number }> } | null = null;
@@ -322,10 +355,17 @@ export async function fetchAssetIndex(resolved: Record<string, any>, source: Dow
 }
 
 function mapAssets(indexJson: { objects?: Record<string, { hash: string; size: number }> }): AssetObject[] {
-  return Object.entries(indexJson.objects ?? {}).map(([name, obj]) => ({ hash: obj.hash, size: obj.size, name }));
+  return Object.entries(indexJson.objects ?? {}).map(([name, obj]) => {
+    // 资源索引来自远程：hash 会拼进 cache 路径，必须是 40 位 SHA-1
+    if (!obj || typeof obj.hash !== 'string' || !/^[a-f0-9]{40}$/i.test(obj.hash)) {
+      throw new Error(`资源索引包含非法 hash（${name}），已停止下载以免写错目录`);
+    }
+    return { hash: obj.hash.toLowerCase(), size: Number.isFinite(obj.size) ? obj.size : 0, name };
+  });
 }
 
 export function assetDestPath(hash: string): string {
+  if (!/^[a-f0-9]{40}$/i.test(hash)) throw new Error('资源 hash 格式不正确');
   const sub = hash.slice(0, 2);
   return path.join(assetsObjectsDir(), sub, hash);
 }

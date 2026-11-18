@@ -89,9 +89,12 @@ const installedModsPath = (instanceId: string) => paths.installedModsFile(instan
 export function readInstalledMods(instanceId: string): InstalledMod[] {
   assertInstance(instanceId);
   const raw = readJson<unknown>(installedModsPath(instanceId), []);
-  // 文件可能被手工改坏成 null/对象：按空列表处理，避免 Mods 页面整页报错
+  // 文件可能被手工改坏成 null/对象：按空列表处理，避免 Mods 页面整页报错。
+  // fileName 会参与 mods 目录下的删除/重命名，必须只接受不带路径的 jar 文件名。
   return Array.isArray(raw)
-    ? raw.filter((m): m is InstalledMod => !!m && typeof m === 'object' && typeof (m as InstalledMod).fileName === 'string')
+    ? raw.filter((m): m is InstalledMod => !!m && typeof m === 'object'
+      && typeof (m as InstalledMod).fileName === 'string'
+      && /^[^\\/:*?"<>|]+\.jar(\.disabled)?$/i.test((m as InstalledMod).fileName))
     : [];
 }
 
