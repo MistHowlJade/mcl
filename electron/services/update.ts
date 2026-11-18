@@ -132,7 +132,9 @@ export async function downloadUpdate(onProgress?: (done: number, total: number) 
   if (!asset) {
     throw new Error(`该版本没有可直接下载的安装包。\n请打开 Release 页面手动下载：${info.url ?? RELEASES_URL}`);
   }
-  const safeName = asset.name.replace(/[<>:"/\\|?*]/g, '_');
+  // Release 资产名来自 GitHub：去掉路径字符与纯点名，避免 .. 之类的名字写到下载目录之外
+  let safeName = asset.name.replace(/[<>:"/\\|?*]/g, '_').replace(/^\.+$/, '_').trim();
+  if (!safeName) safeName = 'mcl-update';
   const dest = uniquePath(app.getPath('downloads'), safeName);
   const dl = new DownloadManager({
     source: 'official',

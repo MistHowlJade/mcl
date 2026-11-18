@@ -197,7 +197,13 @@ async function downloadToFile(url: string, dest: string, onProgress?: (n: number
       const status = res.statusCode ?? 0;
       if ([301, 302, 307, 308].includes(status) && res.headers.location) {
         res.resume();
-        const next = new URL(res.headers.location, url).toString();
+        let next: string;
+        try {
+          next = new URL(res.headers.location, url).toString();
+        } catch {
+          reject(new Error(`Java 下载服务器返回了非法的重定向地址：${String(res.headers.location).slice(0, 200)}`));
+          return;
+        }
         downloadToFile(next, dest, onProgress, redirects + 1).then(resolve, reject);
         return;
       }
@@ -228,6 +234,13 @@ export async function installJava(major: number, onProgress?: (stage: 'fetch' | 
   const ext = info.isTarGz ? '.tar.gz' : '.zip';
   const tmp = path.join(javaDir(), `temurin-${major}-${Date.now()}${ext}`);
   await downloadToFile(info.link, tmp, (r, t) => onProgress?.('downloading', r, t));
+  if (Number.isFinite(info.size) && info.size > 0) {
+    const actual = fs.statSync(tmp).size;
+    if (actual !== info.size) {
+      try { fs.rmSync(tmp, { force: true }); } catch { /* ignore */ }
+      throw new Error(`Java 安装包下载不完整（期望 ${info.size} 字节，实际 ${actual} 字节），请重试或检查网络/代理。`);
+    }
+  }
   onProgress?.('extracting');
   const destDir = path.join(javaDir(), `temurin-${major}`);
   fs.rmSync(destDir, { recursive: true, force: true });

@@ -57,6 +57,8 @@ const safeRmDir = (dir: string) => { try { fs.rmSync(dir, { recursive: true, for
 /** 启动前：清理本启动器上次异常退出残留的游戏进程（痛点 #31） */
 export async function killResidualProcesses(): Promise<number[]> {
   const file = paths.residualPidsFile();
+  // 正在由本进程运行的游戏不能被「清理残余进程」误杀
+  const currentPid = launchState.status === 'running' ? launchState.pid : null;
   // pids 文件可能因上次异常退出写到一半：坏文件按“没有残留进程”处理，不能因此拦住启动
   let pids: number[] = [];
   try {
@@ -65,7 +67,7 @@ export async function killResidualProcesses(): Promise<number[]> {
   } catch { pids = []; }
   const killed: number[] = [];
   for (const pid of pids) {
-    if (!Number.isFinite(pid) || pid <= 0) continue;
+    if (!Number.isInteger(pid) || pid <= 0 || pid === currentPid) continue;
     const alive = await new Promise<boolean>((resolve) => {
       execFile('tasklist', ['/FI', `PID eq ${pid}`, '/NH', '/FO', 'CSV'], { timeout: 8000, windowsHide: true }, (err, stdout) => {
         const output = String(stdout ?? '');
@@ -80,7 +82,7 @@ export async function killResidualProcesses(): Promise<number[]> {
       killed.push(pid);
     }
   }
-  fs.writeFileSync(file, '[]', 'utf8');
+  try { fs.writeFileSync(file, '[]', 'utf8'); } catch { /* 记录文件写失败不能拦住启动 */ }
   return killed;
 }
 
@@ -268,8 +270,12 @@ async function ensureForgeLikeInstalled(gameDir: string, loader: 'forge' | 'neof
     // 排除包含 forge 子串的 neoforge 目录，避免 Forge 实例误用 NeoForge 版本
     : (/forge/i.test(d) && !/neoforge/i.test(d));
   const existing = fs.existsSync(versionsDirRel) ? fs.readdirSync(versionsDirRel).filter(existingFilter) : [];
-  if (existing.length > 0 && loaderVersion) {
-    const hit = existing.find(d => d.includes(loaderVersion));
+  if (existing.length > 0) {
+    // 指定了版本：必须命中同版本目录；未指定版本（UI 默认留空 = 最新稳定版）：
+    // 复用任意已安装且 JSON 完整的目录，否则每次启动都会重新下载并运行安装器。
+    const hit = loaderVersion
+      ? existing.find(d => d.includes(loaderVersion))
+      : existing.find(d => fs.existsSync(path.join(versionsDirRel, d, `${d}.json`)));
     if (hit) {
       const jsonPath = path.join(versionsDirRel, hit, `${hit}.json`);
       // 版本目录可能被手动删过 JSON：缺文件时重新安装，而不是把坏路径交给启动器
@@ -414,7 +420,10 @@ export async function launchInstance(instanceId: string, options: LaunchOptions 
     javaPath = exe;
     javaInfo = await javaService.pickJavaFor(instance.mcVersion, exe);
   }
-  const java = javaInfo.java!;
+  const java = javaInfo.java;
+  if (!java) {
+    throw new Error(`未找到可用的 Java ${javaInfo.recommendedMajor}，自动安装后仍无法识别。请到「设置 → Java」手动选择 java.exe，或安装 64 位 Java ${javaInfo.recommendedMajor} 后重试。`);
+  }
   emitLog(`[mcl] 使用 Java：${java.path}（${java.version}, ${java.is64 ? '64 位' : '32 位'}, ${java.vendor}）`);
   if (!java.is64) emitLog('[mcl] 警告：检测到 32 位 Java，单个实例最多只能使用约 1.5 GB 内存。建议安装 64 位 Java。');
   if (java.major === 8 && !javaService.java8SupportsTls13(java.version)) {

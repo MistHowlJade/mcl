@@ -91,6 +91,10 @@ export async function createProxiedRequest(
 ): Promise<http.ClientRequest> {
   let target: URL;
   try { target = new URL(targetUrl); } catch { throw new Error(`无法解析的 URL：${targetUrl}`); }
+  // 只允许 HTTP/HTTPS：远程元数据里若出现 file:/ftp: 等地址，不能让它落到本机协议处理上
+  if (target.protocol !== 'http:' && target.protocol !== 'https:') {
+    throw new Error(`不支持的下载地址协议（${target.protocol}），只允许 HTTP/HTTPS`);
+  }
   const isHttps = target.protocol === 'https:';
   const method = options.method ?? 'GET';
   const timeoutMs = options.timeoutMs ?? 15000;

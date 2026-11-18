@@ -390,8 +390,12 @@ function neoForgePrefix(mcVersion: string): string {
   return `${parts[0]}.${parts[1]}.`;
 }
 
-function findInstalledJar(dir: string): string | null {
-  for (const candidate of ['server.jar', 'quilt-server-launch.jar', 'fabric-server-launch.jar']) {
+function findInstalledJar(dir: string, loader: ServerLoader): string | null {
+  // Quilt 必须用自己的 launch jar：若先找到遗留的 server.jar（原版），会把 Quilt 服务器当原版启动
+  const candidates = loader === 'quilt'
+    ? ['quilt-server-launch.jar', 'fabric-server-launch.jar']
+    : ['server.jar', 'fabric-server-launch.jar'];
+  for (const candidate of candidates) {
     const p = path.join(dir, candidate);
     if (fs.existsSync(p)) return p;
   }
@@ -486,7 +490,7 @@ export async function prepareServer(id: string): Promise<ServerInfo> {
         // 安装失败也清理安装包，避免服务器目录里残留几十 MB 的临时 jar
         fs.rmSync(installerPath, { force: true });
       }
-      if (!findInstalledJar(dir)) throw new Error('Quilt 安装完成但找不到服务端启动 jar。');
+      if (!findInstalledJar(dir, 'quilt')) throw new Error('Quilt 安装完成但找不到服务端启动 jar。');
     } else {
       const loader = cfg.loader;
       let forgeId = cfg.loaderVersion ?? '';
@@ -633,7 +637,7 @@ export async function startServer(id: string): Promise<ServerInfo> {
   const fresh = readConfig(id);
 
   const forgeLoader: 'forge' | 'neoforge' | null = fresh.loader === 'forge' || fresh.loader === 'neoforge' ? fresh.loader : null;
-  if (!forgeLoader && !findInstalledJar(dir)) throw new Error('服务端文件不存在，请点击「重新安装」后再启动。');
+  if (!forgeLoader && !findInstalledJar(dir, fresh.loader)) throw new Error('服务端文件不存在，请点击「重新安装」后再启动。');
   if (forgeLoader && !findForgeArgs(dir, forgeLoader)) throw new Error('Forge/NeoForge 启动参数缺失，请点击「重新安装」后再启动。');
   // server.properties 才是服务端实际监听的权威端口；用户可能在属性页直接改过
   const propsPort = parseInt(readServerProperties(id)['server-port'] ?? '', 10);
@@ -654,7 +658,7 @@ export async function startServer(id: string): Promise<ServerInfo> {
     const forgeArgs = findForgeArgs(dir, forgeLoader)!;
     args.push(`@${path.relative(dir, userArgsFile).replace(/\\/g, '/')}`, `@${path.relative(dir, forgeArgs).replace(/\\/g, '/')}`, 'nogui');
   } else {
-    const jar = findInstalledJar(dir)!;
+    const jar = findInstalledJar(dir, fresh.loader)!;
     args.push('-jar', path.basename(jar), 'nogui');
   }
 
@@ -797,7 +801,8 @@ export function backupServerWorld(id: string, name?: string): ServerBackupInfo {
   const dir = paths.serverBackupsDir(id);
   fs.mkdirSync(dir, { recursive: true });
   const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-  const base = (name ?? `world-${stamp}`).replace(/[^\w\u4e00-\u9fa5-]/g, '_');
+  const requested = (typeof name === 'string' ? name.trim() : '') || `world-${stamp}`;
+  const base = requested.replace(/[^\w\u4e00-\u9fa5-]/g, '_').slice(0, 80) || `world-${stamp}`;
   const filePath = path.join(dir, `${base}.zip`);
   fs.writeFileSync(filePath, zipFromDir(worldDir));
   return { name: base, filePath, sizeBytes: fs.statSync(filePath).size, createdAt: Date.now() };

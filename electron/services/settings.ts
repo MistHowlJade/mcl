@@ -85,59 +85,71 @@ const oneOf = <T extends string>(value: unknown, allowed: readonly T[], fallback
 /**
  * 逐字段归一化：配置文件/云快照里一个 null 或字符串就可能让下载、代理、启动参数整条链路抛错。
  * 关键字段类型不对时回退默认值，而不是把错误值继续传给业务层。
+ * 每个分区单独兜底：settings:update 传入 { general: null } 时也不能让这里直接崩掉。
  */
 function normalizeSettings(input: AppSettings): AppSettings {
-  const s = input;
-  s.general = {
-    zoomFactor: num(s.general.zoomFactor, 1, 0.75, 2),
-    autoBackupBeforeLaunch: bool(s.general.autoBackupBeforeLaunch, true),
-    backupKeep: num(s.general.backupKeep, 10, 1, 200, true),
-    confirmBeforeLaunch: bool(s.general.confirmBeforeLaunch, false),
-    defaultResolution: s.general.defaultResolution && typeof s.general.defaultResolution === 'object'
-      ? {
-        width: num(s.general.defaultResolution.width, 1280, 320, 7680, true),
-        height: num(s.general.defaultResolution.height, 720, 240, 4320, true),
-      }
-      : null,
+  const s = (input && typeof input === 'object' && !Array.isArray(input) ? input : {}) as Partial<AppSettings>;
+  const section = <T extends object>(value: T | null | undefined): Partial<T> =>
+    value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+  const general = section(s.general);
+  const download = section(s.download);
+  const java = section(s.java);
+  const launch = section(s.launch);
+  const curseforge = section(s.curseforge);
+  const migration = section(s.migration);
+  const network = section(s.network);
+  const cloud = section(s.cloud);
+  return {
+    general: {
+      zoomFactor: num(general.zoomFactor, 1, 0.75, 2),
+      autoBackupBeforeLaunch: bool(general.autoBackupBeforeLaunch, true),
+      backupKeep: num(general.backupKeep, 10, 1, 200, true),
+      confirmBeforeLaunch: bool(general.confirmBeforeLaunch, false),
+      defaultResolution: general.defaultResolution && typeof general.defaultResolution === 'object'
+        ? {
+          width: num(general.defaultResolution.width, 1280, 320, 7680, true),
+          height: num(general.defaultResolution.height, 720, 240, 4320, true),
+        }
+        : null,
+    },
+    download: {
+      source: oneOf(download.source, ['auto', 'bmclapi', 'official', 'custom'] as const, 'auto'),
+      customMirror: str(download.customMirror),
+      maxThreads: num(download.maxThreads, 16, 1, 64, true),
+      segmentSizeMB: num(download.segmentSizeMB, 4, 1, 512),
+      timeoutMs: num(download.timeoutMs, 15000, 3000, 300000, true),
+      retries: num(download.retries, 3, 0, 10, true),
+    },
+    java: { defaultPath: str(java.defaultPath) },
+    launch: {
+      autoKillResidual: bool(launch.autoKillResidual, true),
+      log4jFix: bool(launch.log4jFix, true),
+      utf8Encoding: bool(launch.utf8Encoding, true),
+      showLogOnCrash: bool(launch.showLogOnCrash, true),
+      globalJvmArgs: str(launch.globalJvmArgs),
+    },
+    curseforge: { apiKey: str(curseforge.apiKey) },
+    migration: { copyInsteadOfMove: bool(migration.copyInsteadOfMove, true) },
+    network: {
+      proxyMode: oneOf(network.proxyMode, ['off', 'manual'] as const, 'off'),
+      proxyUrl: str(network.proxyUrl),
+      proxyUsername: str(network.proxyUsername),
+      proxyPassword: str(network.proxyPassword),
+      applyToDownloads: bool(network.applyToDownloads, true),
+      applyToGame: bool(network.applyToGame, false),
+    },
+    cloud: {
+      provider: oneOf(cloud.provider, ['off', 'webdav', 'gist'] as const, 'off'),
+      webdavUrl: str(cloud.webdavUrl),
+      webdavUsername: str(cloud.webdavUsername),
+      webdavPassword: str(cloud.webdavPassword),
+      gistToken: str(cloud.gistToken),
+      gistId: str(cloud.gistId),
+      includeSaves: bool(cloud.includeSaves, false),
+      lastSyncAt: typeof cloud.lastSyncAt === 'number' && Number.isFinite(cloud.lastSyncAt) ? cloud.lastSyncAt : null,
+      lastSyncDirection: cloud.lastSyncDirection === 'upload' || cloud.lastSyncDirection === 'download' ? cloud.lastSyncDirection : null,
+    },
   };
-  s.download = {
-    source: oneOf(s.download.source, ['auto', 'bmclapi', 'official', 'custom'] as const, 'auto'),
-    customMirror: str(s.download.customMirror),
-    maxThreads: num(s.download.maxThreads, 16, 1, 64, true),
-    segmentSizeMB: num(s.download.segmentSizeMB, 4, 1, 512),
-    timeoutMs: num(s.download.timeoutMs, 15000, 3000, 300000, true),
-    retries: num(s.download.retries, 3, 0, 10, true),
-  };
-  s.java = { defaultPath: str(s.java.defaultPath) };
-  s.launch = {
-    autoKillResidual: bool(s.launch.autoKillResidual, true),
-    log4jFix: bool(s.launch.log4jFix, true),
-    utf8Encoding: bool(s.launch.utf8Encoding, true),
-    showLogOnCrash: bool(s.launch.showLogOnCrash, true),
-    globalJvmArgs: str(s.launch.globalJvmArgs),
-  };
-  s.curseforge = { apiKey: str(s.curseforge.apiKey) };
-  s.migration = { copyInsteadOfMove: bool(s.migration.copyInsteadOfMove, true) };
-  s.network = {
-    proxyMode: oneOf(s.network.proxyMode, ['off', 'manual'] as const, 'off'),
-    proxyUrl: str(s.network.proxyUrl),
-    proxyUsername: str(s.network.proxyUsername),
-    proxyPassword: str(s.network.proxyPassword),
-    applyToDownloads: bool(s.network.applyToDownloads, true),
-    applyToGame: bool(s.network.applyToGame, false),
-  };
-  s.cloud = {
-    provider: oneOf(s.cloud.provider, ['off', 'webdav', 'gist'] as const, 'off'),
-    webdavUrl: str(s.cloud.webdavUrl),
-    webdavUsername: str(s.cloud.webdavUsername),
-    webdavPassword: str(s.cloud.webdavPassword),
-    gistToken: str(s.cloud.gistToken),
-    gistId: str(s.cloud.gistId),
-    includeSaves: bool(s.cloud.includeSaves, false),
-    lastSyncAt: typeof s.cloud.lastSyncAt === 'number' && Number.isFinite(s.cloud.lastSyncAt) ? s.cloud.lastSyncAt : null,
-    lastSyncDirection: s.cloud.lastSyncDirection === 'upload' || s.cloud.lastSyncDirection === 'download' ? s.cloud.lastSyncDirection : null,
-  };
-  return s;
 }
 
 export function getSettings(): AppSettings {

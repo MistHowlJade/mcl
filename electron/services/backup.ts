@@ -171,7 +171,9 @@ export async function restoreBackup(backupId: string, instanceId: string): Promi
   const looksLikeWorld = meta.kind === 'world' || (!meta.kind && !alreadyPrefixed && entries.includes('level.dat'));
   if (looksLikeWorld && !alreadyPrefixed) {
     const recordedName = Array.isArray(meta.worldNames) && typeof meta.worldNames[0] === 'string' ? meta.worldNames[0] : '';
-    const worldName = path.basename(recordedName || `restored-${safeId}`);
+    let worldName = path.basename(recordedName || `restored-${safeId}`);
+    // basename('..') 仍是 '..'：会还原到游戏根目录而不是 saves/<世界名>/
+    if (!worldName || worldName === '.' || worldName === '..') worldName = `restored-${safeId}`;
     targetDir = path.join(gameDir, 'saves', worldName);
     fs.mkdirSync(targetDir, { recursive: true });
   }

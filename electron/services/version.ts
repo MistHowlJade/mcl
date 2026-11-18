@@ -103,7 +103,7 @@ export function evalRule(rule: Rule, features: Record<string, boolean> = {}): bo
     if (rule.os.name && rule.os.name !== osName) return false;
     if (rule.os.arch) {
       const arch = process.arch;
-      const want = rule.os.arch.toLowerCase();
+      const want = typeof rule.os.arch === 'string' ? rule.os.arch.toLowerCase() : '';
       if (want === 'x86') { if (arch !== 'ia32' && arch !== 'arm') return false; }
       else if (want === 'x64' || want === 'x86_64' || want === 'amd64') { if (arch !== 'x64') return false; }
       else if (want === 'arm64' || want === 'aarch64') { if (arch !== 'arm64') return false; }
@@ -125,9 +125,10 @@ export function evalRule(rule: Rule, features: Record<string, boolean> = {}): bo
 }
 
 export function evalRules(rules: Rule[] | undefined, features: Record<string, boolean> = {}): boolean {
-  if (!rules || rules.length === 0) return true;
+  if (!Array.isArray(rules) || rules.length === 0) return true;
   let allowed = false;
   for (const rule of rules) {
+    if (!rule || typeof rule !== 'object') continue;
     const applies = evalRule(rule, features);
     if (applies) allowed = rule.action === 'allow';
   }
@@ -162,15 +163,25 @@ function mergeVersionJson(child: Record<string, any>, parent: Record<string, any
   const merged: Record<string, any> = { ...parent, ...child };
   // libraries 按坐标去重：父在前，子覆盖同坐标的版本（Map.set 保留父条目顺序）
   const libs = new Map<string, Record<string, any>>();
-  for (const lib of [...(parent.libraries ?? []), ...(child.libraries ?? [])]) {
+  const parentLibs = Array.isArray(parent.libraries) ? parent.libraries : [];
+  const childLibs = Array.isArray(child.libraries) ? child.libraries : [];
+  for (const lib of [...parentLibs, ...childLibs]) {
     if (lib && typeof lib === 'object') libs.set(libraryKey(lib), lib);
   }
   merged.libraries = [...libs.values()];
   // arguments 合并
   if (parent.arguments || child.arguments) {
+    const parentArgs = parent.arguments && typeof parent.arguments === 'object' ? parent.arguments : {};
+    const childArgs = child.arguments && typeof child.arguments === 'object' ? child.arguments : {};
     merged.arguments = {
-      game: [...((parent.arguments?.game) ?? []), ...((child.arguments?.game) ?? [])],
-      jvm: [...((parent.arguments?.jvm) ?? []), ...((child.arguments?.jvm) ?? [])],
+      game: [
+        ...(Array.isArray(parentArgs.game) ? parentArgs.game : []),
+        ...(Array.isArray(childArgs.game) ? childArgs.game : []),
+      ],
+      jvm: [
+        ...(Array.isArray(parentArgs.jvm) ? parentArgs.jvm : []),
+        ...(Array.isArray(childArgs.jvm) ? childArgs.jvm : []),
+      ],
     };
   }
   merged.inheritsFrom = child.inheritsFrom;
@@ -241,11 +252,15 @@ const assertSafeRelPath = (rel: string, what: string): string => {
 };
 
 const mavenToPath = (name: string): string => {
-  const parts = name.split(':');
+  // Maven 坐标可能带 @扩展名（如 group:artifact:version@zip），@ 必须在拆坐标前剥离
+  const at = name.indexOf('@');
+  const extRaw = at >= 0 ? name.slice(at + 1) : 'jar';
+  if (!/^[A-Za-z0-9.]+$/.test(extRaw)) throw new Error(`非法 maven 扩展名：${name}`);
+  const ext = extRaw;
+  const parts = (at >= 0 ? name.slice(0, at) : name).split(':');
   if (parts.length < 3) throw new Error(`非法 maven 坐标：${name}`);
   const [group, artifact, version, ...rest] = parts;
-  const ext = rest.length > 0 && rest[0].startsWith('@') ? rest[0].slice(1) : 'jar';
-  const classifier = rest.length > 0 && !rest[0].startsWith('@') ? rest[0] : null;
+  const classifier = rest.length > 0 && rest[0] && !rest[0].startsWith('@') ? rest[0] : null;
   const groupPath = group.replace(/\./g, '/');
   const file = classifier ? `${artifact}-${version}-${classifier}.${ext}` : `${artifact}-${version}.${ext}`;
   return assertSafeRelPath(path.join(groupPath, artifact, version, file).replace(/\\/g, '/'), 'maven 坐标');
@@ -259,9 +274,12 @@ function osNativeKey(): string {
 
 export function collectLibraries(resolved: Record<string, any>): LibraryDownload[] {
   const out: LibraryDownload[] = [];
-  for (const lib of resolved.libraries ?? []) {
+  const libraries = Array.isArray(resolved.libraries) ? resolved.libraries : [];
+  for (const lib of libraries) {
+    if (!lib || typeof lib !== 'object') continue;
     if (lib.rules && !evalRules(lib.rules)) continue;
-    const name: string = lib.name;
+    const name: string = typeof lib.name === 'string' ? lib.name : '';
+    if (!name) throw new Error('版本元数据里有一个库缺少 maven 坐标（name），文件可能已损坏，请删除该版本缓存后重试');
     // artifact 主体
     const artifact = lib.downloads?.artifact;
     if (artifact) {

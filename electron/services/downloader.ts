@@ -113,7 +113,14 @@ export class DownloadManager extends EventEmitter {
         const status = res.statusCode ?? 0;
         if ([301, 302, 303, 307, 308].includes(status) && res.headers.location && redirectDepth < 5) {
           res.resume();
-          const next = new URL(res.headers.location, url).toString();
+          // Location 由服务器控制：非法地址必须变成可读错误，不能让 new URL 在事件回调里抛出未捕获异常
+          let next: string;
+          try {
+            next = new URL(res.headers.location, url).toString();
+          } catch {
+            reject(new Error(`服务器返回了非法的重定向地址：${String(res.headers.location).slice(0, 200)}`));
+            return;
+          }
           this.requestWithRedirects(next, options, redirectDepth + 1).then(resolve, reject);
           return;
         }
@@ -178,17 +185,24 @@ export class DownloadManager extends EventEmitter {
 
     // 已完成且校验通过 → 直接复用
     if (fs.existsSync(dest)) {
+      const cachedSize = fs.statSync(dest).size;
       if (!task.sha1) {
-        this.bytesDoneAll += fs.statSync(dest).size;
-        return { id: task.id, name, ok: true, bytes: fs.statSync(dest).size, fromCache: true };
-      }
-      try {
-        const hash = await sha1File(dest);
-        if (hash === task.sha1.toLowerCase()) {
-          this.bytesDoneAll += fs.statSync(dest).size;
-          return { id: task.id, name, ok: true, bytes: fs.statSync(dest).size, fromCache: true };
+        // 没有 SHA-1 的文件只能用声明大小判断完整性：上次中断留下的截断文件不能被当成缓存复用
+        if (typeof task.size === 'number' && task.size > 0 && cachedSize !== task.size) {
+          try { fs.rmSync(dest, { force: true }); } catch { /* 删不掉时交给重下覆盖 */ }
+        } else {
+          this.bytesDoneAll += cachedSize;
+          return { id: task.id, name, ok: true, bytes: cachedSize, fromCache: true };
         }
-      } catch { /* fallthrough：损坏就重下 */ }
+      } else {
+        try {
+          const hash = await sha1File(dest);
+          if (hash === task.sha1.toLowerCase()) {
+            this.bytesDoneAll += cachedSize;
+            return { id: task.id, name, ok: true, bytes: cachedSize, fromCache: true };
+          }
+        } catch { /* fallthrough：损坏就重下 */ }
+      }
     }
 
     const sources = this.mirrorUrls(task);
@@ -204,6 +218,7 @@ export class DownloadManager extends EventEmitter {
         // 优先使用任务声明的大小 / HEAD 的完整大小；只有拿不到完整大小时才退回已有 part 大小
         let total = task.size ?? 0;
         if (!total) total = h.size;
+        const expectedSize = total;
         if (!total && fs.existsSync(partFile)) total = fs.statSync(partFile).size;
         if (!task.size && h.size > 0 && !this.sizeCounted.has(task.id)) {
           this.sizeCounted.add(task.id);
@@ -230,6 +245,14 @@ export class DownloadManager extends EventEmitter {
           fs.renameSync(partFile, dest);
         } else if (!fs.existsSync(dest)) {
           throw new Error('下载未产生文件');
+        }
+
+        const actualBytes = fs.statSync(dest).size;
+        // 没有 SHA-1 的第三方文件（如部分加载器库）：至少用大小拦住被截断的文件，
+        // 否则下次启动会把残包当成“已下载”直接复用
+        if (!task.sha1 && expectedSize > 0 && actualBytes !== expectedSize) {
+          fs.rmSync(dest, { force: true });
+          throw new Error(`文件大小不符（期望 ${expectedSize}，实际 ${actualBytes} 字节），正在尝试备用源`);
         }
 
         // 校验

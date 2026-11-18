@@ -214,6 +214,13 @@ function safeName(name: string): string {
   return path.basename(name).replace(/[<>:"/\\|?*]/g, '_') || `item-${Date.now()}`;
 }
 
+/** 世界名来自渲染进程/备份元数据：.. 会让 path.join 指到 saves 之外 */
+function worldDirOf(gameDir: string, worldName: string): string {
+  const base = path.basename(String(worldName ?? ''));
+  if (!base || base === '.' || base === '..') throw new Error('世界名称不合法');
+  return path.join(gameDir, 'saves', base);
+}
+
 function uniqueTarget(dir: string, name: string): string {
   const ext = path.extname(name);
   const base = ext ? name.slice(0, -ext.length) : name;
@@ -266,8 +273,8 @@ export function importWorldZip(instanceId: string, zipPath: string): { worldName
 export function exportWorldZip(instanceId: string, worldName: string, destPath: string): { filePath: string; sizeBytes: number } {
   const instance = getInstance(instanceId);
   if (!instance) throw new Error('实例不存在');
-  const worldDir = path.join(instance.gameDir, 'saves', path.basename(worldName));
-  if (!fs.existsSync(worldDir)) throw new Error('世界不存在');
+  const worldDir = worldDirOf(instance.gameDir, worldName);
+  if (!fs.existsSync(worldDir) || !fs.statSync(worldDir).isDirectory()) throw new Error('世界不存在');
   fs.mkdirSync(path.dirname(destPath), { recursive: true });
   fs.writeFileSync(destPath, zipFromDir(worldDir));
   return { filePath: destPath, sizeBytes: fs.statSync(destPath).size };
@@ -350,8 +357,8 @@ export function deleteContent(instanceId: string, kind: ContentKind, fileName: s
 export function backupWorld(instanceId: string, worldName: string, displayName?: string): string {
   const instance = getInstance(instanceId);
   if (!instance) throw new Error('实例不存在');
-  const worldDir = path.join(instance.gameDir, 'saves', path.basename(worldName));
-  if (!fs.existsSync(worldDir)) throw new Error('世界不存在');
+  const worldDir = worldDirOf(instance.gameDir, worldName);
+  if (!fs.existsSync(worldDir) || !fs.statSync(worldDir).isDirectory()) throw new Error('世界不存在');
   const dir = paths.instanceBackupsDir(instanceId);
   fs.mkdirSync(dir, { recursive: true });
   const ts = Date.now();
