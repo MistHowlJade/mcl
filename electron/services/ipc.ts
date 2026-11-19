@@ -248,8 +248,11 @@ export function registerIpcHandlers(): void {
     const tracked = modrinth.readInstalledMods(instanceId);
     const files = modrinth.listModFiles(instanceId);
     return files.map(f => {
-      const match = tracked.find(t => t.fileName === f.fileName);
-      return match ? { ...match, sizeBytes: f.sizeBytes, disabled: f.disabled } : {
+      // 禁用文件磁盘名是 foo.jar.disabled，跟踪记录里仍是 foo.jar：
+      // 不归一化会丢掉来源与可更新标记，更新时也找不到记录
+      const trackedName = f.fileName.replace(/\.disabled$/i, '');
+      const match = tracked.find(t => t.fileName === trackedName);
+      return match ? { ...match, fileName: trackedName, sizeBytes: f.sizeBytes, disabled: f.disabled } : {
         fileName: f.fileName, projectId: null, versionId: null, versionNumber: null, title: null, loader: null,
         installedAt: 0, sizeBytes: f.sizeBytes, disabled: f.disabled, updateAvailable: null,
       };

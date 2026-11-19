@@ -135,10 +135,17 @@ export function evalRules(rules: Rule[] | undefined, features: Record<string, bo
   return allowed;
 }
 
-/** Maven 元数据里的 <version> 不保证按版本号排序：数字感知比较取最新，避免 47.10 被 47.9 盖住 */
+const PRERELEASE = /-(?:alpha|beta|pre|preview|rc|snapshot)\d*(?:[.\-+]|$)/i;
+
+/**
+ * Maven 元数据里的 <version> 不保证按版本号排序：数字感知比较取最新，避免 47.10 被 47.9 盖住。
+ * NeoForge/Quilt 的元数据同时列有 -beta：界面承诺“最新稳定版”，有正式版时不能自动选测试版。
+ */
 export function newestVersion(versions: string[]): string | undefined {
-  return versions.reduce<string | undefined>(
-    (best, v) => (best === undefined || v.localeCompare(best, 'en', { numeric: true }) > 0 ? v : best),
+  const stable = versions.filter(v => !PRERELEASE.test(String(v)));
+  const pool = stable.length > 0 ? stable : versions;
+  return pool.reduce<string | undefined>(
+    (best, v) => (best === undefined || String(v).localeCompare(best, 'en', { numeric: true }) > 0 ? v : best),
     undefined,
   );
 }

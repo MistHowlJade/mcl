@@ -65,17 +65,17 @@ function enabledResourcePacks(gameDir: string): Set<string> {
 }
 
 function enabledShaderPack(gameDir: string): string | null {
-  const optifine = path.join(gameDir, 'optionsshaders.txt');
-  if (fs.existsSync(optifine)) {
-    for (const line of fs.readFileSync(optifine, 'utf8').split(/\r?\n/)) {
-      if (line.startsWith('shaderPack=')) return line.slice('shaderPack='.length).trim() || null;
-    }
-  }
-  const iris = path.join(gameDir, 'config', 'iris.properties');
-  if (fs.existsSync(iris)) {
-    for (const line of fs.readFileSync(iris, 'utf8').split(/\r?\n/)) {
-      if (line.startsWith('shaderPack=')) return line.slice('shaderPack='.length).trim() || null;
-    }
+  // OptiFine 即使没开光影也会留下 shaderPack=（空值）；此时不能直接返回 null，
+  // 否则同一实例里 Iris 的 config/iris.properties 选择会被当成“未启用”
+  for (const file of [path.join(gameDir, 'optionsshaders.txt'), path.join(gameDir, 'config', 'iris.properties')]) {
+    try {
+      if (!fs.existsSync(file)) continue;
+      for (const line of fs.readFileSync(file, 'utf8').split(/\r?\n/)) {
+        if (!line.startsWith('shaderPack=')) continue;
+        const value = line.slice('shaderPack='.length).trim();
+        if (value) return value;
+      }
+    } catch { /* 文件可能在读取瞬间被游戏重写或删除 */ }
   }
   return null;
 }

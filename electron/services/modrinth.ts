@@ -130,6 +130,9 @@ export async function installMod(instanceId: string, projectId: string, versionI
     const dl = new DownloadManager({ source: 'official', maxThreads: 2, retries: 3 });
     const reports = await dl.run([{ id: `modrinth:${safeName}`, url: fileUrl, sha1, size, dest, name: safeName }]);
     if (!reports[0]?.ok) throw new Error(`下载失败（${safeName}）：${reports[0]?.error ?? '未知错误'}`);
+    // 同名文件之前可能被禁用（foo.jar.disabled）：新文件已启用，必须清掉旧副本，
+    // 否则两者并存，之后点「禁用/启用」会被安全检查直接拒绝
+    try { fs.rmSync(`${dest}.disabled`, { force: true }); } catch { /* 删不掉不阻断安装 */ }
     return { fileName: safeName, sizeBytes: fs.statSync(dest).size };
   };
 
@@ -278,7 +281,9 @@ export async function checkModUpdates(instanceId: string, mcVersion: string, loa
 
 export async function updateMod(instanceId: string, fileName: string): Promise<InstalledMod> {
   const all = readInstalledMods(instanceId);
-  const mod = all.find(m => m.fileName === fileName);
+  // 禁用状态在磁盘上是 foo.jar.disabled，installed-mods.json 里记录的仍是 foo.jar
+  const baseName = path.basename(String(fileName ?? '')).replace(/\.disabled$/i, '');
+  const mod = all.find(m => m.fileName === baseName);
   if (!mod?.projectId || !mod.updateAvailable) throw new Error('没有可用的更新');
   const versions = await getProjectVersions(mod.projectId, {});
   // 必须精确命中检查更新时选中的版本：拿不到就报错，不能退回到可能不兼容的最新版
@@ -298,15 +303,17 @@ export async function updateMod(instanceId: string, fileName: string): Promise<I
     if (candidate !== dest && fs.existsSync(candidate)) fs.rmSync(candidate, { force: true });
   }
   const updated: InstalledMod = { ...mod, fileName: safeName, versionId: target.id, versionNumber: target.version_number, installedAt: Date.now(), updateAvailable: null, sizeBytes: fs.statSync(dest).size };
-  writeInstalledMods(instanceId, all.map(m => m.fileName === fileName ? updated : m));
+  writeInstalledMods(instanceId, all.map(m => m.fileName === baseName ? updated : m));
   return updated;
 }
 
 export function toggleModDisabled(instanceId: string, fileName: string): boolean {
   assertInstance(instanceId);
   // 只允许操作 mods 目录里的 jar：fileName 不能带目录分隔符或 ..
-  const base = path.basename(String(fileName ?? ''));
-  if (!/^[^\\/]+\.jar(\.disabled)?$/i.test(base)) throw new Error('模组文件名不合法');
+  // 界面对已禁用文件传的是 foo.jar.disabled，先还原成 foo.jar，
+  // 否则会把 .disabled 当成正常扩展名再禁用一次（foo.jar.disabled.disabled）
+  const base = path.basename(String(fileName ?? '')).replace(/\.disabled$/i, '');
+  if (!/^[^\\/]+\.jar$/i.test(base)) throw new Error('模组文件名不合法');
   const modsDir = path.join(paths.gameDir(instanceId), 'mods');
   const enabled = path.join(modsDir, base);
   const disabled = enabled + '.disabled';
