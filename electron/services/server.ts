@@ -419,7 +419,7 @@ function findInstalledJar(dir: string, loader: ServerLoader): string | null {
   return null;
 }
 
-function findForgeArgs(dir: string, loader: 'forge' | 'neoforge'): string | null {
+function findForgeArgs(dir: string, loader: 'forge' | 'neoforge', expectedVersion?: string | null): string | null {
   const base = path.join(dir, 'libraries', 'net', loader === 'forge' ? 'minecraftforge' : 'neoforged');
   if (!fs.existsSync(base)) return null;
   const wanted = process.platform === 'win32' ? 'win_args.txt' : 'unix_args.txt';
@@ -432,7 +432,8 @@ function findForgeArgs(dir: string, loader: 'forge' | 'neoforge'): string | null
     for (const e of entries) {
       const full = path.join(current, e.name);
       if (e.isDirectory()) stack.push(full);
-      else if (e.name === wanted) found.push(full);
+      // 重装后旧版本的库仍在：指定版本时只认对应目录，避免启动到上一次安装的加载器
+      else if (e.name === wanted && (!expectedVersion || full.split(path.sep).includes(expectedVersion))) found.push(full);
     }
   }
   if (found.length === 0) return null;
@@ -442,6 +443,37 @@ function findForgeArgs(dir: string, loader: 'forge' | 'neoforge'): string | null
   } catch {
     return found[0];
   }
+}
+
+/**
+ * 1.16 及更早的 Forge 安装器不生成 win_args.txt/unix_args.txt，
+ * 而是在服务器根目录产出 forge-<mc>-<loader>[-universal].jar，需要 -jar 启动。
+ */
+function findForgeJar(dir: string, expectedVersion?: string | null): string | null {
+  let entries: string[] = [];
+  try { entries = fs.readdirSync(dir); } catch { return null; }
+  const jars = entries.filter(f => {
+    const lower = f.toLowerCase();
+    if (!lower.endsWith('.jar') || !/^forge[-.]/i.test(f) || /installer|sources|mdk|javadoc/.test(lower)) return false;
+    return !expectedVersion || f.includes(expectedVersion);
+  });
+  if (jars.length === 0) return null;
+  // 重装后旧版本 jar 可能还在：与参数文件一致，取最近写入的那个
+  try {
+    return path.join(dir, jars.sort((a, b) => fs.statSync(path.join(dir, b)).mtimeMs - fs.statSync(path.join(dir, a)).mtimeMs)[0]);
+  } catch {
+    return path.join(dir, jars[0]);
+  }
+}
+
+/** 把用户手填的短版本号（如 36.2.34 / 47.1.3）规范成 Maven 目录名 */
+function forgeDirName(loader: 'forge' | 'neoforge', mcVersion: string, loaderVersion: string | null): string | null {
+  if (!loaderVersion) return null;
+  // NeoForge 只有 1.20.1 沿用 Forge 的坐标，目录名带 1.20.1- 前缀
+  if (loader === 'forge' || mcVersion === '1.20.1') {
+    return loaderVersion.includes('-') ? loaderVersion : `${mcVersion}-${loaderVersion}`;
+  }
+  return loaderVersion;
 }
 
 function emitLog(id: string, line: string, source: 'install' | 'server' = 'server'): void {
@@ -552,7 +584,11 @@ export async function prepareServer(id: string): Promise<ServerInfo> {
       } finally {
         fs.rmSync(installerPath, { force: true });
       }
-      if (!findForgeArgs(dir, loader)) throw new Error(`${loader} 安装完成但找不到启动参数文件，请查看安装日志。`);
+      // 1.16 及更早的 Forge 没有参数文件，安装器会直接产出可 -jar 启动的 Forge jar
+      const expected = forgeDirName(loader, cfg.mcVersion, forgeId);
+      const argsFile = findForgeArgs(dir, loader, expected);
+      const legacyJar = loader === 'forge' && !argsFile ? findForgeJar(dir, expected) : null;
+      if (!argsFile && !legacyJar) throw new Error(`${loader} 安装完成但找不到启动文件，请查看安装日志。`);
     }
 
     updateServer(id, { prepared: true, eulaAccepted: cfg.eulaAccepted });
@@ -654,8 +690,12 @@ export async function startServer(id: string): Promise<ServerInfo> {
   const fresh = readConfig(id);
 
   const forgeLoader: 'forge' | 'neoforge' | null = fresh.loader === 'forge' || fresh.loader === 'neoforge' ? fresh.loader : null;
+  const expectedForgeDir = forgeLoader ? forgeDirName(forgeLoader, fresh.mcVersion, fresh.loaderVersion ?? null) : null;
+  const forgeArgs = forgeLoader ? findForgeArgs(dir, forgeLoader, expectedForgeDir) : null;
+  // 1.16 及更早的 Forge 没有 win_args.txt：退回安装器产出的 forge-*.jar
+  const legacyForgeJar = forgeLoader === 'forge' && !forgeArgs ? findForgeJar(dir, expectedForgeDir) : null;
   if (!forgeLoader && !findInstalledJar(dir, fresh.loader)) throw new Error('服务端文件不存在，请点击「重新安装」后再启动。');
-  if (forgeLoader && !findForgeArgs(dir, forgeLoader)) throw new Error('Forge/NeoForge 启动参数缺失，请点击「重新安装」后再启动。');
+  if (forgeLoader && !forgeArgs && !legacyForgeJar) throw new Error('Forge/NeoForge 启动文件缺失，请点击「重新安装」后再启动。');
   // server.properties 才是服务端实际监听的权威端口；用户可能在属性页直接改过
   const propsPort = parseInt(readServerProperties(id)['server-port'] ?? '', 10);
   const effectivePort = Number.isInteger(propsPort) && propsPort >= 1 && propsPort <= 65535 ? propsPort : fresh.port;
@@ -669,10 +709,9 @@ export async function startServer(id: string): Promise<ServerInfo> {
 
   const javaPath = await resolveJava(fresh);
   let args: string[];
-  if (forgeLoader) {
+  if (forgeLoader && forgeArgs) {
     const userArgsFile = path.join(dir, 'user_jvm_args.txt');
     fs.writeFileSync(userArgsFile, `${jvmArgsFor(fresh).join('\n')}\n`, 'utf8');
-    const forgeArgs = findForgeArgs(dir, forgeLoader)!;
     // JVM 参数已经写进 user_jvm_args.txt；命令行只引用参数文件。
     // 若再把 jvmArgsFor 放进命令行，每个参数会重复一次（-javaagent 之类会加载两遍）。
     args = [
@@ -680,6 +719,9 @@ export async function startServer(id: string): Promise<ServerInfo> {
       `@${path.relative(dir, forgeArgs).replace(/\\/g, '/')}`,
       'nogui',
     ];
+  } else if (forgeLoader && legacyForgeJar) {
+    // 旧版 Forge 的 jar 不读 user_jvm_args.txt：JVM 参数必须直接放在命令行
+    args = [...jvmArgsFor(fresh), '-jar', path.basename(legacyForgeJar), 'nogui'];
   } else {
     const jar = findInstalledJar(dir, fresh.loader)!;
     args = [...jvmArgsFor(fresh), '-jar', path.basename(jar), 'nogui'];

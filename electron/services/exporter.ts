@@ -189,7 +189,15 @@ export async function exportInstance(instanceId: string, format: ExportFormat, d
   if (entries.length === 0) throw new Error('实例目录为空，没有可导出的文件');
   const buffer = zipWrite(entries);
   fs.mkdirSync(path.dirname(destPath), { recursive: true });
-  fs.writeFileSync(destPath, buffer);
+  // 覆盖已有导出文件时先写同目录 .part 再改名：中途失败不会留下半个 ZIP 把原文件也毁掉
+  const partPath = `${destPath}.part`;
+  try {
+    fs.writeFileSync(partPath, buffer);
+    fs.renameSync(partPath, destPath);
+  } catch (e) {
+    try { fs.rmSync(partPath, { force: true }); } catch { /* ignore */ }
+    throw e;
+  }
   return { filePath: destPath, format, sizeBytes: buffer.length, files: entries.length, warnings };
 }
 

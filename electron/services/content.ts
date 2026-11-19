@@ -289,7 +289,8 @@ export function exportWorldZip(instanceId: string, worldName: string, destPath: 
   const worldDir = worldDirOf(instance.gameDir, worldName);
   if (!fs.existsSync(worldDir) || !fs.statSync(worldDir).isDirectory()) throw new Error('世界不存在');
   fs.mkdirSync(path.dirname(destPath), { recursive: true });
-  fs.writeFileSync(destPath, zipFromDir(worldDir));
+  // 覆盖已有导出文件时先写 .part：磁盘满/中途失败不会把原来那份好文件也毁掉
+  writeZipAtomic(destPath, zipFromDir(worldDir));
   return { filePath: destPath, sizeBytes: fs.statSync(destPath).size };
 }
 
