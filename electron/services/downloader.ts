@@ -211,6 +211,9 @@ export class DownloadManager extends EventEmitter {
       if (this.canceled) return { id: task.id, name, ok: false, bytes: 0, error: '已取消', fromCache: false };
       const url = sources[attempt % sources.length];
       const isAlt = attempt >= sources.length;
+      // 本轮已上报的字节数：换源重试会重新下载，失败时要把这部分扣回去
+      let attemptBytes = 0;
+      const count = (n: number) => { attemptBytes += n; this.addProgress(task, n); };
       try {
         // 一次 HEAD 探测：大小 + 是否支持 Range
         const threshold = this.opts.segmentSizeMB * 1024 * 1024;
@@ -227,17 +230,17 @@ export class DownloadManager extends EventEmitter {
 
         if (total > threshold && !isAlt && h.acceptsRanges) {
           try {
-            await this.segmentedDownload(url, partFile, total, (n) => this.addProgress(task, n));
+            await this.segmentedDownload(url, partFile, total, count);
           } catch (e) {
             // 服务器返回 200（不支持 Range）→ 退化为单流下载，不浪费重试次数
             if (e instanceof Error && e.message === 'RANGE_UNSUPPORTED') {
-              await this.streamToFile(url, partFile, (n) => this.addProgress(task, n));
+              await this.streamToFile(url, partFile, count);
             } else {
               throw e;
             }
           }
         } else {
-          await this.streamToFile(url, partFile, (n) => this.addProgress(task, n));
+          await this.streamToFile(url, partFile, count);
         }
         // 统一落盘到目标路径
         fs.mkdirSync(path.dirname(dest), { recursive: true });
@@ -268,6 +271,7 @@ export class DownloadManager extends EventEmitter {
         return { id: task.id, name, ok: true, bytes, fromCache: false };
       } catch (e) {
         lastError = e instanceof Error ? e.message : String(e);
+        this.rollbackProgress(task, attemptBytes);
         // 失败后清理当前 part 与分段文件，换源重试
         if (attempt < this.opts.retries) this.cleanupParts(partFile);
       }
@@ -375,6 +379,14 @@ export class DownloadManager extends EventEmitter {
     const cur = (this.progressMap.get(task.id) ?? 0) + n;
     this.progressMap.set(task.id, cur);
     this.emit('progress', task, cur);
+  }
+
+  /** 失败重试时扣回本轮已上报的字节，避免进度显示超过总大小 */
+  private rollbackProgress(task: DownloadTask, n: number): void {
+    if (n <= 0) return;
+    this.bytesDoneAll = Math.max(0, this.bytesDoneAll - n);
+    const cur = Math.max(0, (this.progressMap.get(task.id) ?? 0) - n);
+    this.progressMap.set(task.id, cur);
   }
 
   async run(tasks: DownloadTask[]): Promise<TaskReport[]> {

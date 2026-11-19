@@ -247,11 +247,18 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('modrinth:installed', (_e, instanceId: string) => {
     const tracked = modrinth.readInstalledMods(instanceId);
     const files = modrinth.listModFiles(instanceId);
+    // mods 里可能同时有 foo.jar 与 foo.jar.disabled（手工复制/解压造成）：
+    // 来源记录只挂在启用中的那份，否则两条结果会得到同一个 fileName，列表 key 重复且操作指向不明
+    const enabledNames = new Set(files.filter(f => !f.disabled).map(f => f.fileName.toLowerCase()));
+    const claimed = new Set<string>();
     return files.map(f => {
       // 禁用文件磁盘名是 foo.jar.disabled，跟踪记录里仍是 foo.jar：
       // 不归一化会丢掉来源与可更新标记，更新时也找不到记录
       const trackedName = f.fileName.replace(/\.disabled$/i, '');
-      const match = tracked.find(t => t.fileName === trackedName);
+      const key = trackedName.toLowerCase();
+      const claimable = !claimed.has(key) && (!f.disabled || !enabledNames.has(key));
+      const match = claimable ? tracked.find(t => t.fileName.toLowerCase() === key) : undefined;
+      if (match) claimed.add(key);
       return match ? { ...match, fileName: trackedName, sizeBytes: f.sizeBytes, disabled: f.disabled } : {
         fileName: f.fileName, projectId: null, versionId: null, versionNumber: null, title: null, loader: null,
         installedAt: 0, sizeBytes: f.sizeBytes, disabled: f.disabled, updateAvailable: null,
@@ -477,8 +484,16 @@ export function registerIpcHandlers(): void {
 
   /* ---------- 内容管理 ---------- */
   ipcMain.handle('content:list', (_e, instanceId: string) => contentService.listContent(instanceId));
-  ipcMain.handle('content:toggleResourcePack', (_e, instanceId: string, fileName: string) => contentService.toggleResourcePack(instanceId, fileName));
-  ipcMain.handle('content:toggleShaderPack', (_e, instanceId: string, fileName: string) => contentService.toggleShaderPack(instanceId, fileName));
+  // 游戏运行中会在退出/改设置时重写 options.txt 与 iris.properties：
+  // 此时从启动器切换开关会被静默覆盖，直接拒绝并提示更可靠
+  ipcMain.handle('content:toggleResourcePack', (_e, instanceId: string, fileName: string) => {
+    assertInstanceIdle(instanceId, '切换资源包');
+    return contentService.toggleResourcePack(instanceId, fileName);
+  });
+  ipcMain.handle('content:toggleShaderPack', (_e, instanceId: string, fileName: string) => {
+    assertInstanceIdle(instanceId, '切换光影包');
+    return contentService.toggleShaderPack(instanceId, fileName);
+  });
   ipcMain.handle('content:delete', (_e, instanceId: string, kind: any, fileName: string) => {
     // 运行中删除世界会删到游戏正在写入的区块文件，先拒绝
     if (kind === 'worlds') assertInstanceIdle(instanceId, '删除世界');

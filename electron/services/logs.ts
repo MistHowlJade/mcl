@@ -53,10 +53,18 @@ export function readLog(name: string, instanceId?: string | null, maxBytes = 102
   if (!full) throw new Error('日志不存在');
   let stat: fs.Stats;
   try { stat = fs.statSync(full); } catch { throw new Error('日志不存在或已被删除'); }
-  const start = Math.max(0, stat.size - maxBytes);
+  // maxBytes 由 IPC 传入：NaN/负数会让 slice 计算失效，统一兜底到 1 MB
+  const limit = Number.isFinite(maxBytes) && maxBytes > 0 ? Math.min(Math.floor(maxBytes), 64 * 1024 * 1024) : 1024 * 1024;
+  const start = Math.max(0, stat.size - limit);
+  // 日志正在被游戏写入：stat 与 read 之间文件可能变短，
+  // 按实际读到的字节数截断缓冲区，避免尾部留下一段 NUL 显示成乱码
   const buf = Buffer.alloc(stat.size - start);
   const fd = fs.openSync(full, 'r');
-  fs.readSync(fd, buf, 0, buf.length, start);
-  fs.closeSync(fd);
-  return buf.toString('utf8');
+  let read = 0;
+  try {
+    read = fs.readSync(fd, buf, 0, buf.length, start);
+  } finally {
+    try { fs.closeSync(fd); } catch { /* ignore */ }
+  }
+  return buf.subarray(0, read).toString('utf8');
 }

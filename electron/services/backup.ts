@@ -193,8 +193,34 @@ export async function restoreBackup(backupId: string, instanceId: string): Promi
     let worldName = path.basename(recordedName || `restored-${safeId}`);
     // basename('..') 仍是 '..'：会还原到游戏根目录而不是 saves/<世界名>/
     if (!worldName || worldName === '.' || worldName === '..') worldName = `restored-${safeId}`;
-    targetDir = path.join(gameDir, 'saves', worldName);
-    fs.mkdirSync(targetDir, { recursive: true });
+    const savesDir = path.join(gameDir, 'saves');
+    fs.mkdirSync(savesDir, { recursive: true });
+    const target = path.join(savesDir, worldName);
+    const suffix = Date.now().toString(36);
+    // 临时目录放在备份目录：恢复中途崩溃时不会被存档列表/导出当成一个真世界
+    const tempRoot = paths.instanceBackupsDir(instanceId);
+    fs.mkdirSync(tempRoot, { recursive: true });
+    const tempDir = path.join(tempRoot, `.restore-${suffix}`);
+    const oldDir = path.join(tempRoot, `.old-${suffix}`);
+    try {
+      fs.mkdirSync(tempDir, { recursive: true });
+      const written = zipExtractAll(buf, tempDir);
+      // 直接往现有世界目录覆盖会把比备份新的区块留在原地，恢复出新旧混杂的存档；
+      // 先解压到临时目录再整体替换（恢复前已自动整份备份，失败也能回退）
+      if (!written.some(p => path.basename(p) === 'level.dat')) throw new Error('备份里找不到 level.dat，不是有效的世界存档');
+      if (fs.existsSync(target)) fs.renameSync(target, oldDir);
+      try {
+        fs.renameSync(tempDir, target);
+      } catch (e) {
+        // 替换失败时把原世界放回去，不能留下世界目录已消失的状态
+        if (fs.existsSync(oldDir)) { try { fs.renameSync(oldDir, target); } catch { /* ignore */ } }
+        throw e;
+      }
+      try { fs.rmSync(oldDir, { recursive: true, force: true }); } catch { /* 旧世界清理失败不影响已完成的恢复 */ }
+      return { restoredFiles: written.length };
+    } finally {
+      try { fs.rmSync(tempDir, { recursive: true, force: true }); } catch { /* ignore */ }
+    }
   }
 
   // 只允许还原到白名单子目录（zipExtractAll 内部还会做目录穿越防护）

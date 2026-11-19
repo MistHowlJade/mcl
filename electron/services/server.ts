@@ -895,8 +895,32 @@ export function restoreServerWorld(id: string, backupName: string): { restoredFi
   const zipPath = path.join(paths.serverBackupsDir(id), `${path.basename(backupName)}.zip`);
   if (!fs.existsSync(zipPath)) throw new Error('备份文件不存在');
   const worldDir = resolveServerWorldDir(id, worldName);
-  const files = zipExtractAll(fs.readFileSync(zipPath), worldDir);
-  return { restoredFiles: files.length };
+  const buf = fs.readFileSync(zipPath);
+  const suffix = Date.now().toString(36);
+  // 临时目录放在服务端备份目录：恢复中途崩溃时不会被误认成世界/安装文件
+  const tempRoot = paths.serverBackupsDir(id);
+  fs.mkdirSync(tempRoot, { recursive: true });
+  const tempDir = path.join(tempRoot, `.restore-${suffix}`);
+  const oldDir = path.join(tempRoot, `.old-${suffix}`);
+  fs.mkdirSync(path.dirname(worldDir), { recursive: true });
+  try {
+    fs.mkdirSync(tempDir, { recursive: true });
+    const files = zipExtractAll(buf, tempDir);
+    // 直接往现有世界目录覆盖会把比备份新的区块留在原地，恢复出新旧混杂的存档；
+    // 先解压到临时目录再整体替换，失败时原世界保持不动
+    if (!files.some(p => path.basename(p) === 'level.dat')) throw new Error('备份里找不到 level.dat，不是有效的世界存档');
+    if (fs.existsSync(worldDir)) fs.renameSync(worldDir, oldDir);
+    try {
+      fs.renameSync(tempDir, worldDir);
+    } catch (e) {
+      if (fs.existsSync(oldDir)) { try { fs.renameSync(oldDir, worldDir); } catch { /* ignore */ } }
+      throw e;
+    }
+    try { fs.rmSync(oldDir, { recursive: true, force: true }); } catch { /* 旧世界清理失败不影响已完成的恢复 */ }
+    return { restoredFiles: files.length };
+  } finally {
+    try { fs.rmSync(tempDir, { recursive: true, force: true }); } catch { /* ignore */ }
+  }
 }
 
 export function deleteServerBackup(id: string, backupName: string): void {
