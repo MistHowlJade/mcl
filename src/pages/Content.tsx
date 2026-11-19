@@ -158,7 +158,7 @@ export default function Content() {
             <button
               key={t.id}
               className={`btn ${tab === t.id ? 'primary' : ''}`}
-              onClick={() => setTab(t.id)}
+              onClick={() => { setTab(t.id); setOnlineOpen(false); }}
             >
               {t.icon} {t.label}
               <span className="tag" style={{ marginLeft: 6 }}>{content?.[t.id].length ?? 0}</span>

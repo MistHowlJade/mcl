@@ -302,20 +302,20 @@ async function ensureForgeLikeInstalled(gameDir: string, loader: 'forge' | 'neof
     const versions = await fetchMavenVersions('https://maven.minecraftforge.net/net/minecraftforge/forge/maven-metadata.xml');
     const matching = versions.filter(v => v.startsWith(`${mcVersion}-`));
     if (matching.length === 0) throw new Error(`Maven 中找不到适用于 ${mcVersion} 的 Forge 版本，请在创建实例时手动指定加载器版本。`);
-    forgeId = matching[matching.length - 1];
+    forgeId = versionService.newestVersion(matching)!;
     installerUrl = `https://maven.minecraftforge.net/net/minecraftforge/forge/${forgeId}/forge-${forgeId}-installer.jar`;
   } else if (neoForgeLegacy) {
     const versions = await fetchMavenVersions('https://maven.neoforged.net/releases/net/neoforged/forge/maven-metadata.xml');
     const matching = versions.filter(v => v.startsWith(`${mcVersion}-`));
     if (matching.length === 0) throw new Error(`NeoForge 中找不到适用于 ${mcVersion} 的版本，请在创建实例时手动指定加载器版本。`);
-    forgeId = matching[matching.length - 1];
+    forgeId = versionService.newestVersion(matching)!;
     installerUrl = `https://maven.neoforged.net/releases/net/neoforged/forge/${forgeId}/forge-${forgeId}-installer.jar`;
   } else {
     const versions = await fetchMavenVersions('https://maven.neoforged.net/releases/net/neoforged/neoforge/maven-metadata.xml');
     const prefix = neoForgePrefix(mcVersion);
     const matching = versions.filter(v => v.startsWith(prefix));
     if (matching.length === 0) throw new Error(`NeoForge 中找不到适用于 ${mcVersion} 的版本（前缀 ${prefix}），请在创建实例时手动指定加载器版本。`);
-    forgeId = matching[matching.length - 1];
+    forgeId = versionService.newestVersion(matching)!;
     installerUrl = `https://maven.neoforged.net/releases/net/neoforged/neoforge/${forgeId}/neoforge-${forgeId}-installer.jar`;
   }
 
@@ -452,10 +452,14 @@ export async function launchInstance(instanceId: string, options: LaunchOptions 
   emitStatus('downloading', '正在检查并下载游戏文件…');
   const gameLibsDir = path.join(paths.gameDir(instanceId), 'libraries');
   const plan = await versionService.buildDownloadPlan(entry, settings.download.source, settings.download.customMirror);
-  // 合并加载器 profile 的库
-  const profileLibs = versionService.collectLibraries(resolved).filter(l => !plan.tasks.some(t => t.dest.endsWith(l.path.replace(/\//g, path.sep))));
-  for (const l of profileLibs) {
-    plan.tasks.push({ id: `lib:${l.path}`, url: l.url, sha1: l.sha1, size: l.size, dest: path.join(paths.librariesDir(), ...l.path.split('/')), name: path.basename(l.path) });
+  // 合并加载器 profile 的库：按目标路径去重，避免同一文件被规划下载两次（重复计数/重复请求）
+  const plannedDests = new Set(plan.tasks.map(t => path.normalize(t.dest)));
+  for (const l of versionService.collectLibraries(resolved)) {
+    const dest = path.join(paths.librariesDir(), ...l.path.split('/'));
+    const key = path.normalize(dest);
+    if (plannedDests.has(key)) continue;
+    plannedDests.add(key);
+    plan.tasks.push({ id: `lib:${l.path}`, url: l.url, sha1: l.sha1, size: l.size, dest, name: path.basename(l.path) });
   }
   const dl = new DownloadManager({
     source: settings.download.source,

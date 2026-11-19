@@ -11,6 +11,7 @@ export default function Backups() {
   const [restoreTarget, setRestoreTarget] = useState<BackupInfo | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<BackupInfo | null>(null);
   const [creating, setCreating] = useState(false);
+  const instanceIdRef = useRef(instanceId);
   const reloadSeq = useRef(0);
   const toast = useToast();
 
@@ -24,17 +25,22 @@ export default function Backups() {
   }, []);
 
   const reload = async () => {
-    if (!instanceId) { setBackups([]); return; }
+    // 用 ref 读取“当前”实例：恢复/删除的旧闭包在切换实例后才返回时，
+    // 不能再用它创建时的 instanceId 把旧实例的备份列表盖到新实例上
+    const targetId = instanceIdRef.current;
+    if (!targetId) { setBackups([]); return; }
     // 快速切换实例时旧请求可能后返回：只接受最后一次请求的结果
     const seq = ++reloadSeq.current;
     try {
-      const list = await api.backupList(instanceId);
-      if (seq === reloadSeq.current) setBackups(list);
+      const list = await api.backupList(targetId);
+      if (seq === reloadSeq.current && instanceIdRef.current === targetId) setBackups(list);
     } catch (e) {
-      if (seq === reloadSeq.current) toast.toast(String(e), 'error');
+      if (seq === reloadSeq.current && instanceIdRef.current === targetId) toast.toast(String(e), 'error');
     }
   };
   useEffect(() => {
+    instanceIdRef.current = instanceId;
+    reloadSeq.current++;
     setBackups([]);
     void reload();
     /* eslint-disable-next-line */

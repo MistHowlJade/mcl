@@ -24,6 +24,10 @@ function isInstanceConfig(value: unknown): value is InstanceConfig {
     && ['vanilla', 'fabric', 'quilt', 'forge', 'neoforge'].includes(String(cfg.loader));
 }
 
+/** 加载器版本只允许普通版本号字符：不能以 - 开头，避免被拼进 URL/安装器参数 */
+const isLoaderVersion = (v: unknown): v is string => typeof v === 'string'
+  && /^[0-9A-Za-z][0-9A-Za-z._+\-]{0,63}$/.test(v);
+
 export function listInstanceFiles(): InstanceConfig[] {
   const dir = paths.instancesDir();
   if (!fs.existsSync(dir)) return [];
@@ -46,8 +50,13 @@ export function toInfo(cfg: InstanceConfig): InstanceInfo {
   const game = paths.gameDir(cfg.id);
   // memoryPreset 可能被手工改坏：内存预设查表是直接用下标，非法值会让启动/实例页直接崩
   const memoryPreset: MemoryPreset = cfg.memoryPreset === 'low' || cfg.memoryPreset === 'heavy' ? cfg.memoryPreset : 'standard';
+  // loaderVersion 可能被手工改坏：非法值会被拼进下载 URL/安装器参数，读取时统一丢弃
+  const loaderVersion = typeof cfg.loaderVersion === 'string' && isLoaderVersion(cfg.loaderVersion.trim())
+    ? cfg.loaderVersion.trim()
+    : null;
   return {
     ...cfg,
+    loaderVersion,
     memoryPreset,
     gameDir: game,
     modsCount: countDirEntries(path.join(game, 'mods')),
@@ -83,13 +92,17 @@ export function createInstance(input: {
   if (!isMcVersion(input.mcVersion)) throw new Error('Minecraft 版本号格式不正确');
   if (!isLoaderType(input.loader)) throw new Error('不支持的模组加载器');
   const name = typeof input.name === 'string' ? input.name.trim().slice(0, 80) : '';
+  const loaderVersion = typeof input.loaderVersion === 'string' ? input.loaderVersion.trim() : '';
+  if (loaderVersion && !isLoaderVersion(loaderVersion)) {
+    throw new Error('加载器版本号格式不正确（只能包含字母、数字、点、下划线、加号和短横线）');
+  }
   const id = newId();
   const cfg: InstanceConfig = {
     id,
     name: name || `${input.mcVersion}${input.loader !== 'vanilla' ? '-' + input.loader : ''}`,
     mcVersion: input.mcVersion,
     loader: input.loader,
-    loaderVersion: typeof input.loaderVersion === 'string' && input.loaderVersion.trim() ? input.loaderVersion.trim() : null,
+    loaderVersion: loaderVersion || null,
     javaPath: typeof input.javaPath === 'string' && input.javaPath.trim() ? input.javaPath.trim() : null,
     memoryPreset: isMemoryPreset(input.memoryPreset) ? input.memoryPreset : 'standard',
     createdAt: Date.now(),
@@ -115,7 +128,13 @@ export function updateInstance(id: string, patch: Partial<InstanceConfig>): Inst
   if (typeof p.name === 'string' && p.name.trim()) merged.name = p.name.trim().slice(0, 80);
   if (isMcVersion(p.mcVersion)) merged.mcVersion = p.mcVersion;
   if (isLoaderType(p.loader)) merged.loader = p.loader;
-  if ('loaderVersion' in p) merged.loaderVersion = typeof p.loaderVersion === 'string' && p.loaderVersion.trim() ? p.loaderVersion.trim() : null;
+  if ('loaderVersion' in p) {
+    const raw = typeof p.loaderVersion === 'string' ? p.loaderVersion.trim() : '';
+    if (raw && !isLoaderVersion(raw)) {
+      throw new Error('加载器版本号格式不正确（只能包含字母、数字、点、下划线、加号和短横线）');
+    }
+    merged.loaderVersion = raw || null;
+  }
   if ('javaPath' in p) merged.javaPath = typeof p.javaPath === 'string' && p.javaPath.trim() ? p.javaPath.trim() : null;
   if ('memoryPreset' in p) merged.memoryPreset = isMemoryPreset(p.memoryPreset) ? p.memoryPreset : 'standard';
   if (typeof p.jvmArgsExtra === 'string') merged.jvmArgsExtra = p.jvmArgsExtra;

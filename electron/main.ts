@@ -134,27 +134,29 @@ async function createWindow(): Promise<void> {
   }
 }
 
-app.whenReady().then(() => {
-  registerMediaProtocol();
-  registerIpcHandlers();
-  bindServiceEvents();
-  // 残余进程清理：异步进行，不阻塞窗口
-  const settings = getSettings();
-  if (settings.launch.autoKillResidual) {
-    void killResidualProcesses().catch(() => undefined);
-  }
-  void createWindow();
+if (gotLock) {
+  app.whenReady().then(() => {
+    registerMediaProtocol();
+    registerIpcHandlers();
+    bindServiceEvents();
+    // 残余进程清理：异步进行，不阻塞窗口
+    const settings = getSettings();
+    if (settings.launch.autoKillResidual) {
+      void killResidualProcesses().catch(() => undefined);
+    }
+    void createWindow();
 
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) void createWindow();
+    app.on('activate', () => {
+      if (BrowserWindow.getAllWindows().length === 0) void createWindow();
+    });
   });
-});
 
-// 启动器退出时结束所有由 MCL 启动的服务端，避免留下孤儿 Java 进程
-app.on('before-quit', () => {
-  try { killAllServersSync(); } catch { /* 忽略 */ }
-});
+  // 启动器退出时结束所有由 MCL 启动的服务端，避免留下孤儿 Java 进程
+  app.on('before-quit', () => {
+    try { killAllServersSync(); } catch { /* 忽略 */ }
+  });
 
-app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit();
-});
+  app.on('window-all-closed', () => {
+    if (process.platform !== 'darwin') app.quit();
+  });
+}

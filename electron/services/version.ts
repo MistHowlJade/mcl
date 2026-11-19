@@ -135,6 +135,14 @@ export function evalRules(rules: Rule[] | undefined, features: Record<string, bo
   return allowed;
 }
 
+/** Maven 元数据里的 <version> 不保证按版本号排序：数字感知比较取最新，避免 47.10 被 47.9 盖住 */
+export function newestVersion(versions: string[]): string | undefined {
+  return versions.reduce<string | undefined>(
+    (best, v) => (best === undefined || v.localeCompare(best, 'en', { numeric: true }) > 0 ? v : best),
+    undefined,
+  );
+}
+
 /** 合并加载器 profile json（fabric/quilt/forge）到已解析的基础版本上 */
 export function mergeProfile(base: Record<string, any>, profile: Record<string, any>): Record<string, any> {
   const merged = mergeVersionJson(profile, base);

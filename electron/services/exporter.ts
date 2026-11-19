@@ -12,6 +12,7 @@ import * as paths from './paths';
 import { getInstance } from './instances';
 import { zipWrite, ZipEntryInput } from './zip';
 import { fetchJson, fetchWithTimeout } from './net';
+import { newestVersion } from './version';
 import { ExportFormat, ExportResult, InstanceInfo, LoaderType } from '../shared/types';
 
 interface WalkEntry { rel: string; data: Buffer; mtime: Date }
@@ -93,7 +94,7 @@ async function latestLoaderVersion(loader: LoaderType, mcVersion: string): Promi
     if (loader === 'forge') {
       const versions = await mavenVersions('https://maven.minecraftforge.net/net/minecraftforge/forge/maven-metadata.xml');
       const matching = versions.filter(v => v.startsWith(`${mcVersion}-`));
-      const last = matching[matching.length - 1];
+      const last = newestVersion(matching);
       return last ? last.slice(mcVersion.length + 1) : null;
     }
     if (loader === 'neoforge') {
@@ -101,7 +102,7 @@ async function latestLoaderVersion(loader: LoaderType, mcVersion: string): Promi
       if (mcVersion === '1.20.1') {
         const versions = await mavenVersions('https://maven.neoforged.net/releases/net/neoforged/forge/maven-metadata.xml');
         const matching = versions.filter(v => v.startsWith(`${mcVersion}-47.`));
-        const last = matching[matching.length - 1];
+        const last = newestVersion(matching);
         return last ? last.slice(mcVersion.length + 1) : null;
       }
       // 与启动器一致：1.21 → 21.0.x（只写 "21." 会错配到 21.1/21.2）
@@ -109,7 +110,7 @@ async function latestLoaderVersion(loader: LoaderType, mcVersion: string): Promi
       const prefix = parts.length < 2 ? `${parts[0] || '0'}.0.` : `${parts[0]}.${parts[1]}.`;
       const versions = await mavenVersions('https://maven.neoforged.net/releases/net/neoforged/neoforge/maven-metadata.xml');
       const matching = versions.filter(v => v.startsWith(prefix));
-      return matching[matching.length - 1] ?? null;
+      return newestVersion(matching) ?? null;
     }
   } catch { /* 网络失败时导出不带加载器组件的包，仍可导入 */ }
   return null;

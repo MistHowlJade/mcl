@@ -95,6 +95,12 @@ export default function Crash() {
             <div className="mono" style={{ marginTop: 8, background: '#0b0e14', borderRadius: 8, padding: 10, maxHeight: 180, overflow: 'auto', whiteSpace: 'pre-wrap' }}>{diagnosis.excerpt}</div>
             <div className="faint mt">来源：{diagnosis.sourceFile}</div>
           </details>
+          {diagnosis.sourceFile === '(粘贴的文本)' && (
+            <div className="faint mt">
+              这段日志来自粘贴文本；下面的「修复」会作用于当前所选实例
+              {instanceId ? `「${instances.find(i => i.id === instanceId)?.name ?? instanceId}」` : '（尚未选择实例）'}。
+            </div>
+          )}
           {diagnosis.fixes.length > 0 && (
             <div className="mt">
               <div className="faint" style={{ marginBottom: 2 }}>一键修复：</div>

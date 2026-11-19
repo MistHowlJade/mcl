@@ -62,6 +62,10 @@ function isServerConfig(value: unknown): value is ServerConfig {
     && typeof cfg.createdAt === 'number';
 }
 
+/** 加载器版本只允许普通版本号字符：不能以 - 开头，避免被拼进 URL/安装器参数 */
+const isLoaderVersion = (v: unknown): v is string => typeof v === 'string'
+  && /^[0-9A-Za-z][0-9A-Za-z._+\-]{0,63}$/.test(v);
+
 function walkBytes(dir: string): number {
   let total = 0;
   const walk = (d: string) => {
@@ -122,7 +126,7 @@ function readConfig(id: string): ServerConfig {
   return {
     ...cfg,
     memoryMB,
-    loaderVersion: typeof cfg.loaderVersion === 'string' && cfg.loaderVersion.trim() ? cfg.loaderVersion : null,
+    loaderVersion: typeof cfg.loaderVersion === 'string' && isLoaderVersion(cfg.loaderVersion.trim()) ? cfg.loaderVersion.trim() : null,
     javaPath: typeof cfg.javaPath === 'string' ? cfg.javaPath : null,
     jvmArgsExtra: typeof cfg.jvmArgsExtra === 'string' ? cfg.jvmArgsExtra : '',
     prepared: cfg.prepared === true,
@@ -135,8 +139,11 @@ function toInfo(cfg: ServerConfig): ServerInfo {
   const logFile = path.join(paths.serverDir(cfg.id), 'logs', 'latest.log');
   const logTail = rt.logTail.length > 0 ? rt.logTail.slice(-200) : tailFile(logFile);
   const memoryMB = Number.isFinite(cfg.memoryMB) ? Math.max(512, Math.min(32768, Math.round(cfg.memoryMB))) : 2048;
+  // loaderVersion 可能被手工改坏：非法值不进 UI，也不进下载 URL/安装器参数
+  const loaderVersion = typeof cfg.loaderVersion === 'string' && isLoaderVersion(cfg.loaderVersion.trim()) ? cfg.loaderVersion.trim() : null;
   return {
     ...cfg,
+    loaderVersion,
     memoryMB,
     dir: paths.serverDir(cfg.id),
     status: rt.status,
@@ -173,12 +180,16 @@ export function createServer(input: {
   const memoryMB = Number.isFinite(input.memoryMB) ? Math.max(512, Math.min(32768, Math.round(input.memoryMB!))) : 2048;
   const id = newId();
   const name = typeof input.name === 'string' ? input.name.trim().slice(0, 80) : '';
+  const loaderVersion = typeof input.loaderVersion === 'string' ? input.loaderVersion.trim() : '';
+  if (loaderVersion && !isLoaderVersion(loaderVersion)) {
+    throw new Error('加载器版本号格式不正确（只能包含字母、数字、点、下划线、加号和短横线）');
+  }
   const cfg: ServerConfig = {
     id,
     name: name || `${input.mcVersion} 服务器`,
     mcVersion: input.mcVersion,
     loader: input.loader,
-    loaderVersion: typeof input.loaderVersion === 'string' && input.loaderVersion.trim() ? input.loaderVersion.trim() : null,
+    loaderVersion: loaderVersion || null,
     port,
     memoryMB,
     javaPath: typeof input.javaPath === 'string' && input.javaPath.trim() ? input.javaPath.trim() : null,
@@ -212,7 +223,13 @@ export function updateServer(id: string, patch: Partial<ServerConfig>): ServerCo
   }
   if (isMcVersion(p.mcVersion)) next.mcVersion = p.mcVersion;
   if (isServerLoader(p.loader)) next.loader = p.loader;
-  if ('loaderVersion' in p) next.loaderVersion = typeof p.loaderVersion === 'string' && p.loaderVersion.trim() ? p.loaderVersion.trim() : null;
+  if ('loaderVersion' in p) {
+    const raw = typeof p.loaderVersion === 'string' ? p.loaderVersion.trim() : '';
+    if (raw && !isLoaderVersion(raw)) {
+      throw new Error('加载器版本号格式不正确（只能包含字母、数字、点、下划线、加号和短横线）');
+    }
+    next.loaderVersion = raw || null;
+  }
   if ('javaPath' in p) next.javaPath = typeof p.javaPath === 'string' && p.javaPath.trim() ? p.javaPath.trim() : null;
   if (typeof p.jvmArgsExtra === 'string') next.jvmArgsExtra = p.jvmArgsExtra;
   if (typeof p.eulaAccepted === 'boolean') next.eulaAccepted = p.eulaAccepted;
@@ -477,7 +494,7 @@ export async function prepareServer(id: string): Promise<ServerInfo> {
       const lv = cfg.loaderVersion || await latestQuiltLoader(cfg.mcVersion);
       if (!cfg.loaderVersion) updateServer(id, { loaderVersion: lv });
       const versions = await mavenVersions('https://maven.quiltmc.org/repository/release/org/quiltmc/quilt-installer/maven-metadata.xml');
-      const installerVersion = versions[versions.length - 1];
+      const installerVersion = versionService.newestVersion(versions);
       if (!installerVersion) throw new Error('无法确定 Quilt 安装器版本');
       const installerUrl = `https://maven.quiltmc.org/repository/release/org/quiltmc/quilt-installer/${installerVersion}/quilt-installer-${installerVersion}.jar`;
       const installerPath = path.join(dir, '.quilt-installer.jar');
@@ -500,7 +517,7 @@ export async function prepareServer(id: string): Promise<ServerInfo> {
           const versions = await mavenVersions('https://maven.minecraftforge.net/net/minecraftforge/forge/maven-metadata.xml');
           const matching = versions.filter(v => v.startsWith(`${cfg.mcVersion}-`));
           if (!matching.length) throw new Error(`找不到适用于 ${cfg.mcVersion} 的 Forge 版本，请手动指定加载器版本。`);
-          forgeId = matching[matching.length - 1];
+          forgeId = versionService.newestVersion(matching)!;
         }
         const fullId = forgeId.includes('-') ? forgeId : `${cfg.mcVersion}-${forgeId}`;
         installerUrl = `https://maven.minecraftforge.net/net/minecraftforge/forge/${fullId}/forge-${fullId}-installer.jar`;
@@ -516,7 +533,7 @@ export async function prepareServer(id: string): Promise<ServerInfo> {
           const prefix = neoForgeLegacy ? `${cfg.mcVersion}-47.` : neoForgePrefix(cfg.mcVersion);
           const matching = versions.filter(v => v.startsWith(prefix));
           if (!matching.length) throw new Error(`找不到适用于 ${cfg.mcVersion} 的 NeoForge 版本，请手动指定加载器版本。`);
-          forgeId = matching[matching.length - 1];
+          forgeId = versionService.newestVersion(matching)!;
         }
         if (neoForgeLegacy) {
           forgeId = forgeId.startsWith(`${cfg.mcVersion}-`) ? forgeId : `${cfg.mcVersion}-${forgeId}`;

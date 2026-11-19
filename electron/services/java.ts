@@ -261,12 +261,18 @@ export async function installJava(major: number, onProgress?: (stage: 'fetch' | 
     } else {
       zipExtractAll(fs.readFileSync(tmp), stagingDir);
     }
-    // Temurin 包内层为 jdk-xx/ 或 jre-xx/ 目录
+    // Temurin 包内层为 jdk-xx/ 或 jre-xx/ 目录；macOS 的可执行文件在 Contents/Home/bin 下
     const inner = fs.readdirSync(stagingDir).find(d => fs.statSync(path.join(stagingDir, d)).isDirectory());
-    innerRel = inner ? path.join(inner, 'bin', javaExeName()) : path.join('bin', javaExeName());
-    if (!fs.existsSync(path.join(stagingDir, innerRel))) {
+    const roots = inner ? [inner, ''] : [''];
+    const candidates = roots.flatMap(root => [
+      path.join(root, 'Contents', 'Home', 'bin', javaExeName()),
+      path.join(root, 'bin', javaExeName()),
+    ]);
+    const found = candidates.find(rel => fs.existsSync(path.join(stagingDir, rel)));
+    if (!found) {
       throw new Error(`Java 安装包结构异常：找不到 bin/${javaExeName()}`);
     }
+    innerRel = found;
     const backupDir = `${destDir}.old-${Date.now()}`;
     const hadOld = fs.existsSync(destDir);
     if (hadOld) fs.renameSync(destDir, backupDir);
