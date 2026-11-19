@@ -26,6 +26,14 @@ export interface ImportResult {
 
 interface PackEntry { name: string }
 
+/** CurseForge 文件信息：只声明用到的字段，algo 1 = SHA-1 */
+interface CurseForgeFileInfo {
+  downloadUrl: string | null;
+  fileName: string;
+  fileLength?: number;
+  hashes?: Array<{ value?: string; algo?: number }>;
+}
+
 /** 在 zip 中查找打包格式的入口文件（允许嵌套 ≤4 层目录），返回剥离前缀 */
 function findPackRoot(entries: PackEntry[]): { format: ModpackFormat; prefix: string } | null {
   const candidates: Array<{ file: string; format: ModpackFormat }> = [
@@ -176,19 +184,28 @@ export async function importModpack(zipPath: string, targetName?: string, onLog?
       let ok = 0;
       for (const f of files) {
         try {
-          const info = await fetchJson<{ data: { downloadUrl: string | null; fileName: string } }>(`https://api.curseforge.com/v1/mods/${f.projectID}/files/${f.fileID}`, { timeoutMs: 20000, headers: { 'x-api-key': apiKey, 'User-Agent': USER_AGENT } });
-          const url = info?.data?.downloadUrl;
-          if (!url) { manual.push({ name: `CF project ${f.projectID}`, url: `https://www.curseforge.com/projects/${f.projectID}/files/${f.fileID}` }); continue; }
-          const safeName = sanitizeRemoteName(info.data.fileName);
+          const info = await fetchJson<{ data: CurseForgeFileInfo }>(`https://api.curseforge.com/v1/mods/${f.projectID}/files/${f.fileID}`, { timeoutMs: 20000, headers: { 'x-api-key': apiKey, 'User-Agent': USER_AGENT } });
+          const file = info?.data;
+          const url = file?.downloadUrl;
+          if (!file || !url) { manual.push({ name: `CF project ${f.projectID}`, url: `https://www.curseforge.com/projects/${f.projectID}/files/${f.fileID}` }); continue; }
+          const safeName = sanitizeRemoteName(file.fileName || `cf-${f.projectID}-${f.fileID}.jar`);
+          // API 返回的 SHA-1 / 文件大小是唯一能证明下载完整性的依据：
+          // 被墙或被劫持时服务器可能返回 200 的 HTML 错误页，不能把这种文件当模组装进 mods
+          const sha1 = (Array.isArray(file.hashes) ? file.hashes : [])
+            .find(h => h?.algo === 1 && /^[a-f0-9]{40}$/i.test(String(h?.value ?? '')))?.value;
+          const size = typeof file.fileLength === 'number' && Number.isInteger(file.fileLength) && file.fileLength > 0
+            ? file.fileLength
+            : undefined;
           const dl = new DownloadManager({ source: 'official', maxThreads: 2, retries: 2 });
-          const reports = await dl.run([{ id: `cf:${f.fileID}`, url, dest: path.join(game, 'mods', safeName), name: safeName }]);
-          if (reports[0]?.ok) ok++; else manual.push({ name: info.data.fileName, url });
+          const reports = await dl.run([{ id: `cf:${f.fileID}`, url, dest: path.join(game, 'mods', safeName), name: safeName, sha1, size }]);
+          if (reports[0]?.ok) ok++; else manual.push({ name: file.fileName || safeName, url });
         } catch {
           manual.push({ name: `CF project ${f.projectID}`, url: `https://www.curseforge.com/projects/${f.projectID}/files/${f.fileID}` });
         }
       }
+      for (const m of manual) skippedFiles.push(m.name);
       warnings.push(...manual.map(x => `需手动下载：${x.name} → ${x.url}`));
-      return { instanceId: instance.id, format, importedMods: ok, skippedFiles: skippedFiles, warnings, manualDownloads: manual.length ? manual : undefined };
+      return { instanceId: instance.id, format, importedMods: ok, skippedFiles, warnings, manualDownloads: manual.length ? manual : undefined };
     }
     // 无密钥：给出逐项链接（痛点 #36：绝不静默失败）
     warnings.push('未配置 CurseForge API 密钥：已创建实例并复制 overrides，但模组需要手动下载。可在设置 → CurseForge API 中填写密钥后重新导入，或点下面的链接逐个下载放入 mods 目录。');

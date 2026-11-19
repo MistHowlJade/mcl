@@ -11,6 +11,7 @@ import { BackupInfo } from '../shared/types';
 import { zipExtractAll, zipList } from './zip';
 import { getSettings } from './settings';
 import { getInstance } from './instances';
+import { writeJson } from './store';
 
 const BACKUP_SUBSET = ['saves', 'options.txt', 'servers.dat', 'keybinds.txt'];
 
@@ -109,7 +110,16 @@ export async function createBackup(instanceId: string, kind: BackupInfo['kind'],
   const dir = paths.instanceBackupsDir(instanceId);
   fs.mkdirSync(dir, { recursive: true });
   const filePath = path.join(dir, `${id}.zip`);
-  fs.writeFileSync(filePath, zipWrite(files));
+  // 先写 .part 再改名：备份动辄数百 MB，进程中途被杀时不能留下一个能被列表读到、
+  // 实际却已截断的 .zip（恢复时才发现损坏就晚了）
+  const partPath = `${filePath}.part`;
+  try {
+    fs.writeFileSync(partPath, zipWrite(files));
+    fs.renameSync(partPath, filePath);
+  } catch (e) {
+    try { fs.rmSync(partPath, { force: true }); } catch { /* ignore */ }
+    throw e;
+  }
   const info: BackupInfo = {
     id,
     instanceId,
@@ -120,7 +130,7 @@ export async function createBackup(instanceId: string, kind: BackupInfo['kind'],
     kind,
     worldNames,
   };
-  fs.writeFileSync(filePath.replace(/\.zip$/, '.json'), JSON.stringify({ name: info.name, createdAt: ts, worldNames, kind }, null, 2), 'utf8');
+  writeJson(filePath.replace(/\.zip$/, '.json'), { name: info.name, createdAt: ts, worldNames, kind });
   pruneOldBackups(instanceId);
   return info;
 }

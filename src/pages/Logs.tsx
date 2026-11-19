@@ -26,6 +26,11 @@ export default function Logs() {
     /* eslint-disable-next-line */
   }, []);
 
+  // 与首页/内容页共用同一个实例选择：切到别的页面后不应跳回旧实例
+  useEffect(() => {
+    if (instanceId) localStorage.setItem('mcl:selectedInstance', instanceId);
+  }, [instanceId]);
+
   useEffect(() => {
     const seq = ++listSeq.current;
     api.logsList(instanceId ?? undefined).then(list => {

@@ -24,6 +24,11 @@ export default function Backups() {
     /* eslint-disable-next-line */
   }, []);
 
+  // 与首页/内容页共用同一个实例选择：切到别的页面后不应跳回旧实例
+  useEffect(() => {
+    if (instanceId) localStorage.setItem('mcl:selectedInstance', instanceId);
+  }, [instanceId]);
+
   const reload = async () => {
     // 用 ref 读取“当前”实例：恢复/删除的旧闭包在切换实例后才返回时，
     // 不能再用它创建时的 instanceId 把旧实例的备份列表盖到新实例上

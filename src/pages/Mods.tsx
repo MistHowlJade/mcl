@@ -29,6 +29,10 @@ export default function Mods() {
     void reloadInstances();
     /* eslint-disable-next-line */
   }, []);
+  // 与首页/内容页共用同一个实例选择：切到别的页面后不应跳回旧实例
+  useEffect(() => {
+    if (instanceId) localStorage.setItem('mcl:selectedInstance', instanceId);
+  }, [instanceId]);
   const instance = useMemo(() => instances.find(i => i.id === instanceId) ?? null, [instances, instanceId]);
 
   if (instances.length === 0) {

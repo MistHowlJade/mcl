@@ -22,6 +22,11 @@ export default function Crash() {
     /* eslint-disable-next-line */
   }, []);
 
+  // 与首页/内容页共用同一个实例选择：切到别的页面后不应跳回旧实例
+  useEffect(() => {
+    if (instanceId) localStorage.setItem('mcl:selectedInstance', instanceId);
+  }, [instanceId]);
+
   const analyzeLatest = async () => {
     if (!instanceId) { setDiagnosis(null); return; }
     const seq = ++analyzeSeq.current;
