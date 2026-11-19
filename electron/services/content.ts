@@ -9,7 +9,20 @@ import * as path from 'path';
 import * as paths from './paths';
 import { getInstance } from './instances';
 import { zipFromDir, zipList, zipExtractAll } from './zip';
+import { writeJson } from './store';
 import { ContentItem, ContentKind, ContentList } from '../shared/types';
+
+/** 世界备份动辄数百 MB：先写 .part 再改名，进程中断时不会留下能被恢复列表读到的截断 ZIP */
+function writeZipAtomic(filePath: string, data: Buffer): void {
+  const partPath = `${filePath}.part`;
+  try {
+    fs.writeFileSync(partPath, data);
+    fs.renameSync(partPath, filePath);
+  } catch (e) {
+    try { fs.rmSync(partPath, { force: true }); } catch { /* ignore */ }
+    throw e;
+  }
+}
 
 function walkBytes(dir: string): number {
   let total = 0;
@@ -347,8 +360,8 @@ export function deleteContent(instanceId: string, kind: ContentKind, fileName: s
     fs.mkdirSync(dir, { recursive: true });
     const ts = Date.now();
     backupPath = path.join(dir, `world-${ts}.zip`);
-    fs.writeFileSync(backupPath, zipFromDir(target));
-    fs.writeFileSync(backupPath.replace(/\.zip$/, '.json'), JSON.stringify({ name: `删除世界前自动备份：${path.basename(fileName)}`, createdAt: ts, worldNames: [path.basename(fileName)], kind: 'world' }, null, 2), 'utf8');
+    writeZipAtomic(backupPath, zipFromDir(target));
+    writeJson(backupPath.replace(/\.zip$/, '.json'), { name: `删除世界前自动备份：${path.basename(fileName)}`, createdAt: ts, worldNames: [path.basename(fileName)], kind: 'world' });
   }
   fs.rmSync(target, { recursive: true, force: true });
   return { deleted: true, backupPath };
@@ -363,7 +376,7 @@ export function backupWorld(instanceId: string, worldName: string, displayName?:
   fs.mkdirSync(dir, { recursive: true });
   const ts = Date.now();
   const filePath = path.join(dir, `world-${ts}.zip`);
-  fs.writeFileSync(filePath, zipFromDir(worldDir));
-  fs.writeFileSync(filePath.replace(/\.zip$/, '.json'), JSON.stringify({ name: displayName ?? `世界备份：${path.basename(worldName)}`, createdAt: ts, worldNames: [path.basename(worldName)], kind: 'world' }, null, 2), 'utf8');
+  writeZipAtomic(filePath, zipFromDir(worldDir));
+  writeJson(filePath.replace(/\.zip$/, '.json'), { name: displayName ?? `世界备份：${path.basename(worldName)}`, createdAt: ts, worldNames: [path.basename(worldName)], kind: 'world' });
   return filePath;
 }

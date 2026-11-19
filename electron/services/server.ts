@@ -832,7 +832,15 @@ export function backupServerWorld(id: string, name?: string): ServerBackupInfo {
   const requested = (typeof name === 'string' ? name.trim() : '') || `world-${stamp}`;
   const base = requested.replace(/[^\w\u4e00-\u9fa5-]/g, '_').slice(0, 80) || `world-${stamp}`;
   const filePath = path.join(dir, `${base}.zip`);
-  fs.writeFileSync(filePath, zipFromDir(worldDir));
+  // 先写 .part 再改名：打包中途进程退出时，列表里不会出现可恢复、实际已截断的备份
+  const partPath = `${filePath}.part`;
+  try {
+    fs.writeFileSync(partPath, zipFromDir(worldDir));
+    fs.renameSync(partPath, filePath);
+  } catch (e) {
+    try { fs.rmSync(partPath, { force: true }); } catch { /* ignore */ }
+    throw e;
+  }
   return { name: base, filePath, sizeBytes: fs.statSync(filePath).size, createdAt: Date.now() };
 }
 

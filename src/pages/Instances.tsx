@@ -389,7 +389,9 @@ function CreateInstanceModal({ onClose, onCreated }: { onClose: () => void; onCr
           <select className="input" size={7} value={mcVersion} onChange={e => setMcVersion(e.target.value)}>
             {filtered.map(v => <option key={v.id} value={v.id}>{v.id}{v.type !== 'release' ? `（${v.type}）` : ''}</option>)}
           </select>
-          <div className="faint">将下载 {filtered.length > 0 ? `${versions.length} 个版本中的清单` : ''} · {mcVersion || '未选择'} · 需要 Java {recommendedJava ?? '…'}（MCL 会自动下载）</div>
+          <div className="faint">
+            版本清单共 {versions.length} 个，当前显示 {filtered.length} 个 · 已选 {mcVersion || '未选择'} · 需要 Java {recommendedJava ?? '…'}（MCL 会自动下载）
+          </div>
         </div>
       </div>
 
