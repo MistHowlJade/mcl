@@ -187,6 +187,7 @@ export function registerIpcHandlers(): void {
     return { started: true };
   });
   ipcMain.handle('launch:state', () => ({ ...minecraft.launchState }));
+  ipcMain.handle('launch:cancelDownload', () => minecraft.cancelLaunchDownload());
   ipcMain.handle('launch:killResidual', async () => ({ killed: await minecraft.killResidualProcesses() }));
 
   /* ---------- 账号 ---------- */

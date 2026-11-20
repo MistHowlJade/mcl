@@ -128,6 +128,14 @@ export default function Home({ onNavigate, onLaunchFail }: { onNavigate: (p: Pag
           <button className="launch-btn" onClick={doLaunch} disabled={busy || !selected}>
             {busy ? (launchState.status === 'running' ? '游戏运行中' : '准备中…') : '启 动'}
           </button>
+          {busy && launchState.status === 'downloading' && (
+            <button
+              className="btn"
+              onClick={() => api.launchCancelDownload()
+                .then(ok => toast.toast(ok ? '已发送取消下载请求' : '当前没有可取消的下载', ok ? 'info' : 'error'))
+                .catch(e => toast.toast(String(e), 'error'))}
+            >取消下载</button>
+          )}
           {busy && launchState.message && <div className="muted" style={{ maxWidth: 300 }}>{launchState.message}</div>}
         </div>
         {progress && (

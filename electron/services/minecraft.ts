@@ -39,6 +39,16 @@ export const launchState = {
   progress: null as { done: number; total: number } | null,
 };
 
+/** 当前启动流程里的下载器：供「取消启动下载」使用，结束即释放 */
+let activeLaunchDownload: DownloadManager | null = null;
+
+/** 取消正在进行的启动下载；只在 downloading 阶段有效 */
+export function cancelLaunchDownload(): boolean {
+  if (!activeLaunchDownload || launchState.status !== 'downloading') return false;
+  activeLaunchDownload.cancel();
+  return true;
+}
+
 const MEMORY_PRESETS: Record<MemoryPreset, { initial: string; max: string; gc: string[]; label: string }> = {
   low: { initial: '1G', max: '2G', gc: [], label: '低配机器' },
   standard: { initial: '2G', max: '4G', gc: [], label: '标准（大部分整合包）' },
@@ -531,7 +541,16 @@ export async function launchInstance(instanceId: string, options: LaunchOptions 
     launchEvents.emit('progress', launchState.progress);
   };
   dl.on('progress', onProgress);
-  const reports = await dl.run(plan.tasks);
+  let downloadCanceled = false;
+  dl.on('canceled', () => { downloadCanceled = true; emitStatus('preparing', '正在取消下载…'); });
+  activeLaunchDownload = dl;
+  let reports;
+  try {
+    reports = await dl.run(plan.tasks);
+  } finally {
+    activeLaunchDownload = null;
+  }
+  if (downloadCanceled) throw new Error('已取消启动下载。可稍后重新启动实例。');
   const failed = reports.filter(r => !r.ok);
   if (failed.length > 0) {
     const preview = failed.slice(0, 3).map(f => `${f.name}：${f.error}`).join('\n');

@@ -78,6 +78,7 @@ export const api = {
 
   launchStart: (instanceId: string, accountId?: string | null) => invoke<{ started: boolean }>('launch:start', instanceId, accountId),
   launchState: () => invoke<LaunchState>('launch:state'),
+  launchCancelDownload: () => invoke<boolean>('launch:cancelDownload'),
   launchKillResidual: () => invoke<{ killed: number[] }>('launch:killResidual'),
 
   accountsList: () => invoke<Account[]>('accounts:list'),
