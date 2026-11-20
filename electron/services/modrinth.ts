@@ -296,10 +296,14 @@ export async function updateMod(instanceId: string, fileName: string): Promise<I
   const baseName = path.basename(String(fileName ?? '')).replace(/\.disabled$/i, '');
   const mod = all.find(m => m.fileName === baseName);
   if (!mod?.projectId || !mod.updateAvailable) throw new Error('没有可用的更新');
-  const versions = await getProjectVersions(mod.projectId, {});
+  // 按实例版本/加载器过滤，避免 installed-mods.json 被手工改坏时把不兼容的 jar 装进来
+  const versions = await getProjectVersions(mod.projectId, {
+    loader: instance && instance.loader !== 'vanilla' ? instance.loader : undefined,
+    gameVersion: instance?.mcVersion,
+  });
   // 必须精确命中检查更新时选中的版本：拿不到就报错，不能退回到可能不兼容的最新版
   const target = versions.find(v => v.id === mod.updateAvailable!.versionId);
-  if (!target) throw new Error('更新版本已不可用，请重新检查更新后再试');
+  if (!target) throw new Error(`没有找到与当前实例（${instance?.mcVersion ?? '未知版本'}/${instance?.loader ?? '未知加载器'}）兼容的更新版本，请重新检查更新或手动确认`);
   const file = target.files.find(f => f.primary) ?? target.files[0];
   if (!file) throw new Error('更新文件不存在');
   const modsDir = path.join(paths.gameDir(instanceId), 'mods');
@@ -309,11 +313,16 @@ export async function updateMod(instanceId: string, fileName: string): Promise<I
   const dl = new DownloadManager({ source: 'official', maxThreads: 2, retries: 3 });
   const reports = await dl.run([{ id: `modrinth:${safeName}`, url: file.url, sha1: file.hashes?.sha1, size: file.size, dest, name: safeName }]);
   if (!reports[0]?.ok) throw new Error(`更新下载失败：${reports[0]?.error}`);
-  // 旧文件可能仍处于禁用状态（.disabled），一并清理
+  const updatedSize = fs.existsSync(dest) ? fs.statSync(dest).size : 0;
+  if (updatedSize === 0) throw new Error('更新文件为空或不存在，已保留旧模组');
+  // 旧文件保留为 .jar.bak：更新后不兼容还能手动换回去，而不是直接 rm 掉没有退路
   for (const candidate of [old, `${old}.disabled`]) {
-    if (candidate !== dest && fs.existsSync(candidate)) fs.rmSync(candidate, { force: true });
+    if (candidate !== dest && fs.existsSync(candidate)) {
+      try { fs.renameSync(candidate, `${candidate}.bak`); }
+      catch { /* 备份失败时让新文件先就位，不阻断更新 */ }
+    }
   }
-  const updated: InstalledMod = { ...mod, fileName: safeName, versionId: target.id, versionNumber: target.version_number, installedAt: Date.now(), updateAvailable: null, sizeBytes: fs.statSync(dest).size };
+  const updated: InstalledMod = { ...mod, fileName: safeName, versionId: target.id, versionNumber: target.version_number, installedAt: Date.now(), updateAvailable: null, sizeBytes: updatedSize };
   writeInstalledMods(instanceId, all.map(m => m.fileName === baseName ? updated : m));
   return updated;
 }

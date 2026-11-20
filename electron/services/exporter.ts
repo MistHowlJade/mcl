@@ -8,6 +8,7 @@
  */
 import * as fs from 'fs';
 import * as path from 'path';
+import * as crypto from 'crypto';
 import * as paths from './paths';
 import { getInstance } from './instances';
 import { zipWrite, ZipEntryInput } from './zip';
@@ -174,17 +175,46 @@ export async function exportInstance(instanceId: string, format: ExportFormat, d
       const key = instance.loader === 'fabric' ? 'fabric-loader' : instance.loader === 'quilt' ? 'quilt-loader' : instance.loader;
       dependencies[key] = loaderVersion;
     }
+    // Modrinth 规范：mods 应写进 files[]（带下载地址与 hash）供其他启动器管理；
+    // 只有在 Modrinth 上查不到来源的 jar 才退回 overrides/，否则清单恒为空。
+    const modFiles: Array<Record<string, unknown>> = [];
+    const overrideFiles: WalkEntry[] = [];
+    let untrackedMods = 0;
+    for (const e of collectGameFiles(instance.gameDir)) {
+      if (e.rel.startsWith('mods/') && /\.jar$/i.test(e.rel)) {
+        const sha1 = crypto.createHash('sha1').update(e.data).digest('hex');
+        try {
+          const versions = await fetchJson<Array<{ files?: Array<{ url?: string; hashes?: Record<string, string>; size?: number }> }>>(
+            `https://api.modrinth.com/v2/version_file/${sha1}?algorithm=sha1`, { timeoutMs: 10000 });
+          const f = (Array.isArray(versions) ? versions : [])
+            .flatMap(v => Array.isArray(v?.files) ? v.files : [])
+            .find(file => file?.url && (file.hashes?.sha1 ?? '').toLowerCase() === sha1);
+          if (f?.url) {
+            modFiles.push({
+              path: e.rel,
+              hashes: { sha1: f.hashes?.sha1 ?? sha1, ...(f.hashes?.sha512 ? { sha512: f.hashes.sha512 } : {}) },
+              downloads: [f.url],
+              fileSize: f.size ?? e.data.length,
+            });
+            continue;
+          }
+        } catch { /* 查询失败当作查不到来源 */ }
+        untrackedMods++;
+      }
+      overrideFiles.push(e);
+    }
+    if (untrackedMods > 0) warnings.push(`${untrackedMods} 个模组在 Modrinth 上未找到来源，已放入 overrides/，其它启动器不会将其列为可管理模组。`);
     const index = {
       formatVersion: 1,
       game: 'minecraft',
       versionId: `mcl-export-${Date.now()}`,
       name: instance.name,
       summary: `由 MCL 导出的 ${instance.mcVersion} ${instance.loader} 整合包`,
-      files: [],
+      files: modFiles,
       dependencies,
     };
     entries.push({ name: 'modrinth.index.json', data: Buffer.from(JSON.stringify(index, null, 2), 'utf8') });
-    for (const e of collectGameFiles(instance.gameDir)) {
+    for (const e of overrideFiles) {
       entries.push({ name: `overrides/${e.rel}`, data: e.data, mtime: e.mtime });
     }
   } else {

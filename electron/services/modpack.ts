@@ -13,7 +13,7 @@ import { DownloadManager } from './downloader';
 import { getSettings } from './settings';
 import { LoaderType, MemoryPreset } from '../shared/types';
 
-export type ModpackFormat = 'modrinth' | 'curseforge' | 'mmc' | 'unknown';
+export type ModpackFormat = 'modrinth' | 'curseforge' | 'mmc' | 'mcl' | 'unknown';
 export interface ImportResult {
   instanceId: string | null;
   format: ModpackFormat;
@@ -40,6 +40,7 @@ function findPackRoot(entries: PackEntry[]): { format: ModpackFormat; prefix: st
     { file: 'modrinth.index.json', format: 'modrinth' },
     { file: 'manifest.json', format: 'curseforge' },
     { file: 'mmc-pack.json', format: 'mmc' },
+    { file: 'instance.json', format: 'mcl' },
   ];
   for (const { file, format } of candidates) {
     const hit = entries.find(e => {
@@ -237,6 +238,37 @@ export async function importModpack(zipPath: string, targetName?: string, onLog?
       warnings.push('MultiMC 整合包已转换为 MCL 实例，加载器将在首次启动时安装。');
     }
   }
+  if (format === 'mcl') {
+    // MCL 自己的完整实例快照：instance.json + game/...
+    let rawCfg: any = {};
+    try { rawCfg = JSON.parse(readEntry('instance.json')!.toString('utf8')); }
+    catch { throw new Error('实例快照里的 instance.json 不是有效 JSON，文件可能已损坏。'); }
+    const instance = createInstance({
+      name: targetName ?? (typeof rawCfg.name === 'string' ? rawCfg.name : 'MCL 实例快照'),
+      mcVersion: typeof rawCfg.mcVersion === 'string' ? rawCfg.mcVersion : '1.20.1',
+      loader: ['vanilla', 'fabric', 'quilt', 'forge', 'neoforge'].includes(rawCfg.loader) ? rawCfg.loader : 'vanilla',
+      loaderVersion: typeof rawCfg.loaderVersion === 'string' ? rawCfg.loaderVersion : null,
+      memoryPreset: ['low', 'standard', 'heavy'].includes(rawCfg.memoryPreset) ? rawCfg.memoryPreset : 'standard',
+    });
+    const game = paths.gameDir(instance.id);
+    const gamePrefix = `${prefix}game/`;
+    let copied = 0;
+    for (const entry of entries) {
+      const norm = entry.name.replace(/\\/g, '/');
+      if (!norm.startsWith(gamePrefix) || norm.endsWith('/')) continue;
+      const rel = stripPrefix(norm, gamePrefix);
+      if (!rel) continue;
+      const target = safeTarget(game, rel);
+      if (!target) { warnings.push(`已跳过可疑路径：${norm}`); continue; }
+      try {
+        fs.mkdirSync(path.dirname(target), { recursive: true });
+        fs.writeFileSync(target, zipExtractEntry(buf, entry));
+        copied++;
+      } catch (e) { warnings.push(`文件写入失败：${norm}（${e instanceof Error ? e.message : String(e)}）`); }
+    }
+    return { instanceId: instance.id, format, importedMods: copied, skippedFiles, warnings };
+  }
+
   // MultiMC/Prism 各版本导出包可能用 minecraft/ 或 .minecraft/；
   // MCL 自己导出的包用的是 .minecraft/，两种都要认，否则回导会落到 game/.minecraft/ 下读不到
   const normalizedNames = entries.map(e => e.name.replace(/\\/g, '/'));
