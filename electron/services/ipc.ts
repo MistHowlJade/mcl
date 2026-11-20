@@ -331,8 +331,18 @@ export function registerIpcHandlers(): void {
       case 'fix:switchJava': {
         const instance = instances.getInstance(instanceId);
         if (!instance) throw new Error('实例不存在');
-        const major = javaService.recommendedJavaMajor(instance.mcVersion);
-        const pick = await javaService.pickJavaFor(instance.mcVersion, null);
+        // 一键切换必须和启动管线用同一个权威来源：版本 JSON 的 javaVersion.majorVersion
+        let major = javaService.recommendedJavaMajor(instance.mcVersion);
+        try {
+          const settings = getSettings();
+          const manifest = await versionService.getVersionManifest(settings.download.source, settings.download.customMirror);
+          const entry = manifest.versions.find(v => v.id === instance.mcVersion);
+          if (entry) {
+            const resolved = await versionService.resolveVersion(entry, settings.download.source, settings.download.customMirror);
+            if (Number.isInteger(resolved.javaVersion?.majorVersion)) major = resolved.javaVersion.majorVersion;
+          }
+        } catch { /* 离线时退回版本号推导 */ }
+        const pick = await javaService.pickJavaFor(instance.mcVersion, null, major);
         if (pick.java) {
           instances.updateInstance(instanceId, { javaPath: pick.java.path });
           return { ok: true, message: `已绑定 Java ${pick.java.version}（${pick.java.path}）。` };

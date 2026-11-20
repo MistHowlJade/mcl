@@ -5,7 +5,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
 import { fetchJson, fetchWithTimeout, lastHealthCheck, mapToMirror, OFFICIAL } from './net';
-import { assetsIndexDir, assetsObjectsDir, librariesDir, versionsDir } from './paths';
+import { assetsIndexDir, assetsObjectsDir, cacheDir, librariesDir, versionsDir } from './paths';
 import { VersionManifestEntry, DownloadSource } from '../shared/types';
 import { readJson, writeJson } from './store';
 
@@ -45,7 +45,8 @@ export interface Rule {
   features?: Record<string, boolean>;
 }
 
-const manifestCacheFile = () => path.join(versionsDir(), '..', 'cache', 'version_manifest.json');
+// 与 net.ts 的测速缓存统一放在 dataRoot/cache，不要再用 versionsDir/../cache 拼出不存在的目录
+const manifestCacheFile = () => path.join(cacheDir(), 'version_manifest.json');
 
 export interface VersionManifest {
   latest: { release: string; snapshot: string };

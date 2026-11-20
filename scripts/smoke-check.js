@@ -127,6 +127,15 @@ check('Java 8u291 排序新于 8u202', () => {
   assert.ok(java.compareVersionDesc('1.8.0_291', '1.8.0_202') < 0);
   assert.ok(java.compareVersionDesc('1.8.0_202', '1.8.0_291') > 0);
 });
+check('26.x 与快照版本推荐 Java 25/21', () => {
+  assert.strictEqual(java.recommendedJavaMajor('26.3'), 25);
+  assert.strictEqual(java.recommendedJavaMajor('26.4-snapshot-8'), 25);
+  assert.strictEqual(java.recommendedJavaMajor('24w14a'), 21);
+  assert.strictEqual(java.recommendedJavaMajor('1.20.1'), 17);
+});
+check('中文「退出码 137」能命中强杀诊断', () => {
+  assert.strictEqual(crash.analyzeLogText('[mcl] 游戏进程退出，退出码 137').ruleId, 'killed-exit-137');
+});
 check('ZIP 指定前缀只解压该子树', () => {
   const buf = zip.zipWrite([
     { name: 'world/level.dat', data: Buffer.from('x') },

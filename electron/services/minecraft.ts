@@ -475,9 +475,17 @@ export async function launchInstance(instanceId: string, options: LaunchOptions 
   const entry = manifest.versions.find(v => v.id === instance.mcVersion);
   if (!entry) throw new Error(`版本清单中找不到 ${instance.mcVersion}`);
 
+  // 先解析版本 JSON：javaVersion.majorVersion 才是权威值（26.x 需要 Java 25，
+  // 仅靠版本号推导会选错 Java，导致启动即 UnsupportedClassVersionError）
+  emitStatus('preparing', '正在解析版本结构…');
+  let resolved = await versionService.resolveVersion(entry, settings.download.source, settings.download.customMirror);
+  const requiredJavaMajor = Number.isInteger(resolved.javaVersion?.majorVersion)
+    ? resolved.javaVersion.majorVersion
+    : javaService.recommendedJavaMajor(instance.mcVersion);
+
   // 3) Java（痛点 #1/#4/#5/#7）
   let javaPath = instance.javaPath ?? (settings.java.defaultPath || null);
-  let javaInfo = await javaService.pickJavaFor(instance.mcVersion, javaPath);
+  let javaInfo = await javaService.pickJavaFor(instance.mcVersion, javaPath, requiredJavaMajor);
   if (!javaInfo.java) {
     emitStatus('preparing', `未找到 Java ${javaInfo.recommendedMajor}，正在自动下载（约 45 MB）…`);
     const exe = await javaService.installJava(javaInfo.recommendedMajor, (stage, received, total) => {
@@ -486,7 +494,7 @@ export async function launchInstance(instanceId: string, options: LaunchOptions 
       }
     });
     javaPath = exe;
-    javaInfo = await javaService.pickJavaFor(instance.mcVersion, exe);
+    javaInfo = await javaService.pickJavaFor(instance.mcVersion, exe, requiredJavaMajor);
   }
   const java = javaInfo.java;
   if (!java) {
@@ -498,9 +506,7 @@ export async function launchInstance(instanceId: string, options: LaunchOptions 
     emitLog('[mcl] 警告：Java 8 低于 8u291 不支持 TLS 1.3，连接微软验证服务器可能失败。建议更新 Java 8 到 8u291+。');
   }
 
-  // 4) 解析版本 json + 加载器
-  emitStatus('preparing', '正在解析版本结构…');
-  let resolved = await versionService.resolveVersion(entry, settings.download.source, settings.download.customMirror);
+  // 4) 合并加载器 profile
   if (instance.loader !== 'vanilla') {
     if (instance.loader === 'forge' || instance.loader === 'neoforge') {
       const jsonPath = await ensureForgeLikeInstalled(paths.gameDir(instanceId), instance.loader, instance.mcVersion, instance.loaderVersion, java.path, emitLog);

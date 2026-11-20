@@ -150,7 +150,8 @@ const RULES: CrashRule[] = [
   },
   {
     id: 'killed-exit-137',
-    pattern: /(?:exit(?:ed)?\s*(?:code\s*)?[:|=]?\s*\(?\s*137|signal\s*9\b|SIGKILL\b)/i,
+    // MCL 自己写的是中文「退出码 137」；旧正则只认英文写法，导致最常见的硬杀场景落到兜底
+    pattern: /(?:(?:exit(?:ed)?\s*(?:code\s*)?|退出码)\D{0,4}\(?\s*137|signal\s*9\b|SIGKILL\b)/i,
     title: '游戏被系统强制结束',
     summary: 'Minecraft 进程被操作系统强制终止（exit code 137 / SIGKILL）。最常见原因是内存不足被系统 OOM Killer 回收，其次是整机内存吃紧或被手动关闭。',
     detail: 'Linux OOM Killer 在内存耗尽时按策略杀进程；Windows 也会强杀内存超限进程。表现为"日志直接中断、没有任何异常堆栈"。',

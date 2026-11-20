@@ -18,6 +18,12 @@ import { JavaInfo } from '../shared/types';
 export function recommendedJavaMajor(mcVersion: string): number {
   // IPC/配置里的版本号可能是非字符串：不能让它把 .match 抛错带崩检测
   if (typeof mcVersion !== 'string') return 17;
+  // 快照号（如 24w14a）没有点号，旧逻辑直接落回 17，会让 1.20.5+ 快照用错 Java
+  const snap = mcVersion.match(/^(\d+)w/);
+  if (snap) {
+    const year = parseInt(snap[1], 10);
+    return year >= 26 ? 25 : year >= 24 ? 21 : 17;
+  }
   const m = mcVersion.match(/^(\d+)\.(\d+)(?:\.(\d+))?/);
   if (!m) return 17;
   const major = parseInt(m[1], 10);
@@ -29,7 +35,8 @@ export function recommendedJavaMajor(mcVersion: string): number {
     if (minor === 20 && patch <= 4) return 17;
     return 21;
   }
-  return 21;
+  // 2026 年起的新版本号方案（26.x），Mojang 要求 Java 25
+  return major >= 26 ? 25 : 21;
 }
 
 /** 把版本号拆成可比较数组：Java 8 的 1.8.0_291 必须比 1.8.0_202 新 */
@@ -157,8 +164,11 @@ export async function detectSystemJavas(): Promise<JavaInfo[]> {
 }
 
 /** 选出满足推荐主版本的最佳 Java；没有则返回 null（触发自动下载） */
-export async function pickJavaFor(mcVersion: string, overridePath?: string | null): Promise<{ java: JavaInfo | null; recommendedMajor: number }> {
-  const recommendedMajor = recommendedJavaMajor(mcVersion);
+export async function pickJavaFor(mcVersion: string, overridePath?: string | null, requiredMajor?: number | null): Promise<{ java: JavaInfo | null; recommendedMajor: number }> {
+  // 版本 JSON 的 javaVersion.majorVersion 是权威值，优先于按版本号推导的兜底
+  const recommendedMajor = Number.isInteger(requiredMajor) && (requiredMajor as number) > 0
+    ? requiredMajor as number
+    : recommendedJavaMajor(mcVersion);
   if (overridePath && fs.existsSync(overridePath)) {
     const info = await runJavaVersion(overridePath);
     if (info) {
