@@ -3,7 +3,8 @@
  */
 import * as fs from 'fs';
 import * as path from 'path';
-import { fetchJson, lastHealthCheck, mapToMirror, OFFICIAL } from './net';
+import * as crypto from 'crypto';
+import { fetchJson, fetchWithTimeout, lastHealthCheck, mapToMirror, OFFICIAL } from './net';
 import { assetsIndexDir, assetsObjectsDir, librariesDir, versionsDir } from './paths';
 import { VersionManifestEntry, DownloadSource } from '../shared/types';
 import { readJson, writeJson } from './store';
@@ -317,8 +318,13 @@ export function collectLibraries(resolved: Record<string, any>): LibraryDownload
     }
     // natives
     const classifiers = lib.downloads?.classifiers ?? {};
-    const wanted = osNativeKey();
-    const nativeEntry = classifiers[wanted] ?? classifiers[`natives-${process.platform === 'win32' ? 'windows' : 'linux'}`];
+    const osKey = process.platform === 'win32' ? 'windows' : process.platform === 'darwin' ? 'osx' : 'linux';
+    const arch = process.arch === 'ia32' ? '32' : process.arch === 'arm64' ? 'arm64' : '64';
+    // 1.7.10/1.8.9 的 twitch 库用 natives-windows-${arch} 这种占位符，
+    // 不展开会拼出字面量 ${arch} 的 Maven 坐标，下载必然 404 并中断整个版本安装。
+    const expandArch = (key: string) => key.replace(/\$\{arch\}/g, arch);
+    const wanted = expandArch(osNativeKey());
+    const nativeEntry = classifiers[wanted] ?? classifiers[`natives-${osKey}-${arch}`] ?? classifiers[`natives-${osKey}`];
     if (nativeEntry) {
       const rel = assertSafeRelPath((nativeEntry.path as string | undefined) ?? mavenToPath(name), 'natives 文件');
       out.push({
@@ -333,9 +339,9 @@ export function collectLibraries(resolved: Record<string, any>): LibraryDownload
     } else if (lib.natives) {
       // 旧版 json（如 1.7.10）：只有 natives 映射，没有 downloads.classifiers，
       // 需要按 maven classifier 自行拼出 natives jar，否则游戏会缺 lwjgl dll 直接崩。
-      const osKey = process.platform === 'win32' ? 'windows' : process.platform === 'darwin' ? 'osx' : 'linux';
-      const classifier = lib.natives[osKey];
-      if (typeof classifier === 'string' && classifier) {
+      const rawClassifier = lib.natives[osKey];
+      if (typeof rawClassifier === 'string' && rawClassifier) {
+        const classifier = expandArch(rawClassifier);
         const rel = mavenToPath(`${name}:${classifier}`);
         const base = typeof lib.url === 'string' && lib.url
           ? String(lib.url).replace(/\/+$/, '')
@@ -371,7 +377,17 @@ export async function fetchAssetIndex(resolved: Record<string, any>, source: Dow
   let lastError: unknown = null;
   for (const candidate of [url, fallbackUrl]) {
     try {
-      indexJson = await fetchJson(candidate, { timeoutMs: 30000 });
+      const res = await fetchWithTimeout(candidate, { timeoutMs: 30000, headers: { Accept: 'application/json' } });
+      if (res.status >= 400) throw new Error(`HTTP ${res.status}`);
+      let parsed: any;
+      try { parsed = JSON.parse(res.body.toString('utf8')); } catch { throw new Error('资源索引不是合法 JSON'); }
+      // 资源索引是所有资源 hash 的来源：本身声明了 SHA-1 就必须校验。
+      // 镜像若返回陈旧或被篡改的索引，后续每个资源的路径都会基于错误 hash。
+      if (typeof ai.sha1 === 'string' && /^[a-f0-9]{40}$/i.test(ai.sha1)) {
+        const actual = crypto.createHash('sha1').update(res.body).digest('hex');
+        if (actual !== ai.sha1.toLowerCase()) throw new Error('资源索引 SHA-1 校验失败');
+      }
+      indexJson = parsed;
       break;
     } catch (e) {
       lastError = e;

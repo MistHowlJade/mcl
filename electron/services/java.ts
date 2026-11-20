@@ -32,9 +32,16 @@ export function recommendedJavaMajor(mcVersion: string): number {
   return 21;
 }
 
+/** 把版本号拆成可比较数组：Java 8 的 1.8.0_291 必须比 1.8.0_202 新 */
+function versionParts(v: string): number[] {
+  const update = v.trim().match(/^1\.8\.0_(\d+)/);
+  if (update) return [1, 8, 0, parseInt(update[1], 10)];
+  return v.split('.').map(x => parseInt(x, 10) || 0);
+}
+
 export function compareVersionDesc(a: string, b: string): number {
-  const pa = a.split('.').map(x => parseInt(x) || 0);
-  const pb = b.split('.').map(x => parseInt(x) || 0);
+  const pa = versionParts(a);
+  const pb = versionParts(b);
   for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
     const d = (pb[i] ?? 0) - (pa[i] ?? 0);
     if (d !== 0) return d;
@@ -79,8 +86,12 @@ export function java8SupportsTls13(version: string): boolean {
   return parseInt(m[1], 10) >= 291;
 }
 
+// macOS 的 JVM 多一层 Contents/Home（系统 JVM 与 MCL 自管 JRE 都是），
+// 深度限制太小会找不到刚下载好的 Java，导致下一次启动又重新下载一遍。
+const MAX_WALK_DEPTH = process.platform === 'darwin' ? 5 : 3;
+
 async function* walkCandidates(dir: string, depth = 0): AsyncGenerator<string> {
-  if (depth > 3) return;
+  if (depth > MAX_WALK_DEPTH) return;
   let entries: fs.Dirent[] = [];
   try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
   const exe = javaExeName();
