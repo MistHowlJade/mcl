@@ -39,6 +39,23 @@ interface Runtime {
 
 const runtimes = new Map<string, Runtime>();
 
+// server:status 事件在玩家进出/状态变化时频繁触发，每次都遍历整个世界目录会卡住主进程
+const diskBytesCache = new Map<string, { at: number; bytes: number }>();
+const DISK_CACHE_MS = 60_000;
+
+function serverDiskBytes(id: string): number {
+  const hit = diskBytesCache.get(id);
+  const now = Date.now();
+  if (hit && now - hit.at < DISK_CACHE_MS) return hit.bytes;
+  const bytes = walkBytes(paths.serverDir(id));
+  diskBytesCache.set(id, { at: now, bytes });
+  return bytes;
+}
+
+function invalidateDiskBytes(id: string): void {
+  diskBytesCache.delete(id);
+}
+
 const runtimeOf = (id: string): Runtime => {
   let rt = runtimes.get(id);
   if (!rt) {
@@ -151,7 +168,7 @@ function toInfo(cfg: ServerConfig): ServerInfo {
     startedAt: rt.startedAt,
     players: [...rt.players],
     online: rt.status === 'running',
-    diskBytes: walkBytes(paths.serverDir(cfg.id)),
+    diskBytes: serverDiskBytes(cfg.id),
     logTail,
   };
 }
@@ -267,6 +284,7 @@ export async function deleteServer(id: string, backup = true): Promise<{ ok: boo
     }
   }
   runtimes.delete(id);
+  diskBytesCache.delete(id);
   fs.rmSync(dir, { recursive: true, force: true });
   return { ok: true, backupPath };
 }
@@ -592,6 +610,7 @@ export async function prepareServer(id: string): Promise<ServerInfo> {
     }
 
     updateServer(id, { prepared: true, eulaAccepted: cfg.eulaAccepted });
+    invalidateDiskBytes(id);
     emitLog(id, '服务端安装完成。', 'install');
     setStatus(id, 'stopped');
     return getServer(id)!;
@@ -883,6 +902,7 @@ export function backupServerWorld(id: string, name?: string): ServerBackupInfo {
     try { fs.rmSync(partPath, { force: true }); } catch { /* ignore */ }
     throw e;
   }
+  invalidateDiskBytes(id);
   return { name: base, filePath, sizeBytes: fs.statSync(filePath).size, createdAt: Date.now() };
 }
 
@@ -917,6 +937,7 @@ export function restoreServerWorld(id: string, backupName: string): { restoredFi
       throw e;
     }
     try { fs.rmSync(oldDir, { recursive: true, force: true }); } catch { /* 旧世界清理失败不影响已完成的恢复 */ }
+    invalidateDiskBytes(id);
     return { restoredFiles: files.length };
   } finally {
     try { fs.rmSync(tempDir, { recursive: true, force: true }); } catch { /* ignore */ }
@@ -927,6 +948,7 @@ export function deleteServerBackup(id: string, backupName: string): void {
   readConfig(id);
   const zipPath = path.join(paths.serverBackupsDir(id), `${path.basename(backupName)}.zip`);
   fs.rmSync(zipPath, { force: true });
+  invalidateDiskBytes(id);
 }
 
 /* ============================== 日志 ============================== */

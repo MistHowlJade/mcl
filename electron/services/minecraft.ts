@@ -351,10 +351,14 @@ async function ensureForgeLikeInstalled(gameDir: string, loader: 'forge' | 'neof
     fs.rmSync(installerPath, { force: true });
   }
   const installed = fs.existsSync(versionsDirRel) ? fs.readdirSync(versionsDirRel).filter(existingFilter) : [];
-  const hit = loaderVersion ? (installed.find(d => d.includes(loaderVersion)) ?? installed[0]) : installed[0];
-  if (!hit) throw new Error(`${loader} 安装完成但找不到版本目录，请查看安装日志。`);
+  // 只认带完整 JSON 的目录：安装失败留下的空目录不能被当成新版本
+  const usable = installed.filter(d => fs.existsSync(path.join(versionsDirRel, d, `${d}.json`)));
+  const mtimeOf = (d: string) => { try { return fs.statSync(path.join(versionsDirRel, d)).mtimeMs; } catch { return 0; } };
+  const newest = usable.sort((a, b) => mtimeOf(b) - mtimeOf(a));
+  // 指定了加载器版本时必须命中该版本，不能悄悄退回上一次安装的旧版本
+  const hit = loaderVersion ? newest.find(d => d.includes(loaderVersion)) : newest[0];
+  if (!hit) throw new Error(`${loader} 安装完成，但找不到${loaderVersion ? ` ${loaderVersion} 的` : ''}版本目录，请查看安装日志或手动指定加载器版本。`);
   const jsonPath = path.join(versionsDirRel, hit, `${hit}.json`);
-  if (!fs.existsSync(jsonPath)) throw new Error(`${loader} 安装完成但缺少版本 JSON（${hit}.json），请重试或手动运行安装器。`);
   return jsonPath;
 }
 
