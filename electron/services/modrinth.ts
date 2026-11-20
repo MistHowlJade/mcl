@@ -258,8 +258,17 @@ export async function installContent(
 
 /** 检查已安装模组的更新（尊重该实例"禁止 Mod 更新"开关，痛点 #41） */
 export async function checkModUpdates(instanceId: string, mcVersion: string, loader?: string): Promise<InstalledMod[]> {
+  const instance = getInstance(instanceId);
+  if (!instance) throw new Error('实例不存在');
   const all = readInstalledMods(instanceId);
   if (all.length === 0) return [];
+  // 痛点 #41：保护必须在服务层生效，不能只靠 UI 不显示按钮。
+  // 同时清掉之前缓存的「可更新」标记，避免旧标记一直诱导玩家点更新。
+  if (instance.noModUpdate) {
+    for (const mod of all) mod.updateAvailable = null;
+    writeInstalledMods(instanceId, all);
+    return all;
+  }
   for (const mod of all) {
     if (!mod.projectId) continue;
     try {
@@ -280,6 +289,8 @@ export async function checkModUpdates(instanceId: string, mcVersion: string, loa
 }
 
 export async function updateMod(instanceId: string, fileName: string): Promise<InstalledMod> {
+  const instance = getInstance(instanceId);
+  if (instance?.noModUpdate) throw new Error('该实例已开启「禁止 Mod 自动更新」，请先关闭该开关再更新模组。');
   const all = readInstalledMods(instanceId);
   // 禁用状态在磁盘上是 foo.jar.disabled，installed-mods.json 里记录的仍是 foo.jar
   const baseName = path.basename(String(fileName ?? '')).replace(/\.disabled$/i, '');
