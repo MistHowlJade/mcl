@@ -138,14 +138,18 @@ export function findCorruptedLibraries(resolved: Record<string, any>, gameLibsDi
 }
 
 /** 提取 natives 到唯一目录（痛点 #56/#128：lwjgl.dll 被占用） */
-export function extractNatives(resolved: Record<string, any>, targetDir: string): void {
+export function extractNatives(resolved: Record<string, any>, targetDir: string, gameLibsDir?: string): void {
   safeRmDir(targetDir);
   fs.mkdirSync(targetDir, { recursive: true });
   const libs = versionService.collectLibraries(resolved).filter(l => l.isNative);
   for (const lib of libs) {
     const shared = path.join(paths.librariesDir(), ...lib.path.split('/'));
-    if (!fs.existsSync(shared)) continue;
-    const buf = fs.readFileSync(shared);
+    // Forge/NeoForge 的库可能只装在实例的 game/libraries（尚未统一进共享目录），
+    // 只看共享目录会让这类 native 被静默跳过，游戏启动缺 dll 崩溃。
+    const src = fs.existsSync(shared) ? shared
+      : gameLibsDir ? path.join(gameLibsDir, ...lib.path.split('/')) : shared;
+    if (!fs.existsSync(src)) continue;
+    const buf = fs.readFileSync(src);
     let entries;
     try { entries = zipList(buf); } catch { continue; }
     for (const entry of entries) {
@@ -690,7 +694,7 @@ export async function launchInstance(instanceId: string, options: LaunchOptions 
   // 10) 启动！
   // 校验都通过后再解压 natives：前面任何一步失败都不会留下半解压的临时目录
   try {
-    extractNatives(resolved, nativesDir);
+    extractNatives(resolved, nativesDir, gameLibsDir);
   } catch (e) {
     safeRmDir(nativesDir);
     throw e;
