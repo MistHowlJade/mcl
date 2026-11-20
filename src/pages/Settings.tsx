@@ -139,7 +139,7 @@ export default function Settings({ onNavigate }: { onNavigate?: (page: 'cloud') 
         <div className="setting-row">
           <div className="label">界面缩放<Tip text="等价于 Windows 的 DPI 设置，解决高分屏字太小/界面错位。立即生效，下次启动保持。" /></div>
           <div className="control">
-            <select className="input" style={{ width: 130 }} value={settings.general.zoomFactor} onChange={e => { const v = parseFloat(e.target.value); patch({ general: { zoomFactor: v } }); api.windowSetZoom(v); }}>
+            <select className="input" style={{ width: 130 }} value={settings.general.zoomFactor} onChange={e => { const v = parseFloat(e.target.value); patch({ general: { zoomFactor: v } }); void api.windowSetZoom(v).catch(() => undefined); }}>
               {[0.75, 1, 1.25, 1.5, 1.75, 2].map(z => <option key={z} value={z}>{Math.round(z * 100)}%</option>)}
             </select>
           </div>
