@@ -129,7 +129,12 @@ function InstalledTab({ instance }: { instance: InstanceInfo }) {
     if (!issue.fix?.target) return;
     try {
       const ok = await api.modsHealthFix(instance.id, issue.fix.target);
-      toast.toast(ok ? '已隔离（重命名为 .disabled），可随时手动改回' : '修复失败', ok ? 'ok' : 'error');
+      // 失败时保留问题条目：否则界面把问题划掉了，但文件其实还在，用户以为已经修好
+      if (!ok) {
+        toast.toast('修复失败：文件可能已被改动或存在同名 .disabled，请重新体检', 'error');
+        return;
+      }
+      toast.toast('已隔离（重命名为 .disabled），可随时手动改回', 'ok');
       setHealthReport(prev => prev ? { ...prev, issues: prev.issues.filter(i => i !== issue) } : prev);
       void reload();
     } catch (e) { toast.toast(String(e), 'error'); }
