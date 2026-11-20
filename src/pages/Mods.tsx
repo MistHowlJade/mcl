@@ -113,13 +113,18 @@ function InstalledTab({ instance }: { instance: InstanceInfo }) {
   };
 
   const checkUpdates = async () => {
-    if (instance.noModUpdate) { toast.toast('该实例已开启"禁止 Mod 自动更新"，已跳过检查', 'info'); return; }
     const id = instance.id;
     setChecking(true);
     try {
+      // 开关开启时也要走一次服务层：它会清掉之前缓存的「可更新」标记，
+      // 否则界面会一直残留旧提示，诱导玩家去点更新。
       const result = await api.modrinthCheckUpdates(id, instance.mcVersion, instance.loader === 'vanilla' ? undefined : instance.loader);
       if (instanceRef.current !== id) return;
       setMods(result);
+      if (instance.noModUpdate) {
+        toast.toast('该实例已开启「禁止 Mod 自动更新」，已清除更新提示', 'info');
+        return;
+      }
       const n = result.filter(m => m.updateAvailable).length;
       toast.toast(n > 0 ? `有 ${n} 个模组可更新` : '所有模组都是最新版本');
     } catch (e) { toast.toast(String(e), 'error'); } finally { if (instanceRef.current === id) setChecking(false); }
@@ -170,7 +175,7 @@ function InstalledTab({ instance }: { instance: InstanceInfo }) {
         <div className="row" style={{ gap: 8 }}>
           <Tip text="体检会直接解析 mods 目录里 jar 的模组元数据（fabric.mod.json / mods.toml），检测重复、异加载器、零字节损坏文件" />
           <button className="btn small" onClick={checkHealth}>🩺 体检</button>
-          <Tip text="检查 Modrinth 上是否有可更新版本。该实例开启了「禁止自动更新」时不会执行" />
+          <Tip text="检查 Modrinth 上是否有可更新版本。开启了「禁止 Mod 自动更新」的实例不会联网查询，并会清除旧的更新提示" />
           <button className="btn small" onClick={checkUpdates} disabled={checking}>{checking ? '检查中…' : '🔄 检查更新'}</button>
           <button className="btn small" onClick={() => api.modsOpenFolder(instance.id).catch(e => toast.toast(String(e), 'error'))}>📂 打开目录</button>
         </div>
