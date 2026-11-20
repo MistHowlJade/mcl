@@ -189,6 +189,12 @@ export async function restoreBackup(backupId: string, instanceId: string): Promi
   const meta = readBackupMeta(metaPath);
   const entries = zipList(buf).map(e => e.name.replace(/\\/g, '/'));
   const alreadyPrefixed = entries.some(n => n === 'saves' || n.startsWith('saves/'));
+  // 备份 ZIP 可能是别人分享的：完整备份只允许写入 MCL 自己会备份的顶层路径。
+  // 否则 zip 里夹带 mods/xxx.jar 就会在下次启动被当模组加载（任意代码执行）。
+  if (alreadyPrefixed) {
+    const illegal = entries.find(n => !BACKUP_SUBSET.includes(n.split('/')[0]));
+    if (illegal) throw new Error(`备份包含白名单之外的内容（${illegal}），已拒绝恢复，以免把陌生模组或脚本写进游戏目录。`);
+  }
   // 元数据丢失时不把世界包倒进游戏根目录：没有 saves/ 前缀且带 level.dat 的就是单个世界
   const looksLikeWorld = meta.kind === 'world' || (!meta.kind && !alreadyPrefixed && entries.includes('level.dat'));
   if (looksLikeWorld && !alreadyPrefixed) {

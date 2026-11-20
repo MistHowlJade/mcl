@@ -61,6 +61,8 @@ export class DownloadManager extends EventEmitter {
   private canceled = false;
   private active = 0;
   private reports: TaskReport[] = [];
+  /** 正在传输的响应流：取消时必须立刻销毁，否则大文件仍会下完才停 */
+  private readonly liveStreams = new Set<import('stream').Readable>();
   private bytesDoneAll = 0;
   private bytesTotalAll = 0;
 
@@ -79,6 +81,11 @@ export class DownloadManager extends EventEmitter {
 
   cancel(): void {
     this.canceled = true;
+    // 只置标志不够：已开始的单流/分段下载会继续跑完；直接销毁传输中的响应流
+    for (const stream of this.liveStreams) {
+      try { stream.destroy(new Error('下载已取消')); } catch { /* ignore */ }
+    }
+    this.liveStreams.clear();
     this.emit('canceled');
   }
 
@@ -156,11 +163,13 @@ export class DownloadManager extends EventEmitter {
       const append = existing > 0 && status === 206;
       fs.mkdirSync(path.dirname(partFile), { recursive: true });
       const out = fs.createWriteStream(partFile, { flags: append ? 'a' : 'w' });
+      this.liveStreams.add(stream);
       stream.on('data', (chunk: Buffer) => { onChunk(chunk.length); });
       stream.pipe(out);
-      out.on('finish', () => { out.close(); resolve(); });
-      out.on('error', reject);
-      stream.on('error', (e) => { out.destroy(); reject(e); });
+      out.on('finish', () => { this.liveStreams.delete(stream); out.close(); resolve(); });
+      out.on('error', (e) => { this.liveStreams.delete(stream); reject(e); });
+      stream.on('close', () => this.liveStreams.delete(stream));
+      stream.on('error', (e) => { this.liveStreams.delete(stream); out.destroy(); reject(e); });
     });
   }
 
@@ -335,9 +344,10 @@ export class DownloadManager extends EventEmitter {
         await new Promise<void>((resolve, reject) => {
           const out = fs.createWriteStream(segFile, { flags: existing > 0 ? 'a' : 'w' });
           activeStreams.add(stream);
+          this.liveStreams.add(stream);
           stream.on('data', (chunk: Buffer) => onChunk(chunk.length));
-          stream.on('error', (e) => { activeStreams.delete(stream); out.destroy(); reject(e); });
-          stream.on('close', () => activeStreams.delete(stream));
+          stream.on('error', (e) => { activeStreams.delete(stream); this.liveStreams.delete(stream); out.destroy(); reject(e); });
+          stream.on('close', () => { activeStreams.delete(stream); this.liveStreams.delete(stream); });
           stream.pipe(out);
           out.on('finish', () => { out.close(); resolve(); });
           out.on('error', reject);
@@ -402,6 +412,7 @@ export class DownloadManager extends EventEmitter {
     this.bytesDoneAll = 0;
     this.bytesTotalAll = tasks.reduce((acc, t) => acc + (t.size ?? 0), 0);
     this.reports = [];
+    this.liveStreams.clear();
     this.canceled = false;
     this.active = 0;
     this.sizeCounted.clear();

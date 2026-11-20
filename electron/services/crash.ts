@@ -22,7 +22,8 @@ const MAJOR_TO_JAVA: Record<number, number> = { 45: 1, 46: 2, 47: 3, 48: 4, 49: 
 const RULES: CrashRule[] = [
   {
     id: 'unsupported-class-version',
-    pattern: /UnsupportedClassVersionError[^0-9]*?(?:major|class file) version (\d+)|major version (\d+)|class file version (\d+)|(\d+)\.0.*?class file/is,
+    // 去掉跨行贪婪的 (\d+)\.0.*?class file 与 s 标志：正常日志里的 "1.20.0" + "class file cache" 会误报
+    pattern: /UnsupportedClassVersionError[^0-9]*?(?:major|class file) version (\d+)|major version (\d+)|class file version (\d+)/i,
     title: 'Java 版本不匹配',
     summary: (m) => {
       const major = parseInt(m[1] ?? m[2] ?? m[3] ?? m[4] ?? '0', 10);
@@ -61,7 +62,8 @@ const RULES: CrashRule[] = [
   },
   {
     id: 'missing-dependency',
-    pattern: /Missing or unsupported mandatory dependencies|missing mandatory dependency|requires .* but .* is missing|Incompatible mods found/i,
+    // Fabric 的实际句式是 "requires X of Y, which is missing!"，旧正则要求 "but" 导致漏报
+    pattern: /Missing or unsupported mandatory dependencies|missing mandatory dependency|requires .*?which is missing|Incompatible mods found/i,
     title: '缺少前置模组',
     summary: '某个模组需要另一个"前置模组"才能运行，但 mods 目录里没有它（或版本不对）。',
     detail: 'Forge/NeoForge 会列出缺失的前置。常见前置：Fabric API、Architectury API、Forge Config API Port、Cloth Config 等。',
@@ -72,7 +74,8 @@ const RULES: CrashRule[] = [
   },
   {
     id: 'opengl',
-    pattern: /Pixel format not accelerated|OpenGLException|Failed to create (?:an? )?OpenGL|GLFW error|GLFWException|glGetError|no suitable pixel format|显卡/i,
+    // 裸「显卡」会误报普通调试日志；只保留真正的图形错误特征
+    pattern: /Pixel format not accelerated|OpenGLException|Failed to create (?:an? )?OpenGL|GLFW error|GLFWException|glGetError|no suitable pixel format/i,
     title: '显卡 / 驱动不支持',
     summary: '显卡无法创建游戏需要的图形环境。核显笔记本、驱动太旧、或开了不兼容的"加速渲染"时常见。',
     detail: 'OpenGL 上下文创建失败通常与驱动有关：更新显卡驱动、关闭光影、或切换到独显运行。',
@@ -163,7 +166,8 @@ const RULES: CrashRule[] = [
   },
   {
     id: 'connection-reset',
-    pattern: /Connection refused|Connection reset|SocketTimeout|handshake|timed out.*connect/i,
+    // "handshake completed with remote peer" 是正常调试日志，不能单独命中失败规则
+    pattern: /Connection refused|Connection reset|SocketTimeout|handshake.{0,40}(?:fail|error|refus|timed out)|timed out.*connect/i,
     title: '网络连接失败',
     summary: '游戏连接服务器（或验证服务器）被对方拒绝或超时。联机时这可能是服务器挂了，也可能是你的验证通道不通。',
     detail: '常见：正版验证服务器暂时不可达、Java 8 过旧（TLS 1.3）、或本机防火墙/代理拦截。',

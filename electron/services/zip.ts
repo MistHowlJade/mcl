@@ -6,7 +6,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as zlib from 'zlib';
 
-const MAX_ENTRIES = 20000;
+// 与 zipWrite 的 writeUInt16LE 上限一致：MCL 自己写出的 ZIP 必须能被自己读回
+const MAX_ENTRIES = 0xffff;
 const MAX_TOTAL_UNCOMPRESSED = 4 * 1024 * 1024 * 1024; // 4GB
 
 /* ---------- CRC32 ---------- */

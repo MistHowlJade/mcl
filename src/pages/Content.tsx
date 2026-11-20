@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { api, mediaUrl } from '../lib/api';
+import { api, dropPaths, mediaUrl } from '../lib/api';
 import { useToast } from '../components/Toast';
 import { ConfirmModal, Modal, formatBytes, timeAgo } from '../components/Modal';
 import type { ContentItem, ContentKind, ContentList, InstanceInfo, ModSearchResult } from '../../electron/shared/types';
@@ -101,11 +101,9 @@ export default function Content() {
     e.preventDefault();
     setDragging(false);
     if (!instanceId) return;
-    const paths = Array.from(e.dataTransfer.files)
-      .map(f => (f as File & { path?: string }).path)
-      .filter((p): p is string => typeof p === 'string' && !!p);
-    if (paths.length === 0) return;
-    try { showImportResult(await api.contentImportPaths(instanceId, tab, paths)); }
+    const sourcePaths = dropPaths(e.dataTransfer.files);
+    if (sourcePaths.length === 0) return;
+    try { showImportResult(await api.contentImportPaths(instanceId, tab, sourcePaths)); }
     catch (err) { toast.toast(err instanceof Error ? err.message : String(err), 'error'); }
   };
 

@@ -136,6 +136,13 @@ check('26.x 与快照版本推荐 Java 25/21', () => {
 check('中文「退出码 137」能命中强杀诊断', () => {
   assert.strictEqual(crash.analyzeLogText('[mcl] 游戏进程退出，退出码 137').ruleId, 'killed-exit-137');
 });
+check('崩溃归因不误报正常日志', () => {
+  assert.notStrictEqual(crash.analyzeLogText('Loading Minecraft 1.20.0\nReading class file cache').ruleId, 'unsupported-class-version');
+  assert.notStrictEqual(crash.analyzeLogText('handshake completed with remote peer').ruleId, 'connection-reset');
+});
+check('Fabric 缺前置句式能命中', () => {
+  assert.strictEqual(crash.analyzeLogText("Mod 'Sodium' requires version 0.5.0 of 'Fabric API', which is missing!").ruleId, 'missing-dependency');
+});
 check('ZIP 指定前缀只解压该子树', () => {
   const buf = zip.zipWrite([
     { name: 'world/level.dat', data: Buffer.from('x') },

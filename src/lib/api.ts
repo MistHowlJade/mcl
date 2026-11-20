@@ -15,6 +15,7 @@ declare global {
     mcl: {
       invoke: <T = any>(channel: string, ...args: any[]) => Promise<T>;
       on: (channel: string, callback: (...args: any[]) => void) => () => void;
+      getDropPaths: (files: FileList | File[]) => string[];
     };
   }
 }
@@ -181,4 +182,7 @@ export const api = {
 
 /* 事件订阅（返回取消函数） */
 export const on = (channel: string, cb: (...args: any[]) => void) => window.mcl.on(channel, cb);
+
+/** 把拖放的文件转成主进程可读取的本地路径（Electron 32+ 的 File.path 已被移除） */
+export const dropPaths = (files: FileList | File[]): string[] => window.mcl.getDropPaths(files);
 export type { EnvironmentReport };
