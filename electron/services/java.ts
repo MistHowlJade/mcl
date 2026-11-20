@@ -19,10 +19,12 @@ export function recommendedJavaMajor(mcVersion: string): number {
   // IPC/配置里的版本号可能是非字符串：不能让它把 .match 抛错带崩检测
   if (typeof mcVersion !== 'string') return 17;
   // 快照号（如 24w14a）没有点号，旧逻辑直接落回 17，会让 1.20.5+ 快照用错 Java
-  const snap = mcVersion.match(/^(\d+)w/);
+  const snap = mcVersion.match(/^(\d+)w(\d+)/);
   if (snap) {
     const year = parseInt(snap[1], 10);
-    return year >= 26 ? 25 : year >= 24 ? 21 : 17;
+    const week = parseInt(snap[2], 10);
+    // 23w51a/23w52a 是 1.20.5 的快照，已要求 Java 21；23 年更早的快照仍是 Java 17
+    return year >= 26 ? 25 : year >= 24 ? 21 : (year === 23 && week >= 50 ? 21 : 17);
   }
   const m = mcVersion.match(/^(\d+)\.(\d+)(?:\.(\d+))?/);
   if (!m) return 17;

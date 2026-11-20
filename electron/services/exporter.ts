@@ -180,25 +180,43 @@ export async function exportInstance(instanceId: string, format: ExportFormat, d
     const modFiles: Array<Record<string, unknown>> = [];
     const overrideFiles: WalkEntry[] = [];
     let untrackedMods = 0;
-    for (const e of collectGameFiles(instance.gameDir)) {
-      if (e.rel.startsWith('mods/') && /\.jar$/i.test(e.rel)) {
+    const gameFiles = collectGameFiles(instance.gameDir);
+    const jars = gameFiles.filter(e => e.rel.startsWith('mods/') && /\.jar$/i.test(e.rel));
+    type Lookup = { sha1: string; file?: { url?: string; hashes?: Record<string, string>; size?: number } };
+    const lookups = new Array<Lookup>(jars.length);
+    // 并发查询（上限 6）：断网时不再按模组数线性叠加 10s 超时
+    let cursor = 0;
+    await Promise.all(Array.from({ length: Math.min(6, jars.length) }, async () => {
+      while (cursor < jars.length) {
+        const i = cursor++;
+        const e = jars[i];
         const sha1 = crypto.createHash('sha1').update(e.data).digest('hex');
+        let file: Lookup['file'];
         try {
-          const versions = await fetchJson<Array<{ files?: Array<{ url?: string; hashes?: Record<string, string>; size?: number }> }>>(
+          const versions = await fetchJson<Array<{ files?: Array<NonNullable<Lookup['file']>> }>>(
             `https://api.modrinth.com/v2/version_file/${sha1}?algorithm=sha1`, { timeoutMs: 10000 });
-          const f = (Array.isArray(versions) ? versions : [])
+          file = (Array.isArray(versions) ? versions : [])
             .flatMap(v => Array.isArray(v?.files) ? v.files : [])
-            .find(file => file?.url && (file.hashes?.sha1 ?? '').toLowerCase() === sha1);
-          if (f?.url) {
-            modFiles.push({
-              path: e.rel,
-              hashes: { sha1: f.hashes?.sha1 ?? sha1, ...(f.hashes?.sha512 ? { sha512: f.hashes.sha512 } : {}) },
-              downloads: [f.url],
-              fileSize: f.size ?? e.data.length,
-            });
-            continue;
-          }
+            .find(f => f?.url && (f.hashes?.sha1 ?? '').toLowerCase() === sha1);
         } catch { /* 查询失败当作查不到来源 */ }
+        lookups[i] = { sha1, file };
+      }
+    }));
+    const lookupByRel = new Map<string, Lookup>();
+    jars.forEach((e, i) => lookupByRel.set(e.rel, lookups[i]));
+    for (const e of gameFiles) {
+      if (e.rel.startsWith('mods/') && /\.jar$/i.test(e.rel)) {
+        const hit = lookupByRel.get(e.rel);
+        if (hit?.file?.url) {
+          const f = hit.file;
+          modFiles.push({
+            path: e.rel,
+            hashes: { sha1: f.hashes?.sha1 ?? hit.sha1, ...(f.hashes?.sha512 ? { sha512: f.hashes.sha512 } : {}) },
+            downloads: [f.url],
+            fileSize: f.size ?? e.data.length,
+          });
+          continue;
+        }
         untrackedMods++;
       }
       overrideFiles.push(e);

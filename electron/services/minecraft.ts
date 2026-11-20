@@ -419,7 +419,8 @@ async function ensureForgeLikeInstalled(gameDir: string, loader: 'forge' | 'neof
         clearTimeout(timer);
         if (err) reject(err); else resolve();
       };
-      const child = spawn(javaPath, ['-jar', installerPath, '--installClient', gameDir], { cwd: gameDir, windowsHide: true });
+      // 安装器本身也要走代理，否则国内网络下载 Forge 依赖会失败
+    const child = spawn(javaPath, [...proxyJvmArgs(), '-jar', installerPath, '--installClient', gameDir], { cwd: gameDir, windowsHide: true });
       // 安装器可能卡在交互提示或半死连接上：超时强制结束，避免启动按钮永远停在「安装中」
       const timer = setTimeout(() => {
         try { child.kill('SIGKILL'); } catch { /* 进程可能已退出 */ }
@@ -586,6 +587,8 @@ export async function launchInstance(instanceId: string, options: LaunchOptions 
     const preview = failed.slice(0, 3).map(f => `${f.name}：${f.error}`).join('\n');
     throw new Error(`有 ${failed.length} 个文件下载失败：\n${preview}${failed.length > 3 ? '\n…' : ''}\n\n可尝试切换下载源后重试（设置 → 下载 → 镜像源）。`);
   }
+  // legacy 资源索引先到、对象后下：必须在下载完成后再展开 virtual/legacy
+  if (plan.assetIndexId === 'legacy') versionService.expandVirtualAssets('legacy');
 
   // 6) 库完整性校验（sha1 抽检，太大跳过）——不杀泛滥：这里只报告
   const corrupted = findCorruptedLibraries(resolved, gameLibsDir);

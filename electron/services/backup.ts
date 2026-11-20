@@ -64,7 +64,11 @@ export function listBackups(instanceId: string): BackupInfo[] {
       filePath: file,
       sizeBytes: stat.size,
       createdAt,
-      kind: (m?.[1] as BackupInfo['kind']) ?? 'manual',
+      // 元数据里的 kind 优先：云恢复前的世界备份文件名可能不匹配 auto/manual 前缀，
+      // 只看文件名会把它误标成「手动」，恢复确认框给出错误的「整档覆盖」文案。
+      kind: (typeof meta.kind === 'string' && ['auto', 'manual', 'pre-restore', 'world'].includes(meta.kind)
+        ? meta.kind as BackupInfo['kind']
+        : (m?.[1] as BackupInfo['kind']) ?? 'manual'),
       worldNames,
     });
   }

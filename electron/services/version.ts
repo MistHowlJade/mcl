@@ -358,6 +358,15 @@ export function collectLibraries(resolved: Record<string, any>): LibraryDownload
 
 /* ---------- 资源索引 ---------- */
 /** 1.6.x 的 legacy 资源需要 objects/<hash> 额外展开成 assets/virtual/legacy/<资源名> */
+/** 资源对象下载完成后再展开 legacy 虚拟目录：索引先到、对象后下，首次安装必须调用本函数 */
+export function expandVirtualAssets(indexId: string): void {
+  if (!isSafePathSegment(indexId)) return;
+  const file = path.join(assetsIndexDir(), `${indexId}.json`);
+  if (!fs.existsSync(file)) return;
+  const cached = readJson<{ objects?: Record<string, { hash: string; size: number }> }>(file, {});
+  try { ensureVirtualLegacy(mapAssets(cached)); } catch { /* 索引损坏时交给下次启动重下 */ }
+}
+
 function ensureVirtualLegacy(objects: AssetObject[]): void {
   const root = path.resolve(path.join(assetsDir(), 'virtual', 'legacy'));
   for (const obj of objects) {

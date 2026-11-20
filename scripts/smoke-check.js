@@ -43,7 +43,7 @@ check('collectLibraries 保留 1.12.2 LWJGL 2 库（issue #1 原始复现）', (
   const resolved = {
     libraries: [
       { name: 'org.lwjgl.lwjgl:lwjgl:2.9.4-nightly-20150209', rules: [{ action: 'allow' }, { action: 'disallow', os: { name: 'osx' } }], downloads: { artifact: { path: 'org/lwjgl/lwjgl/2.9.4-nightly-20150209/lwjgl-2.9.4-nightly-20150209.jar', url: 'https://libraries.minecraft.net/x.jar', sha1: 'abc', size: 100 } } },
-      { name: 'org.lwjgl.lwjgl:lwjgl:2.9.2-nightly-20140822', rules: [{ action: 'disallow', os: { name: 'windows' } }], downloads: { artifact: { path: 'y.jar', url: 'https://libraries.minecraft.net/y.jar', sha1: 'def', size: 100 } } },
+      { name: 'org.lwjgl.lwjgl:lwjgl:2.9.2-nightly-20140822', rules: [{ action: 'allow' }, { action: 'disallow', os: { name: 'windows' } }], downloads: { artifact: { path: 'y.jar', url: 'https://libraries.minecraft.net/y.jar', sha1: 'def', size: 100 } } },
     ],
   };
   const libs = version.collectLibraries(resolved);
@@ -119,17 +119,18 @@ check('class file version 61.0 归因 unsupported-class-version', () => {
 });
 
 console.log('== 本轮修复回归 ==');
+const NATIVE_OS = process.platform === 'win32' ? 'windows' : process.platform === 'darwin' ? 'osx' : 'linux';
 check('旧版只有 natives 的幻影库不生成 404 主 jar 任务', () => {
-  const resolved = { libraries: [{ name: 'tv.twitch:twitch-platform:5.16', natives: { windows: 'natives-windows-${arch}' } }] };
+  const resolved = { libraries: [{ name: 'tv.twitch:twitch-platform:5.16', natives: { [NATIVE_OS]: `natives-${NATIVE_OS}-\${arch}` } }] };
   const libs = version.collectLibraries(resolved);
   assert.strictEqual(libs.filter(l => !l.isNative).length, 0);
   assert.ok(libs.some(l => l.isNative));
 });
 check('旧版 natives ${arch} 占位符按 CPU 架构展开', () => {
   const arch = process.arch === 'ia32' ? '32' : process.arch === 'arm64' ? 'arm64' : '64';
-  const resolved = { libraries: [{ name: 'tv.twitch:twitch-platform:5.16', natives: { windows: 'natives-windows-${arch}' } }] };
+  const resolved = { libraries: [{ name: 'tv.twitch:twitch-platform:5.16', natives: { [NATIVE_OS]: `natives-${NATIVE_OS}-\${arch}` } }] };
   const libs = version.collectLibraries(resolved);
-  assert.ok(libs.some(l => l.path.includes(`natives-windows-${arch}.jar`)), `应展开为 ${arch} 位 natives`);
+  assert.ok(libs.some(l => l.path.includes(`natives-${NATIVE_OS}-${arch}.jar`)), `应展开为 ${arch} 位 natives`);
   assert.ok(!libs.some(l => l.path.includes('${arch}')), '不应残留未展开的占位符');
 });
 check('Java 8u291 排序新于 8u202', () => {
@@ -140,6 +141,7 @@ check('26.x 与快照版本推荐 Java 25/21', () => {
   assert.strictEqual(java.recommendedJavaMajor('26.3'), 25);
   assert.strictEqual(java.recommendedJavaMajor('26.4-snapshot-8'), 25);
   assert.strictEqual(java.recommendedJavaMajor('24w14a'), 21);
+  assert.strictEqual(java.recommendedJavaMajor('23w51a'), 21);
   assert.strictEqual(java.recommendedJavaMajor('1.20.1'), 17);
 });
 check('中文「退出码 137」能命中强杀诊断', () => {

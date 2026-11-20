@@ -61,6 +61,7 @@ type VerifyCache = Record<string, VerifiedFile>;
 
 const verifyCacheFile = () => path.join(cacheDir(), 'verified-files.json');
 let verifyCache: VerifyCache | null = null;
+let verifyCacheDirty = false;
 
 function getVerifyCache(): VerifyCache {
   if (!verifyCache) {
@@ -78,6 +79,14 @@ function markVerified(dest: string, stat: fs.Stats, sha1: string): void {
     verifyCache = {};
     for (const [k, v] of Object.entries(cache)) if (k === dest) verifyCache[k] = v;
   }
+  // 不在这里逐个写盘：一次下载几十个文件时会产生几十次全量 JSON 覆盖写
+  verifyCacheDirty = true;
+}
+
+/** 每轮下载结束后统一写一次校验缓存 */
+function flushVerifyCache(): void {
+  if (!verifyCacheDirty || !verifyCache) return;
+  verifyCacheDirty = false;
   try { writeJson(verifyCacheFile(), verifyCache); } catch { /* 缓存失败只影响下次性能 */ }
 }
 
@@ -264,6 +273,8 @@ export class DownloadManager extends EventEmitter {
         // 一次 HEAD 探测：大小 + 是否支持 Range
         const threshold = this.opts.segmentSizeMB * 1024 * 1024;
         const h = await this.head(url);
+        // HEAD 探测阶段也可能收到取消：必须在这里就退出，不能继续写出完整文件
+        if (this.canceled) return { id: task.id, name, ok: false, bytes: 0, error: '下载已取消', fromCache: false };
         // 优先使用任务声明的大小 / HEAD 的完整大小；只有拿不到完整大小时才退回已有 part 大小
         let total = task.size ?? 0;
         if (!total) total = h.size;
@@ -288,6 +299,7 @@ export class DownloadManager extends EventEmitter {
         } else {
           await this.streamToFile(url, partFile, count);
         }
+        if (this.canceled) return { id: task.id, name, ok: false, bytes: 0, error: '下载已取消', fromCache: false };
         // 统一落盘到目标路径
         fs.mkdirSync(path.dirname(dest), { recursive: true });
         if (fs.existsSync(partFile)) {
@@ -458,7 +470,7 @@ export class DownloadManager extends EventEmitter {
     const queue = [...tasks];
     let cursor = 0;
 
-    return new Promise((resolve) => {
+    return new Promise<TaskReport[]>((resolve) => {
       const tryNext = () => {
         if (this.canceled) {
           if (this.active === 0) resolve(this.reports);
@@ -483,7 +495,7 @@ export class DownloadManager extends EventEmitter {
         if (this.active === 0 && cursor >= queue.length) resolve(this.reports);
       };
       tryNext();
-    });
+    }).finally(() => flushVerifyCache());
   }
 
   get totals(): { done: number; total: number } {

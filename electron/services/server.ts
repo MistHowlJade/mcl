@@ -601,7 +601,7 @@ export async function prepareServer(id: string): Promise<ServerInfo> {
       await downloadFile(installerUrl, installerPath, `${loader} 安装器`);
       emitLog(id, '正在静默安装服务端（可能需要 1–5 分钟）…', 'install');
       try {
-        await runInstaller(javaPath, ['-jar', installerPath, '--installServer', dir], dir, line => emitLog(id, line, 'install'));
+        await runInstaller(javaPath, [...proxyJvmArgs(), '-jar', installerPath, '--installServer', dir], dir, line => emitLog(id, line, 'install'));
       } finally {
         fs.rmSync(installerPath, { force: true });
       }

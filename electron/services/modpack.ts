@@ -221,25 +221,9 @@ export async function importModpack(zipPath: string, targetName?: string, onLog?
     return { instanceId: instance.id, format, importedMods: 0, skippedFiles: files.map(f => `${f.projectID}/${f.fileID}`), warnings, manualDownloads };
   }
 
-  // MultiMC/紧凑格式：整个包就是实例内容（除 mmc-pack.json 本身）
-  const instance = createInstance({ name: targetName ?? path.basename(zipPath, '.zip'), mcVersion: '1.20.1', loader: 'vanilla', memoryPreset: 'standard' });
-  const game = paths.gameDir(instance.id);
-  let mmcJson: any = null;
-  try { mmcJson = JSON.parse(readEntry('mmc-pack.json')!.toString('utf8')); } catch { warnings.push('mmc-pack.json 解析失败，按 vanilla 1.20.1 创建'); }
-  if (Array.isArray(mmcJson?.components)) {
-    const mc = mmcJson.components.find((c: any) => c?.uid === 'net.minecraft');
-    const loaderComp = mmcJson.components.find((c: any) => ['net.fabricmc.fabric-loader', 'net.minecraftforge', 'org.quiltmc.quilt-loader', 'net.neoforged'].includes(c?.uid));
-    if (mc?.version) {
-      updateInstanceMcVersion(instance.id, mc.version);
-    }
-    if (loaderComp) {
-      const loaderType: LoaderType = loaderComp.uid === 'net.fabricmc.fabric-loader' ? 'fabric' : loaderComp.uid === 'org.quiltmc.quilt-loader' ? 'quilt' : loaderComp.uid === 'net.neoforged' ? 'neoforge' : 'forge';
-      updateInstance(instance.id, { loader: loaderType, loaderVersion: loaderComp.version ?? null });
-      warnings.push('MultiMC 整合包已转换为 MCL 实例，加载器将在首次启动时安装。');
-    }
-  }
   if (format === 'mcl') {
     // MCL 自己的完整实例快照：instance.json + game/...
+    // 必须放在通用 createInstance 之前，否则会多建一个只有 instance.json 的空孤儿实例
     let rawCfg: any = {};
     try { rawCfg = JSON.parse(readEntry('instance.json')!.toString('utf8')); }
     catch { throw new Error('实例快照里的 instance.json 不是有效 JSON，文件可能已损坏。'); }
@@ -269,12 +253,29 @@ export async function importModpack(zipPath: string, targetName?: string, onLog?
     return { instanceId: instance.id, format, importedMods: copied, skippedFiles, warnings };
   }
 
+  // MultiMC/紧凑格式：整个包就是实例内容（除 mmc-pack.json 本身）
+  const instance = createInstance({ name: targetName ?? path.basename(zipPath, '.zip'), mcVersion: '1.20.1', loader: 'vanilla', memoryPreset: 'standard' });
+  const game = paths.gameDir(instance.id);
+  let mmcJson: any = null;
+  try { mmcJson = JSON.parse(readEntry('mmc-pack.json')!.toString('utf8')); } catch { warnings.push('mmc-pack.json 解析失败，按 vanilla 1.20.1 创建'); }
+  if (Array.isArray(mmcJson?.components)) {
+    const mc = mmcJson.components.find((c: any) => c?.uid === 'net.minecraft');
+    const loaderComp = mmcJson.components.find((c: any) => ['net.fabricmc.fabric-loader', 'net.minecraftforge', 'org.quiltmc.quilt-loader', 'net.neoforged'].includes(c?.uid));
+    if (mc?.version) {
+      updateInstanceMcVersion(instance.id, mc.version);
+    }
+    if (loaderComp) {
+      const loaderType: LoaderType = loaderComp.uid === 'net.fabricmc.fabric-loader' ? 'fabric' : loaderComp.uid === 'org.quiltmc.quilt-loader' ? 'quilt' : loaderComp.uid === 'net.neoforged' ? 'neoforge' : 'forge';
+      updateInstance(instance.id, { loader: loaderType, loaderVersion: loaderComp.version ?? null });
+      warnings.push('MultiMC 整合包已转换为 MCL 实例，加载器将在首次启动时安装。');
+    }
+  }
+
   // MultiMC/Prism 各版本导出包可能用 minecraft/ 或 .minecraft/；
   // MCL 自己导出的包用的是 .minecraft/，两种都要认，否则回导会落到 game/.minecraft/ 下读不到
   const normalizedNames = entries.map(e => e.name.replace(/\\/g, '/'));
   const gameSub = normalizedNames.some(n => n.startsWith(`${prefix}minecraft/`)) ? 'minecraft/'
     : normalizedNames.some(n => n.startsWith(`${prefix}.minecraft/`)) ? '.minecraft/' : '';
-  const hasMinecraftDir = !!gameSub;
   const gamePrefix = prefix + gameSub;
   const SKIP_META = new Set(['instance.cfg', 'mmc-pack.json', 'icon.png', 'instance.png', 'logo.png']);
   let copied = 0, modsCopied = 0, savesCopied = 0;
@@ -296,8 +297,8 @@ export async function importModpack(zipPath: string, targetName?: string, onLog?
       warnings.push(`文件写入失败：${norm}（${e instanceof Error ? e.message : String(e)}）`);
     }
   }
-  log(`已复制 mods ${modsCopied} 个、saves ${savesCopied} 个、共 ${copied} 个文件${hasMinecraftDir ? '（minecraft/ 前缀已剥离）' : ''}`);
-  warnings.push(`MultiMC 格式：${hasMinecraftDir ? '已识别 minecraft/ 游戏目录，' : ''}整包展开为实例目录（${copied} 个文件：mods ${modsCopied}、saves ${savesCopied}）。`);
+  log(`已复制 mods ${modsCopied} 个、saves ${savesCopied} 个、共 ${copied} 个文件${gameSub ? `（${gameSub}前缀已剥离）` : ''}`);
+  warnings.push(`MultiMC 格式：${gameSub ? `已识别 ${gameSub} 游戏目录，` : ''}整包展开为实例目录（${copied} 个文件：mods ${modsCopied}、saves ${savesCopied}）。`);
   return { instanceId: instance.id, format, importedMods: copied, skippedFiles, warnings };
 }
 

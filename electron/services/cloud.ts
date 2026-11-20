@@ -342,7 +342,7 @@ function applyManifest(manifest: CloudManifest, saveArchives?: Map<string, Buffe
           const oldDir = path.join(tempRoot, `.cloud-old-${suffix}-${i}`);
           // 恢复前先给本机同名世界留一份可一键恢复的备份，误操作不至于永久丢存档
           if (fs.existsSync(target)) {
-            const backupPath = path.join(tempRoot, `cloud-restore-backup-${suffix}-${i}.zip`);
+            const backupPath = path.join(tempRoot, `world-${suffix}-${i}.zip`);
             fs.writeFileSync(backupPath, zipFromDir(target));
             writeJson(backupPath.replace(/\.zip$/, '.json'), {
               name: `云恢复前自动备份：${path.basename(target)}`,
