@@ -223,8 +223,11 @@ export default function Servers() {
 
   const saveProperties = async () => {
     if (!server) return;
+    // 保存请求在途时可能切到另一台服务器：旧响应绝不能写进新服务器的属性草稿
+    const targetId = server.id;
     try {
-      const next = await api.serverSaveProperties(server.id, propDraft);
+      const next = await api.serverSaveProperties(targetId, propDraft);
+      if (selectedIdRef.current !== targetId) return;
       setProperties(next);
       setPropDraft(next);
       toast.toast('server.properties 已保存。部分设置需要重启服务器生效。', 'ok');
@@ -237,13 +240,17 @@ export default function Servers() {
 
   const saveServerConfig = async () => {
     if (!server || !settingsDraft) return;
-    const saved = await run('save', () => api.serverUpdate(server.id, {
-      name: settingsDraft.name,
-      port: settingsDraft.port,
-      memoryMB: settingsDraft.memoryMB,
-      javaPath: settingsDraft.javaPath.trim() || null,
-      jvmArgsExtra: settingsDraft.jvmArgsExtra,
+    const targetId = server.id;
+    const draft = settingsDraft;
+    const saved = await run('save', () => api.serverUpdate(targetId, {
+      name: draft.name,
+      port: draft.port,
+      memoryMB: draft.memoryMB,
+      javaPath: draft.javaPath.trim() || null,
+      jvmArgsExtra: draft.jvmArgsExtra,
     }), '服务器设置已保存');
+    // 保存期间切到别的服务器时，A 的返回值不得写进 B 的草稿（否则下一次保存会覆盖 B 的配置）
+    if (selectedIdRef.current !== targetId) return;
     // 服务端会去掉首尾空格/裁剪名称长度：保存后以返回值为准刷新草稿
     if (saved) setSettingsDraft(draftFromConfig(saved));
   };
