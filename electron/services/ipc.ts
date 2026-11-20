@@ -176,7 +176,7 @@ export function registerIpcHandlers(): void {
     void minecraft.launchInstance(instanceId, { accountId }).catch(err => {
       const message = err instanceof Error ? err.message : String(err);
       // 若只是"已有实例在运行"被拒绝，绝不能把正在运行的实例状态重置为 idle
-      if (!(err instanceof minecraft.LaunchBusyError)) {
+      if (!(err instanceof minecraft.LaunchBusyError) && minecraft.launchState.instanceId === instanceId) {
         minecraft.launchState.status = 'idle';
         minecraft.launchState.message = message;
         minecraft.launchState.progress = null;

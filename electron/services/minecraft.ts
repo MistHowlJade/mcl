@@ -167,6 +167,26 @@ function evalArgRules(entry: any, features: Record<string, boolean>): boolean {
   return versionService.evalRules(rules, features);
 }
 
+/** 只读地找已安装的 Forge/NeoForge 版本 JSON，不触发安装（一键修复不应偷偷下载安装器） */
+function findInstalledLoaderJson(gameDir: string, loader: 'forge' | 'neoforge', mcVersion: string, loaderVersion: string | null | undefined): string | null {
+  const versionsDir = path.join(gameDir, 'versions');
+  if (!fs.existsSync(versionsDir)) return null;
+  const legacyNeo = loader === 'neoforge' && mcVersion === '1.20.1';
+  const matchesLoader = (d: string) => loader === 'neoforge'
+    ? (/neoforge/i.test(d) || (legacyNeo && d.startsWith(`${mcVersion}-forge-`)))
+    : (/forge/i.test(d) && !/neoforge/i.test(d));
+  const bare = loaderVersion && loaderVersion.startsWith(`${mcVersion}-`) ? loaderVersion.slice(mcVersion.length + 1) : loaderVersion;
+  const matchesVersion = (d: string) => !loaderVersion || d.includes(loaderVersion) || (!!bare && d.includes(bare));
+  const candidates = fs.readdirSync(versionsDir).filter(d =>
+    matchesLoader(d) && matchesVersion(d) && fs.existsSync(path.join(versionsDir, d, `${d}.json`)));
+  if (candidates.length === 0) return null;
+  candidates.sort((a, b) => {
+    try { return fs.statSync(path.join(versionsDir, b)).mtimeMs - fs.statSync(path.join(versionsDir, a)).mtimeMs; }
+    catch { return 0; }
+  });
+  return path.join(versionsDir, candidates[0], `${candidates[0]}.json`);
+}
+
 /** 一键修复：重新校验并修复损坏的库/资源文件（替代危险的"关闭文件校验"技巧，痛点 #57/#58） */
 export async function repairLibraries(instanceId: string): Promise<{ checked: number; repaired: number; failed: number }> {
   const instance = getInstance(instanceId);
@@ -176,6 +196,29 @@ export async function repairLibraries(instanceId: string): Promise<{ checked: nu
   const entry = manifest.versions.find(v => v.id === instance.mcVersion);
   if (!entry) throw new Error(`版本清单中找不到 ${instance.mcVersion}`);
   const plan = await versionService.buildDownloadPlan(entry, settings.download.source, settings.download.customMirror);
+  // 基础版本计划不含加载器库：Fabric/Quilt 合并 profile，Forge/NeoForge 读取已安装版本 JSON。
+  // 否则损坏的加载器 jar 在「一键修复」里完全不可见，用户被误导以为库都是好的。
+  let resolved = plan.resolved;
+  try {
+    if (instance.loader === 'fabric' || instance.loader === 'quilt') {
+      resolved = await resolveLoaderProfile(resolved, instance.loader, instance.loaderVersion, instance.mcVersion);
+    } else if (instance.loader === 'forge' || instance.loader === 'neoforge') {
+      const jsonPath = findInstalledLoaderJson(paths.gameDir(instanceId), instance.loader, instance.mcVersion, instance.loaderVersion);
+      if (jsonPath) resolved = versionService.mergeProfile(resolved, JSON.parse(fs.readFileSync(jsonPath, 'utf8')));
+    }
+  } catch { /* 加载器信息拿不到时仍修复基础库，不让一键修复整体失败 */ }
+  const planned = new Set(plan.tasks.map(t => path.normalize(t.dest)));
+  const gameLibs = path.join(paths.gameDir(instanceId), 'libraries');
+  for (const l of versionService.collectLibraries(resolved)) {
+    const shared = path.join(paths.librariesDir(), ...l.path.split('/'));
+    const inGame = path.join(gameLibs, ...l.path.split('/'));
+    // Forge 系库可能装在实例自己的 libraries（共享目录没有）：修复必须写回实际被加载的那份
+    const dest = fs.existsSync(inGame) && !fs.existsSync(shared) ? inGame : shared;
+    const key = path.normalize(dest);
+    if (planned.has(key) || !l.sha1) continue;
+    planned.add(key);
+    plan.tasks.push({ id: `lib:${l.path}`, url: l.url, sha1: l.sha1, size: l.size, dest, name: path.basename(l.path) });
+  }
   const repairable = plan.tasks.filter(t => t.sha1);
   const corrupted: typeof repairable = [];
   for (const t of repairable) {
@@ -376,16 +419,16 @@ export async function launchInstance(instanceId: string, options: LaunchOptions 
     launchState.message = message;
     launchEvents.emit('status', { ...launchState });
   };
-  // 校验顺序：先做实例与 unknown 版本检查，再做并发保护（避免两种错误叠加时给出错误提示）
+  // 并发保护必须最先做：否则“实例不存在/版本未识别/未选账号”这类前置错误会抛出普通 Error，
+  // IPC 层据此把全局状态重置为 idle，正在运行的那个实例会失去防双开/防删除保护。
+  const busyStates = ['preparing', 'downloading', 'launching', 'running'];
+  if (busyStates.includes(launchState.status) && launchState.instanceId) {
+    throw new LaunchBusyError('已有实例在启动/运行中，请等待其退出后再试。');
+  }
   const instance = getInstance(instanceId);
   if (!instance) throw new Error('实例不存在');
   if (instance.mcVersion === 'unknown') {
     throw new Error('该实例未识别 MC 版本，请先在「实例」页设置版本后再启动。');
-  }
-  // 并发保护：已有实例在启动/运行中时拒绝二次启动（防双进程、防误杀正在运行的游戏）
-  const busyStates = ['preparing', 'downloading', 'launching', 'running'];
-  if (busyStates.includes(launchState.status) && launchState.instanceId) {
-    throw new LaunchBusyError('已有实例在启动/运行中，请等待其退出后再试。');
   }
   // 从这里开始本次启动接管状态；后续任何失败都由 IPC 层回退为 idle
   launchState.instanceId = instanceId;

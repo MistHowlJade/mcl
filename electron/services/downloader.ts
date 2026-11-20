@@ -245,7 +245,15 @@ export class DownloadManager extends EventEmitter {
         // 统一落盘到目标路径
         fs.mkdirSync(path.dirname(dest), { recursive: true });
         if (fs.existsSync(partFile)) {
-          fs.renameSync(partFile, dest);
+          try {
+            fs.renameSync(partFile, dest);
+          } catch (e) {
+            // 跨盘时（便携模式数据目录与系统「下载」文件夹不在同一盘）rename 会抛 EXDEV：
+            // 退回复制+删除，行为等价且允许跨文件系统
+            if ((e as NodeJS.ErrnoException).code !== 'EXDEV') throw e;
+            fs.copyFileSync(partFile, dest);
+            fs.rmSync(partFile, { force: true });
+          }
         } else if (!fs.existsSync(dest)) {
           throw new Error('下载未产生文件');
         }

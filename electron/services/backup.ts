@@ -71,7 +71,7 @@ export function listBackups(instanceId: string): BackupInfo[] {
   return out.sort((a, b) => b.createdAt - a.createdAt);
 }
 
-export async function createBackup(instanceId: string, kind: BackupInfo['kind'], displayName?: string): Promise<BackupInfo | null> {
+export async function createBackup(instanceId: string, kind: BackupInfo['kind'], displayName?: string, excludeId?: string): Promise<BackupInfo | null> {
   const instance = getInstance(instanceId);
   if (!instance) return null;
   const gameDir = instance.gameDir;
@@ -131,15 +131,16 @@ export async function createBackup(instanceId: string, kind: BackupInfo['kind'],
     worldNames,
   };
   writeJson(filePath.replace(/\.zip$/, '.json'), { name: info.name, createdAt: ts, worldNames, kind });
-  pruneOldBackups(instanceId);
+  pruneOldBackups(instanceId, excludeId);
   return info;
 }
 
-export function pruneOldBackups(instanceId: string): void {
+export function pruneOldBackups(instanceId: string, excludeId?: string): void {
   const raw = getSettings().general.backupKeep;
   // 配置损坏成 NaN/负数时兜底：slice(NaN) 会把自动备份全删光
   const keep = Number.isFinite(raw) ? Math.max(1, Math.min(200, Math.floor(raw))) : 10;
-  const autos = listBackups(instanceId).filter(b => b.kind === 'auto');
+  // 恢复旧备份时的“恢复前备份”不能把用户正在恢复的那份清理掉
+  const autos = listBackups(instanceId).filter(b => b.kind === 'auto' && b.id !== excludeId);
   for (const old of autos.slice(keep)) {
     fs.rmSync(old.filePath, { force: true });
     fs.rmSync(old.filePath.replace(/\.zip$/, '.json'), { force: true });
@@ -174,10 +175,12 @@ export async function restoreBackup(backupId: string, instanceId: string): Promi
   const safeId = path.basename(String(backupId ?? ''));
   const zipPath = path.join(dir, `${safeId}.zip`);
   if (!fs.existsSync(zipPath)) throw new Error('备份文件不存在');
-  // 恢复前先自动备份一次当前状态（痛点 #29：后悔药）
-  await createBackup(instanceId, 'pre-restore', '恢复前自动备份');
-  const gameDir = paths.gameDir(instanceId);
+  // 先把待恢复内容读进内存：下面的“恢复前备份”会触发自动清理，
+  // 若正在恢复的恰是最旧的自动备份，晚读会因为文件已被清掉而报 ENOENT。
   const buf = fs.readFileSync(zipPath);
+  // 恢复前先自动备份一次当前状态（痛点 #29：后悔药），同时保护本次要恢复的备份不被清理
+  await createBackup(instanceId, 'pre-restore', '恢复前自动备份', safeId);
+  const gameDir = paths.gameDir(instanceId);
 
   // 世界单独备份（内容管理的「备份世界」/删除前自动备份）是“世界目录内部”打包，
   // 需要还原到 saves/<世界名>/；完整存档备份则直接还原到游戏根目录。
