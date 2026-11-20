@@ -12,7 +12,7 @@ import { registerIpcHandlers, bindServiceEvents } from './services/ipc';
 import { dataRoot, ensureLayout } from './services/paths';
 import { getSettings } from './services/settings';
 import { killResidualProcesses } from './services/minecraft';
-import { killAllServersSync } from './services/server';
+import { killAllServersSync, listServers, stopServer } from './services/server';
 
 // 本地媒体协议：只读、限定在 MCL 数据目录内，用于截图/世界图标预览
 protocol.registerSchemesAsPrivileged([
@@ -151,9 +151,21 @@ if (gotLock) {
     });
   });
 
-  // 启动器退出时结束所有由 MCL 启动的服务端，避免留下孤儿 Java 进程
-  app.on('before-quit', () => {
-    try { killAllServersSync(); } catch { /* 忽略 */ }
+  // 退出时先给运行中的服务端发 stop 让世界正常保存；10 秒内没退才强杀，避免留下孤儿 Java。
+  let quitting = false;
+  app.on('before-quit', (e) => {
+    if (quitting) return;
+    const running = listServers().filter(s => s.status === 'running' || s.status === 'starting');
+    if (running.length === 0) return;
+    e.preventDefault();
+    quitting = true;
+    void Promise.race([
+      Promise.all(running.map(s => stopServer(s.id).catch(() => undefined))),
+      new Promise(resolve => setTimeout(resolve, 10000)),
+    ]).finally(() => {
+      try { killAllServersSync(); } catch { /* 忽略 */ }
+      app.quit();
+    });
   });
 
   app.on('window-all-closed', () => {
