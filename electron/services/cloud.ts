@@ -504,6 +504,11 @@ export async function downloadCloud(): Promise<CloudApplyResult> {
     try {
       manifest = JSON.parse(content) as CloudManifest;
     } catch {
+      // 私有 Gist 的 raw_url 在 gist.githubusercontent.com，不能把 Token 带过去，
+      // 于是取回的是 404 页面；这种情况应该说清楚是快照太大，而不是笼统报 JSON 损坏。
+      if (file.truncated) {
+        throw new Error('云端配置快照超过 Gist 单文件限制，无法完整读取（私有 Gist 的 raw 链接需要单独认证）。\n请改用 WebDAV 同步，或在上传前清理不再使用的实例/服务器后重新上传。');
+      }
       throw new Error('Gist 里的 mcl-config.json 不是有效 JSON，内容可能已损坏。');
     }
     const result = applyManifest(manifest);

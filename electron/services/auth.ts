@@ -152,7 +152,7 @@ export async function beginMicrosoftLogin(): Promise<MicrosoftLoginSession> {
   const json = JSON.parse(res.body.toString('utf8'));
   return {
     deviceCode: json.device_code,
-    userCode: json.user_code ?? json.user_code,
+    userCode: json.user_code ?? json.userCode,
     verificationUri: json.verification_uri ?? 'https://microsoft.com/link',
     expiresIn: json.expires_in ?? 900,
     interval: json.interval ?? 5,
