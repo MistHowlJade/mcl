@@ -16,6 +16,7 @@ import { zipExtractEntry, zipList } from './zip';
 import { getSettings } from './settings';
 import { proxyJvmArgs } from './proxy';
 import { getInstance, touchPlayed, updateInstance } from './instances';
+import { writeJson } from './store';
 import { analyzeCrash } from './crash';
 import { EventEmitter } from 'events';
 import { fetchJson } from './net';
@@ -401,6 +402,13 @@ async function ensureForgeLikeInstalled(gameDir: string, loader: 'forge' | 'neof
   const dl = new DM({ source: 'official', maxThreads: 1, retries: 2 });
   const reports = await dl.run([{ id: 'loader-installer', url: installerUrl, dest: installerPath, name: `${loader} 安装器` }]);
   if (!reports[0]?.ok) throw new Error(`${loader} 安装器下载失败：${reports[0]?.error ?? '未知错误'}\nURL：${installerUrl}`);
+  // 官方 Forge/NeoForge 安装器把 launcher_profiles.json 当作“游戏目录已初始化”的标志，
+  // 缺失时直接拒绝安装。MCL 自己管理 profile，这里补一个最小合法文件即可。
+  const launcherProfiles = path.join(gameDir, 'launcher_profiles.json');
+  if (!fs.existsSync(launcherProfiles)) {
+    try { writeJson(launcherProfiles, { profiles: {}, authenticationDatabase: {}, settings: {} }); }
+    catch { /* 写失败让安装器自己报错，错误里带路径 */ }
+  }
   emit('正在静默安装（可能需要 1–5 分钟，期间会打印安装日志）…');
   try {
     await new Promise<void>((resolve, reject) => {
@@ -642,6 +650,10 @@ export async function launchInstance(instanceId: string, options: LaunchOptions 
     classpath_separator: path.delimiter,
     classpath,
     library_directory: paths.librariesDir(),
+    // 1.6.x/1.7.x 的 minecraftArguments 会用到这些老变量，缺失会被替换成空串导致参数错位
+    auth_session: `token:${token.accessToken}:${token.uuid.replace(/-/g, '')}`,
+    user_properties: '{}',
+    game_assets: path.join(paths.assetsDir(), 'virtual', 'legacy'),
     resolution_width: String(effectiveResolution?.width ?? 1280),
     resolution_height: String(effectiveResolution?.height ?? 720),
   };

@@ -5,7 +5,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
 import { fetchJson, fetchWithTimeout, lastHealthCheck, mapToMirror, OFFICIAL } from './net';
-import { assetsIndexDir, assetsObjectsDir, cacheDir, librariesDir, versionsDir } from './paths';
+import { assetsDir, assetsIndexDir, assetsObjectsDir, cacheDir, librariesDir, versionsDir } from './paths';
 import { VersionManifestEntry, DownloadSource } from '../shared/types';
 import { readJson, writeJson } from './store';
 
@@ -313,7 +313,9 @@ export function collectLibraries(resolved: Record<string, any>): LibraryDownload
       // 旧版 json：url 为 repo base
       const rel = mavenToPath(name);
       out.push({ name, url: `${String(lib.url).replace(/\/+$/, '')}/${rel}`, path: rel, isNative: false });
-    } else {
+    } else if (!(lib.natives && typeof lib.natives === 'object' && Object.keys(lib.natives).length > 0)) {
+      // 1.6–1.12 的 lwjgl-platform/jinput-platform/twitch-platform 等只有 natives classifier，
+      // 官方仓库根本没有它们的主 jar；合成 Maven 坐标必然 404 并中断整个版本下载。
       const rel = mavenToPath(name);
       out.push({ name, url: `${OFFICIAL.libraries}/${rel}`, path: rel, isNative: false });
     }
@@ -355,6 +357,24 @@ export function collectLibraries(resolved: Record<string, any>): LibraryDownload
 }
 
 /* ---------- 资源索引 ---------- */
+/** 1.6.x 的 legacy 资源需要 objects/<hash> 额外展开成 assets/virtual/legacy/<资源名> */
+function ensureVirtualLegacy(objects: AssetObject[]): void {
+  const root = path.resolve(path.join(assetsDir(), 'virtual', 'legacy'));
+  for (const obj of objects) {
+    const rel = obj.name.replace(/\\/g, '/');
+    // 远程索引里的资源名不能逃出 virtual/legacy
+    if (!rel || rel.startsWith('/') || /(^|\/)\.\.(\/|$)/.test(rel)) continue;
+    const dest = path.resolve(root, rel);
+    if (!dest.startsWith(root + path.sep)) continue;
+    const src = assetDestPath(obj.hash);
+    if (!fs.existsSync(src)) continue;
+    try {
+      fs.mkdirSync(path.dirname(dest), { recursive: true });
+      if (!fs.existsSync(dest)) fs.copyFileSync(src, dest);
+    } catch { /* 单个资源失败不影响其它资源 */ }
+  }
+}
+
 export async function fetchAssetIndex(resolved: Record<string, any>, source: DownloadSource, customMirror?: string): Promise<{
   indexId: string;
   objects: AssetObject[];
@@ -367,7 +387,9 @@ export async function fetchAssetIndex(resolved: Record<string, any>, source: Dow
     const localIndex = path.join(assetsIndexDir(), `${indexId}.json`);
     if (fs.existsSync(localIndex)) {
       const cached = readJson(localIndex, { objects: {} as Record<string, { hash: string; size: number }> });
-      return { indexId, objects: mapAssets(cached) };
+      const objects = mapAssets(cached);
+      if (indexId === 'legacy') ensureVirtualLegacy(objects);
+      return { indexId, objects };
     }
     throw new Error(`该版本使用旧式资源索引（${indexId}），首次导入请连接网络`);
   }
@@ -401,7 +423,9 @@ export async function fetchAssetIndex(resolved: Record<string, any>, source: Dow
     fs.mkdirSync(assetsIndexDir(), { recursive: true });
     writeJson(path.join(assetsIndexDir(), `${ai.id}.json`), indexJson);
   } catch { /* ignore */ }
-  return { indexId: ai.id, objects: mapAssets(indexJson) };
+  const objects = mapAssets(indexJson);
+  if (ai.virtual === true || ai.id === 'legacy') ensureVirtualLegacy(objects);
+  return { indexId: ai.id, objects };
 }
 
 function mapAssets(indexJson: { objects?: Record<string, { hash: string; size: number }> }): AssetObject[] {

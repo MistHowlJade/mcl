@@ -119,6 +119,12 @@ check('class file version 61.0 归因 unsupported-class-version', () => {
 });
 
 console.log('== 本轮修复回归 ==');
+check('旧版只有 natives 的幻影库不生成 404 主 jar 任务', () => {
+  const resolved = { libraries: [{ name: 'tv.twitch:twitch-platform:5.16', natives: { windows: 'natives-windows-${arch}' } }] };
+  const libs = version.collectLibraries(resolved);
+  assert.strictEqual(libs.filter(l => !l.isNative).length, 0);
+  assert.ok(libs.some(l => l.isNative));
+});
 check('旧版 natives ${arch} 占位符按 CPU 架构展开', () => {
   const arch = process.arch === 'ia32' ? '32' : process.arch === 'arm64' ? 'arm64' : '64';
   const resolved = { libraries: [{ name: 'tv.twitch:twitch-platform:5.16', natives: { windows: 'natives-windows-${arch}' } }] };
