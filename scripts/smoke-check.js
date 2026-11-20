@@ -3,6 +3,8 @@
  * 运行：node scripts/smoke-check.js（需要先 npm run build 生成 electron-dist/）
  */
 const assert = require('assert');
+const fs = require('fs');
+const os = require('os');
 const path = require('path');
 
 let pass = 0, fail = 0;
@@ -16,6 +18,8 @@ const version = require(path.join(dist, 'version.js'));
 const net = require(path.join(dist, 'net.js'));
 const migrate = require(path.join(dist, 'migrate.js'));
 const crash = require(path.join(dist, 'crash.js'));
+const java = require(path.join(dist, 'java.js'));
+const zip = require(path.join(dist, 'zip.js'));
 
 console.log('== evalRules / evalRule（issue #1）==');
 check('allow + disallow(osx) 在非 macOS 生效（应为 true）', () => {
@@ -109,6 +113,34 @@ check('exit code 137 归因 killed-exit-137', () => {
 });
 check('class file version 61.0 归因 unsupported-class-version', () => {
   assert.strictEqual(crash.analyzeLogText('java.lang.UnsupportedClassVersionError: Foo has been compiled by a more recent version of the Java Runtime (class file version 61.0), this version of the Java Runtime only recognizes class file versions up to 52.0').ruleId, 'unsupported-class-version');
+});
+
+console.log('== 本轮修复回归 ==');
+check('旧版 natives ${arch} 占位符按 CPU 架构展开', () => {
+  const arch = process.arch === 'ia32' ? '32' : process.arch === 'arm64' ? 'arm64' : '64';
+  const resolved = { libraries: [{ name: 'tv.twitch:twitch-platform:5.16', natives: { windows: 'natives-windows-${arch}' } }] };
+  const libs = version.collectLibraries(resolved);
+  assert.ok(libs.some(l => l.path.includes(`natives-windows-${arch}.jar`)), `应展开为 ${arch} 位 natives`);
+  assert.ok(!libs.some(l => l.path.includes('${arch}')), '不应残留未展开的占位符');
+});
+check('Java 8u291 排序新于 8u202', () => {
+  assert.ok(java.compareVersionDesc('1.8.0_291', '1.8.0_202') < 0);
+  assert.ok(java.compareVersionDesc('1.8.0_202', '1.8.0_291') > 0);
+});
+check('ZIP 指定前缀只解压该子树', () => {
+  const buf = zip.zipWrite([
+    { name: 'world/level.dat', data: Buffer.from('x') },
+    { name: 'screenshots/pic.png', data: Buffer.from('y') },
+  ]);
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mcl-zip-'));
+  try {
+    const written = zip.zipExtractAll(buf, dir, 'world/');
+    assert.strictEqual(written.length, 1);
+    assert.ok(fs.existsSync(path.join(dir, 'level.dat')));
+    assert.ok(!fs.existsSync(path.join(dir, 'screenshots')));
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 process.exit(fail === 0 ? 0 : 1);
