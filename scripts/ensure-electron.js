@@ -16,12 +16,16 @@ const distDir = path.join(electronDir, 'dist');
 const isWin = process.platform === 'win32';
 const isMac = process.platform === 'darwin';
 const exeName = isWin ? 'electron.exe' : isMac ? 'Electron' : 'electron';
+// macOS 的可执行文件在 .app 包内部，path.txt 也要写相对 dist 的完整路径；
+// 写成裸 "Electron" 会让 npm 的 electron 启动器找不到二进制，并且每次都误判为缺失重新下载。
+const exePath = isMac ? path.join(distDir, 'Electron.app', 'Contents', 'MacOS', 'Electron') : path.join(distDir, exeName);
+const pathTxtValue = isMac ? 'Electron.app/Contents/MacOS/Electron' : exeName;
 const pathTxt = path.join(electronDir, 'path.txt');
 
 function log(msg) { console.log(`[ensure-electron] ${msg}`); }
 
 // 1) 已经齐了就不动了
-if (fs.existsSync(path.join(distDir, exeName)) && fs.existsSync(pathTxt)) {
+if (fs.existsSync(exePath) && fs.existsSync(pathTxt)) {
   log('Electron 二进制已就绪，跳过。');
   process.exit(0);
 }
@@ -93,7 +97,7 @@ function download(url, dest, redirects = 0) {
     execSync(`unzip -o '${zipPath}' -d '${distDir}'`, { stdio: 'inherit' });
   }
   fs.unlinkSync(zipPath);
-  fs.writeFileSync(pathTxt, exeName, 'utf8');
+  fs.writeFileSync(pathTxt, pathTxtValue, 'utf8');
   log('完成，可以运行 npm run dev 了。');
 })().catch(e => {
   console.error(`[ensure-electron] 失败：${e.message || e}`);
