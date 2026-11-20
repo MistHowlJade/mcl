@@ -371,7 +371,7 @@ function OnlineContentModal({ instance, kind, onClose, onInstalled }: {
                 <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
                   <strong>{item.title}</strong>
                   <span className="tag">{item.author || '未知作者'}</span>
-                  {item.gameVersions.includes(gameVersion) && <span className="tag green">兼容 {gameVersion}</span>}
+                  {!!gameVersion.trim() && item.gameVersions.includes(gameVersion.trim()) && <span className="tag green">兼容 {gameVersion.trim()}</span>}
                 </div>
                 <div className="faint" style={{ marginTop: 2 }}>{item.description}</div>
                 <div className="faint" style={{ marginTop: 4 }}>

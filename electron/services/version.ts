@@ -353,7 +353,7 @@ export async function fetchAssetIndex(resolved: Record<string, any>, source: Dow
   objects: AssetObject[];
 }> {
   const ai = resolved.assetIndex ?? resolved.assets;
-  if (typeof ai === 'string' || !ai.url) {
+  if (typeof ai === 'string' || !ai || typeof ai !== 'object' || typeof ai.url !== 'string') {
     // 旧版：assetIndex 字段是名字，需要自行从 launchermeta 拿？兜底：按名字走缓存或报错
     const indexId = typeof ai === 'string' ? ai : ai?.id;
     if (!isSafePathSegment(indexId)) throw new Error(`资源索引 id 非法：${String(indexId)}`);

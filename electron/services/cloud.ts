@@ -214,6 +214,7 @@ function applyManifest(manifest: CloudManifest, saveArchives?: Map<string, Buffe
   const rawInstances = Array.isArray(manifest.instances) ? manifest.instances : [];
   if (manifest.instances !== undefined && !Array.isArray(manifest.instances)) warnings.push('快照里的实例列表格式不正确，已跳过');
   let instancesApplied = 0;
+  const appliedInstanceIds = new Set<string>();
   for (const rawItem of rawInstances) {
     const raw = (rawItem && typeof rawItem === 'object') ? rawItem : {};
     const id = String(raw?.id ?? '');
@@ -250,6 +251,7 @@ function applyManifest(manifest: CloudManifest, saveArchives?: Map<string, Buffe
     for (const sub of paths.GAME_SUBDIRS) fs.mkdirSync(path.join(paths.gameDir(id), sub), { recursive: true });
     writeJson(existingFile, merged);
     instancesApplied++;
+    appliedInstanceIds.add(id);
   }
 
   const rawServers = Array.isArray(manifest.servers) ? manifest.servers : [];
@@ -293,14 +295,57 @@ function applyManifest(manifest: CloudManifest, saveArchives?: Map<string, Buffe
   let savesApplied = 0;
   if (saveArchives && saveArchives.size > 0) {
     for (const [instanceId, buf] of saveArchives) {
+      // 快照可以手工编辑：只恢复本次清单里真实存在的实例，避免凭空创建幽灵存档目录
+      if (!appliedInstanceIds.has(instanceId)) {
+        warnings.push(`已跳过未知实例 ${instanceId} 的存档`);
+        continue;
+      }
+      const savesDir = path.join(paths.gameDir(instanceId), 'saves');
+      // 临时目录放在备份目录：恢复中途失败不会被游戏当成一个真实世界
+      const suffix = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+      const tempRoot = paths.instanceBackupsDir(instanceId);
+      const tempDir = path.join(tempRoot, `.cloud-${suffix}`);
       try {
-        const savesDir = path.join(paths.gameDir(instanceId), 'saves');
+        fs.mkdirSync(tempDir, { recursive: true });
+        const written = zipExtractAll(buf, tempDir);
+        if (written.length === 0) continue;
+        // 归档内容就是 saves 下的世界目录。直接往 saves 里覆盖会把快照里已不存在的
+        // 旧区块留在原地，恢复出“半新半旧”的世界；这里逐个世界整体替换。
+        // 只接受带 level.dat 的顶层目录，快照被手工塞入的杂物不能顶掉本机世界。
+        const tops = Array.from(new Set(written.map(p => path.relative(tempDir, p).split(path.sep)[0])))
+          .filter(top => {
+            if (!top || top === '.' || top === '..') return false;
+            const src = path.join(tempDir, top);
+            try { return fs.statSync(src).isDirectory() && fs.existsSync(path.join(src, 'level.dat')); } catch { return false; }
+          });
+        if (tops.length === 0) {
+          warnings.push(`实例 ${instanceId} 的存档包里没有识别出有效世界（缺少 level.dat），已跳过`);
+          continue;
+        }
         fs.mkdirSync(savesDir, { recursive: true });
-        // 归档内容就是 saves 下的世界目录；zipExtractAll 自带目录穿越防护
-        const written = zipExtractAll(buf, savesDir);
-        if (written.length > 0) savesApplied++;
+        let restored = 0;
+        for (let i = 0; i < tops.length; i++) {
+          const top = tops[i];
+          const src = path.join(tempDir, top);
+          const target = path.join(savesDir, top);
+          if (!fs.existsSync(src)) continue;
+          const oldDir = path.join(tempRoot, `.cloud-old-${suffix}-${i}`);
+          if (fs.existsSync(target)) fs.renameSync(target, oldDir);
+          try {
+            fs.renameSync(src, target);
+            restored++;
+          } catch (e) {
+            // 替换失败时把原世界放回去，不能留下世界目录已消失的状态
+            if (fs.existsSync(oldDir)) { try { fs.renameSync(oldDir, target); } catch { /* ignore */ } }
+            throw e;
+          }
+          try { fs.rmSync(oldDir, { recursive: true, force: true }); } catch { /* 旧世界清理失败不影响已完成的恢复 */ }
+        }
+        if (restored > 0) savesApplied++;
       } catch (e) {
         warnings.push(`恢复实例 ${instanceId} 的存档失败：${e instanceof Error ? e.message : e}`);
+      } finally {
+        try { fs.rmSync(tempDir, { recursive: true, force: true }); } catch { /* ignore */ }
       }
     }
   }

@@ -269,18 +269,25 @@ async function ensureForgeLikeInstalled(gameDir: string, loader: 'forge' | 'neof
     ? (/neoforge/i.test(d) || (neoForgeLegacy && d.startsWith(`${mcVersion}-forge-`)))
     // 排除包含 forge 子串的 neoforge 目录，避免 Forge 实例误用 NeoForge 版本
     : (/forge/i.test(d) && !/neoforge/i.test(d));
+  // 用户填的加载器版本可能是纯版本号（47.2.0），也可能是完整 Maven ID（1.20.1-47.2.0）；
+  // 安装器生成的目录形如 1.20.1-forge-47.2.0，两种写法都必须能命中，否则每次启动都会重装。
+  const bareLoaderVersion = loaderVersion
+    ? (loaderVersion.startsWith(`${mcVersion}-`) ? loaderVersion.slice(mcVersion.length + 1) : loaderVersion)
+    : null;
+  const dirMatchesLoaderVersion = (dir: string) => {
+    if (!loaderVersion) return true;
+    if (dir.includes(loaderVersion)) return true;
+    return !!bareLoaderVersion && dir.includes(bareLoaderVersion);
+  };
+  const hasVersionJson = (d: string) => fs.existsSync(path.join(versionsDirRel, d, `${d}.json`));
   const existing = fs.existsSync(versionsDirRel) ? fs.readdirSync(versionsDirRel).filter(existingFilter) : [];
   if (existing.length > 0) {
     // 指定了版本：必须命中同版本目录；未指定版本（UI 默认留空 = 最新稳定版）：
     // 复用任意已安装且 JSON 完整的目录，否则每次启动都会重新下载并运行安装器。
     const hit = loaderVersion
-      ? existing.find(d => d.includes(loaderVersion))
-      : existing.find(d => fs.existsSync(path.join(versionsDirRel, d, `${d}.json`)));
-    if (hit) {
-      const jsonPath = path.join(versionsDirRel, hit, `${hit}.json`);
-      // 版本目录可能被手动删过 JSON：缺文件时重新安装，而不是把坏路径交给启动器
-      if (fs.existsSync(jsonPath)) return jsonPath;
-    }
+      ? existing.find(d => dirMatchesLoaderVersion(d) && hasVersionJson(d))
+      : existing.find(hasVersionJson);
+    if (hit) return path.join(versionsDirRel, hit, `${hit}.json`);
   }
 
   let forgeId: string;
@@ -352,11 +359,11 @@ async function ensureForgeLikeInstalled(gameDir: string, loader: 'forge' | 'neof
   }
   const installed = fs.existsSync(versionsDirRel) ? fs.readdirSync(versionsDirRel).filter(existingFilter) : [];
   // 只认带完整 JSON 的目录：安装失败留下的空目录不能被当成新版本
-  const usable = installed.filter(d => fs.existsSync(path.join(versionsDirRel, d, `${d}.json`)));
+  const usable = installed.filter(hasVersionJson);
   const mtimeOf = (d: string) => { try { return fs.statSync(path.join(versionsDirRel, d)).mtimeMs; } catch { return 0; } };
   const newest = usable.sort((a, b) => mtimeOf(b) - mtimeOf(a));
   // 指定了加载器版本时必须命中该版本，不能悄悄退回上一次安装的旧版本
-  const hit = loaderVersion ? newest.find(d => d.includes(loaderVersion)) : newest[0];
+  const hit = loaderVersion ? newest.find(dirMatchesLoaderVersion) : newest[0];
   if (!hit) throw new Error(`${loader} 安装完成，但找不到${loaderVersion ? ` ${loaderVersion} 的` : ''}版本目录，请查看安装日志或手动指定加载器版本。`);
   const jsonPath = path.join(versionsDirRel, hit, `${hit}.json`);
   return jsonPath;
