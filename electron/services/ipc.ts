@@ -383,19 +383,24 @@ export function registerIpcHandlers(): void {
         const modsDir = path.join(instance.gameDir, 'mods');
         const target = fix.args?.file;
         if (target) {
-          const enabled = path.join(modsDir, path.basename(target));
+          // 磁盘上的禁用文件名是 foo.jar.disabled：先归一化，避免再次禁用变成 .disabled.disabled
+          const base = path.basename(String(target)).replace(/\.disabled$/i, '');
+          const enabled = path.join(modsDir, base);
+          const disabled = `${enabled}.disabled`;
           if (fs.existsSync(enabled)) {
-            const disabled = enabled + '.disabled';
+            if (fs.existsSync(disabled)) {
+              return { ok: false, message: `mods 目录同时存在 ${base} 和 ${base}.disabled，请先手动删除一个重复文件。` };
+            }
             fs.renameSync(enabled, disabled);
-            return { ok: true, message: `已将 ${path.basename(target)} 重命名为 .disabled，下次启动生效。` };
+            return { ok: true, message: `已将 ${base} 重命名为 .disabled，下次启动生效。` };
           }
-          if (fs.existsSync(enabled + '.disabled')) {
-            return { ok: true, message: `${path.basename(target)} 已经是 .disabled。` };
+          if (fs.existsSync(disabled)) {
+            return { ok: true, message: `${base} 已经是 .disabled。` };
           }
-          return { ok: false, message: `在 mods 中找不到 ${target}` };
+          return { ok: false, message: `在 mods 中找不到 ${base}` };
         }
         // 未指定具体模组：列出当前 mods 目录里全部条目，引导到体检处理
-        const files = fs.existsSync(modsDir) ? fs.readdirSync(modsDir).filter(f => f.endsWith('.jar') || f.endsWith('.disabled')) : [];
+        const files = fs.existsSync(modsDir) ? fs.readdirSync(modsDir).filter(f => f.endsWith('.jar') || f.endsWith('.jar.disabled')) : [];
         return {
           ok: true,
           message: files.length > 0

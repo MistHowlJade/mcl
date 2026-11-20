@@ -121,10 +121,16 @@ export function checkModHealth(instanceId: string, gameDir: string, currentLoade
 export function applyModHealthFix(instanceId: string, gameDir: string, target: string): boolean {
   const modsDir = path.resolve(gameDir, 'mods');
   // 只取文件名并做目录边界校验，防止 target 携带 ../ 逃逸 mods 目录
-  const full = path.resolve(modsDir, path.basename(target));
+  const base = path.basename(String(target ?? '')).replace(/\.disabled$/i, '');
+  if (!base) return false;
+  const full = path.resolve(modsDir, base);
   if (!full.startsWith(modsDir + path.sep)) return false;
   if (fs.existsSync(full) && full.endsWith('.jar')) {
-    fs.renameSync(full, full + '.disabled');
+    const disabled = full + '.disabled';
+    // 已有同名 .disabled 时 rename 在 Windows 上会直接失败；
+    // 返回 false 让界面提示，而不是抛出未处理异常
+    if (fs.existsSync(disabled)) return false;
+    fs.renameSync(full, disabled);
     return true;
   }
   return false;

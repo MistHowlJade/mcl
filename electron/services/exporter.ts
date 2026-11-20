@@ -130,9 +130,16 @@ export async function exportInstance(instanceId: string, format: ExportFormat, d
   if (instance.mcVersion === 'unknown' && format !== 'zip') {
     warnings.push('该实例未识别 Minecraft 版本，导出的启动器包可能无法直接导入。建议先在实例页补全版本。');
   }
-  /** NeoForge 1.20.1 的加载器版本在发布坐标里带 1.20.1- 前缀，导出格式通常只要 47.x */
-  const normalizeLoaderVersion = (v: string | null): string | null =>
-    instance.loader === 'neoforge' && instance.mcVersion === '1.20.1' && v ? v.replace(/^1\.20\.1-/, '') : v;
+  /**
+   * Forge / NeoForge 的 Maven 发布坐标可能是完整 ID（1.20.1-47.2.0），
+   * 而 MultiMC 组件与 Modrinth 依赖只认纯加载器版本（47.2.0）。
+   * 用户手填或从旧快照恢复时两种写法都可能存在，导出前统一去掉 MC 前缀。
+   */
+  const normalizeLoaderVersion = (v: string | null): string | null => {
+    if (!v || (instance.loader !== 'forge' && instance.loader !== 'neoforge')) return v;
+    const prefix = `${instance.mcVersion}-`;
+    return v.startsWith(prefix) ? v.slice(prefix.length) : v;
+  };
   let entries: ZipEntryInput[] = [];
 
   if (format === 'mmc') {
