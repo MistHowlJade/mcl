@@ -131,7 +131,7 @@ export const api = {
   logsRead: (name: string, instanceId?: string | null) => invoke<string>('logs:read', name, instanceId ?? null),
 
   diagnosticExport: (instanceId?: string | null) => invoke<string | null>('diagnostic:export', instanceId ?? null),
-  mirrorTest: () => invoke<{ source: string; latencies: Array<{ source: string; latencyMs: number; ok: boolean }> }>('mirror:test'),
+  mirrorTest: () => invoke<{ source: 'official' | 'bmclapi' | 'custom'; latencies: Array<{ source: string; latencyMs: number; ok: boolean }> }>('mirror:test'),
 
   /* ---------- 服务器 ---------- */
   serversList: () => invoke<ServerInfo[]>('server:list'),

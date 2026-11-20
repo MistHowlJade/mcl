@@ -24,6 +24,7 @@ export default function Settings({ onNavigate }: { onNavigate?: (page: 'cloud') 
   const [javas, setJavas] = useState<JavaInfo[]>([]);
   const [javaScanning, setJavaScanning] = useState(false);
   const [mirrorLatency, setMirrorLatency] = useState<Array<{ source: string; latencyMs: number; ok: boolean }> | null>(null);
+  const [recommendedSource, setRecommendedSource] = useState<'official' | 'bmclapi' | 'custom' | null>(null);
   const [mirrorTesting, setMirrorTesting] = useState(false);
   const [confirmReset, setConfirmReset] = useState(false);
   const [appVersion, setAppVersion] = useState('0.1.0');
@@ -78,6 +79,7 @@ export default function Settings({ onNavigate }: { onNavigate?: (page: 'cloud') 
     try {
       const result = await api.mirrorTest();
       setMirrorLatency(result.latencies);
+      setRecommendedSource(result.source);
       toast.toast(`测速完成，推荐：${result.source === 'bmclapi' ? 'BMCLAPI（国内镜像）' : '官方源'}`, 'info');
     } catch (e) { toast.toast(String(e), 'error'); } finally { setMirrorTesting(false); }
   };
@@ -204,6 +206,14 @@ export default function Settings({ onNavigate }: { onNavigate?: (page: 'cloud') 
           <div className="label">镜像测速<Tip text="分别测试两个源的响应时间，帮助你判断当前网络下哪个更快。" /></div>
           <div className="control">
             <button className="btn" onClick={testMirror} disabled={mirrorTesting}>{mirrorTesting ? '测速中…' : '开始测速'}</button>
+            {recommendedSource && recommendedSource !== settings.download.source && (
+              <button
+                className="btn small primary"
+                onClick={() => { patch({ download: { source: recommendedSource } }); setRecommendedSource(null); }}
+              >
+                使用推荐源：{recommendedSource === 'bmclapi' ? 'BMCLAPI' : '官方源'}
+              </button>
+            )}
           </div>
         </div>
         {mirrorLatency && (
