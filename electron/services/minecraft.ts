@@ -79,15 +79,27 @@ export async function killResidualProcesses(): Promise<number[]> {
   for (const pid of pids) {
     if (!Number.isInteger(pid) || pid <= 0 || pid === currentPid) continue;
     const alive = await new Promise<boolean>((resolve) => {
-      execFile('tasklist', ['/FI', `PID eq ${pid}`, '/NH', '/FO', 'CSV'], { timeout: 8000, windowsHide: true }, (err, stdout) => {
-        const output = String(stdout ?? '');
-        // 系统重启后 PID 可能被复用：只结束仍以 java/javaw 运行的进程，绝不误杀别的程序
-        resolve(!err && output.includes(String(pid)) && /"java(?:w)?\.exe"/i.test(output));
-      });
+      if (process.platform === 'win32') {
+        execFile('tasklist', ['/FI', `PID eq ${pid}`, '/NH', '/FO', 'CSV'], { timeout: 8000, windowsHide: true }, (err, stdout) => {
+          const output = String(stdout ?? '');
+          // 系统重启后 PID 可能被复用：只结束仍以 java/javaw 运行的进程，绝不误杀别的程序
+          resolve(!err && output.includes(String(pid)) && /"java(?:w)?\.exe"/i.test(output));
+        });
+      } else {
+        // Linux/macOS 没有 tasklist；用 ps 确认仍是 java 进程后再杀，避免 PID 复用误伤
+        execFile('ps', ['-p', String(pid), '-o', 'comm='], { timeout: 8000 }, (err, stdout) => {
+          resolve(!err && /java/i.test(String(stdout ?? '')));
+        });
+      }
     });
     if (alive) {
       await new Promise<void>((resolve) => {
-        execFile('taskkill', ['/PID', String(pid), '/T', '/F'], { timeout: 10000, windowsHide: true }, () => resolve());
+        if (process.platform === 'win32') {
+          execFile('taskkill', ['/PID', String(pid), '/T', '/F'], { timeout: 10000, windowsHide: true }, () => resolve());
+        } else {
+          try { process.kill(pid, 'SIGKILL'); } catch { /* 进程已退出 */ }
+          resolve();
+        }
       });
       killed.push(pid);
     }

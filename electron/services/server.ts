@@ -764,27 +764,35 @@ export async function startServer(id: string): Promise<ServerInfo> {
     try { serverEvents.emit('status', toInfo(readConfig(id))); } catch { /* 配置已不存在 */ }
   };
 
-  const handleLines = (text: string) => {
-    for (const raw of String(text).split(/\r?\n/)) {
-      const line = raw.trimEnd();
-      if (!line.trim()) continue;
-      emitLog(id, line);
-      if (/Done \([\d.]+s\)! For help/.test(line)) setStatus(id, 'running');
-      const join = line.match(/(?:^|\]: )([A-Za-z0-9_]{1,16}) joined the game/);
-      if (join) {
-        rt.players.add(join[1]);
-        emitStatusSafe();
-      }
-      const leave = line.match(/(?:^|\]: )([A-Za-z0-9_]{1,16}) left the game/);
-      if (leave) {
-        rt.players.delete(leave[1]);
-        emitStatusSafe();
-      }
-      if (/Stopping server/.test(line)) setStatus(id, 'stopping');
+  const handleLine = (raw: string) => {
+    const line = raw.trimEnd();
+    if (!line.trim()) return;
+    emitLog(id, line);
+    if (/Done \([\d.]+s\)! For help/.test(line)) setStatus(id, 'running');
+    const join = line.match(/(?:^|\]: )([A-Za-z0-9_]{1,16}) joined the game/);
+    if (join) {
+      rt.players.add(join[1]);
+      emitStatusSafe();
     }
+    const leave = line.match(/(?:^|\]: )([A-Za-z0-9_]{1,16}) left the game/);
+    if (leave) {
+      rt.players.delete(leave[1]);
+      emitStatusSafe();
+    }
+    if (/Stopping server/.test(line)) setStatus(id, 'stopping');
   };
-  child.stdout.on('data', handleLines);
-  child.stderr.on('data', handleLines);
+  // stdout 的一个 chunk 可能截断在半行：必须跨 chunk 缓冲，否则 "Done (...)" 与玩家进出永远匹配不到
+  const makeChunkHandler = () => {
+    let pending = '';
+    return (text: string) => {
+      pending += String(text);
+      const parts = pending.split(/\r?\n/);
+      pending = parts.pop() ?? '';
+      for (const line of parts) handleLine(line);
+    };
+  };
+  child.stdout.on('data', makeChunkHandler());
+  child.stderr.on('data', makeChunkHandler());
   child.on('error', err => {
     emitLog(id, `[mcl] 进程错误：${err.message}`);
     rt.status = 'crashed';

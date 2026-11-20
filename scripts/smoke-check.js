@@ -70,6 +70,9 @@ check('Forge/NeoForge Maven 不映射到 BMCLAPI', () => {
   const u = 'https://maven.minecraftforge.net/net/minecraftforge/forge/maven-metadata.xml';
   assert.strictEqual(net.mapToMirror(u, 'bmclapi'), u);
 });
+check('Fabric Maven 镜像带 /maven 前缀', () => {
+  assert.strictEqual(net.mapToMirror('https://maven.fabricmc.net/net/fabricmc/fabric-api/fabric-api/0.91.0/fabric-api-0.91.0.jar', 'bmclapi').includes('/maven/net/fabricmc/'), true);
+});
 check('assets 使用 sha1 全路径', () => {
   assert.strictEqual(net.mapToMirror('https://resources.download.minecraft.net/ab/abcdef', 'bmclapi'), 'https://bmclapi2.bangbang93.com/assets/abcdef');
 });

@@ -6,7 +6,7 @@ import * as http from 'http';
 import { URL } from 'url';
 import { readJson, writeJson } from './store';
 import { dataRoot } from './paths';
-import { createProxiedRequest } from './proxy';
+import { createProxiedRequest, getApiProxyConfig } from './proxy';
 import * as path from 'path';
 
 export const OFFICIAL = {
@@ -30,11 +30,12 @@ export async function fetchWithTimeout(
 ): Promise<{ status: number; headers: http.IncomingHttpHeaders; body: Buffer }> {
   const timeoutMs = options.timeoutMs ?? 15000;
   const redirectDepth = options.redirectDepth ?? 0;
+  // API/登录/云同步不应受「下载走代理」开关影响，否则关掉下载代理会整体断网
   const req = await createProxiedRequest(url, {
     method: options.method ?? 'GET',
     headers: { 'User-Agent': USER_AGENT, ...(options.headers ?? {}) },
     timeoutMs,
-  });
+  }, getApiProxyConfig());
   return new Promise((resolve, reject) => {
     req.on('response', (res) => {
       // 重定向（GET/HEAD 跟随；下载器自行处理断点）
@@ -49,6 +50,11 @@ export async function fetchWithTimeout(
         let next: URL;
         try { next = new URL(res.headers.location, url); } catch { reject(new Error(`重定向地址无效：${res.headers.location}`)); return; }
         const nextOptions = { ...options, redirectDepth: redirectDepth + 1, timeoutMs };
+        // HTTP 303 语义：客户端必须改用 GET，不能带着原 POST body 再请求一次
+        if (status === 303) {
+          nextOptions.method = 'GET';
+          delete nextOptions.body;
+        }
         // 跨域重定向时不携带 Authorization，避免 WebDAV/令牌被转到第三方主机
         try {
           if (new URL(url).origin !== next.origin && nextOptions.headers) {
@@ -113,7 +119,8 @@ export function mapToMirror(url: string, source: 'official' | 'bmclapi' | 'custo
       return `${base}/assets/${hash}`;
     }
     if (host.includes('maven.fabricmc.net') || host.includes('maven.quiltmc.org')) {
-      return `${base}${pathname}`;
+      // BMCLAPI 的 Fabric/Quilt Maven 在 /maven 前缀下，直接拼原路径会 404
+      return `${base}/maven${pathname}`;
     }
     // Forge/NeoForge Maven 不在 BMCLAPI 上，不映射（走官方小文件即可）
     return url;

@@ -57,6 +57,14 @@ export function getProxyConfig(): ProxyConfig | null {
   return readProxy(true);
 }
 
+/**
+ * API/登录/云同步等“非下载”请求用的代理。
+ * 「下载走代理」开关只控制游戏资源下载，不应把微软登录、Modrinth 搜索、GitHub 更新、WebDAV 一起断网。
+ */
+export function getApiProxyConfig(): ProxyConfig | null {
+  return readProxy(false);
+}
+
 /** 把代理配置转成 JVM 系统属性（游戏内下载资源包/皮肤时使用） */
 export function proxyJvmArgs(): string[] {
   const settings = getSettings();
@@ -88,6 +96,7 @@ export function proxyEnabled(): boolean {
 export async function createProxiedRequest(
   targetUrl: string,
   options: { method?: string; headers?: Record<string, string>; timeoutMs?: number } = {},
+  proxyOverride?: ProxyConfig | null,
 ): Promise<http.ClientRequest> {
   let target: URL;
   try { target = new URL(targetUrl); } catch { throw new Error(`无法解析的 URL：${targetUrl}`); }
@@ -98,7 +107,7 @@ export async function createProxiedRequest(
   const isHttps = target.protocol === 'https:';
   const method = options.method ?? 'GET';
   const timeoutMs = options.timeoutMs ?? 15000;
-  const proxy = getProxyConfig();
+  const proxy = proxyOverride === undefined ? getProxyConfig() : proxyOverride;
 
   if (!proxy) {
     const client = isHttps ? https : http;
