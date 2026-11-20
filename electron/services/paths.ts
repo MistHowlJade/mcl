@@ -31,8 +31,14 @@ export function dataRoot(): string {
   }
   if (app.isPackaged) {
     const exeDir = path.dirname(process.execPath);
-    if (fs.existsSync(path.join(exeDir, 'portable.txt'))) {
-      cachedRoot = path.join(exeDir, 'mcl-data');
+    // macOS 的可执行体在 Electron.app/Contents/MacOS 里；用户按直觉把 portable.txt
+    // 放在 .app 旁边时也要认，否则便携模式在 mac 上等于失效。
+    const portableDirs = process.platform === 'darwin'
+      ? [exeDir, path.resolve(exeDir, '..', '..', '..')]
+      : [exeDir];
+    const portableDir = portableDirs.find(d => fs.existsSync(path.join(d, 'portable.txt')));
+    if (portableDir) {
+      cachedRoot = path.join(portableDir, 'mcl-data');
       return cachedRoot;
     }
     cachedRoot = app.getPath('userData');

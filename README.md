@@ -127,7 +127,7 @@ npm run start      # 运行构建产物
 npm run package    # 零依赖打包：release/MCL-<版本>-<平台>-<架构>/ + .zip
 ```
 
-`npm run package` 直接复用已安装的 Electron 运行时（不新增依赖），生成免安装目录与便携 ZIP；在 exe 同级放一个空的 `portable.txt` 即可让数据写入旁边的 `mcl-data/`。默认不生成 NSIS/MSI 安装器（避免签名与提权问题），需要安装器可自行接入 electron-builder。
+`npm run package` 直接复用已安装的 Electron 运行时（不新增依赖），生成免安装目录与便携 ZIP；在 exe 同级放一个空的 `portable.txt` 即可让数据写入旁边的 `mcl-data/`（macOS 放在 `Electron.app` 旁边也有效）。默认不生成 NSIS/MSI 安装器（避免签名与提权问题），需要安装器可自行接入 electron-builder。
 
 ### 目录结构
 
