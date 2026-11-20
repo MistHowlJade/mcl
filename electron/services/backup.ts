@@ -223,6 +223,53 @@ export async function restoreBackup(backupId: string, instanceId: string): Promi
     }
   }
 
+  // 完整存档备份：世界逐个整体替换，其余白名单文件直接覆盖。
+  // 直接解压覆盖到 game/ 会把备份之后新增的区块留在世界里，
+  // 旧 level.dat 配新 region 文件正是“恢复后世界损坏/回档失败”的常见原因。
+  if (alreadyPrefixed) {
+    const suffix = Date.now().toString(36);
+    const tempRoot = paths.instanceBackupsDir(instanceId);
+    fs.mkdirSync(tempRoot, { recursive: true });
+    const tempDir = path.join(tempRoot, `.restore-${suffix}`);
+    let oldSeq = 0;
+    try {
+      fs.mkdirSync(tempDir, { recursive: true });
+      const written = zipExtractAll(buf, tempDir);
+      // 根目录配置只还原备份里实际存在的，缺的文件保留当前版本
+      for (const file of BACKUP_SUBSET) {
+        if (file === 'saves') continue;
+        const src = path.join(tempDir, file);
+        try {
+          if (!fs.statSync(src).isFile()) continue;
+          fs.copyFileSync(src, path.join(gameDir, file));
+        } catch { /* 文件不存在或读取失败：保留当前版本 */ }
+      }
+      const tempSaves = path.join(tempDir, 'saves');
+      if (fs.existsSync(tempSaves)) {
+        const savesDir = path.join(gameDir, 'saves');
+        fs.mkdirSync(savesDir, { recursive: true });
+        for (const name of fs.readdirSync(tempSaves)) {
+          const src = path.join(tempSaves, name);
+          try { if (!fs.statSync(src).isDirectory()) continue; } catch { continue; }
+          const target = path.join(savesDir, name);
+          const oldDir = path.join(tempRoot, `.old-${suffix}-${oldSeq++}`);
+          if (fs.existsSync(target)) fs.renameSync(target, oldDir);
+          try {
+            fs.renameSync(src, target);
+          } catch (e) {
+            // 替换失败时把原世界放回去，不能留下世界目录已消失的状态
+            if (fs.existsSync(oldDir)) { try { fs.renameSync(oldDir, target); } catch { /* ignore */ } }
+            throw e;
+          }
+          try { fs.rmSync(oldDir, { recursive: true, force: true }); } catch { /* 旧世界清理失败不影响已完成的恢复 */ }
+        }
+      }
+      return { restoredFiles: written.length };
+    } finally {
+      try { fs.rmSync(tempDir, { recursive: true, force: true }); } catch { /* ignore */ }
+    }
+  }
+
   // 只允许还原到白名单子目录（zipExtractAll 内部还会做目录穿越防护）
   const written = zipExtractAll(buf, targetDir, undefined);
   return { restoredFiles: written.length };

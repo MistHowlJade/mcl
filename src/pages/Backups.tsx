@@ -122,7 +122,7 @@ export default function Backups() {
           title="恢复备份"
           message={restoreTarget.kind === 'world'
             ? `将把「${restoreTarget.name}」还原到 saves/${restoreTarget.worldNames[0] ?? '对应世界'}。\n\n如果当前已有同名世界，会被覆盖；MCL 会先把当前存档整体再备份一次。`
-            : `将用「${restoreTarget.name}」覆盖当前存档。\n\nMCL 会先把当前存档再自动备份一次（恢复前备份），所以这一步不会让你丢东西。`}
+            : `将用「${restoreTarget.name}」覆盖当前存档。\n\n备份中的世界会整体替换同名的现有世界（避免新旧区块混杂）；备份之后新建的世界会保留。MCL 会先把当前存档再自动备份一次（恢复前备份），所以这一步不会让你丢东西。`}
           confirmText="恢复"
           onCancel={() => setRestoreTarget(null)}
           onConfirm={() => {

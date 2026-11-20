@@ -32,17 +32,54 @@ interface GithubRelease {
   assets?: GithubAsset[];
 }
 
-/** 比较 a/b，返回 1/0/-1（忽略前缀 v 与预发布后缀） */
+/**
+ * 语义化版本比较，返回 1/0/-1。
+ * 忽略 v 前缀与 +build 元数据；核心版本相同时按 semver 规则比较预发布后缀：
+ * 1.0.0-beta < 1.0.0-rc.1 < 1.0.0（否则测试版用户永远收不到正式版更新）。
+ */
 function compareVersions(a: string, b: string): number {
-  const normalize = (v: string) => v.replace(/^v/i, '').split(/[-+]/)[0].split('.').map(x => parseInt(x, 10) || 0);
-  const pa = normalize(a);
-  const pb = normalize(b);
-  const len = Math.max(pa.length, pb.length);
+  const parse = (raw: string) => {
+    const cleaned = raw.trim().replace(/^v/i, '').split('+')[0];
+    const [core, ...rest] = cleaned.split('-');
+    return {
+      nums: core.split('.').map(x => {
+        const n = parseInt(x, 10);
+        return Number.isFinite(n) ? n : 0;
+      }),
+      pre: rest.join('-').split('.').filter(Boolean),
+    };
+  };
+  const pa = parse(a);
+  const pb = parse(b);
+  const len = Math.max(pa.nums.length, pb.nums.length);
   for (let i = 0; i < len; i++) {
-    const x = pa[i] ?? 0;
-    const y = pb[i] ?? 0;
+    const x = pa.nums[i] ?? 0;
+    const y = pb.nums[i] ?? 0;
     if (x > y) return 1;
     if (x < y) return -1;
+  }
+  if (!pa.pre.length && !pb.pre.length) return 0;
+  if (!pa.pre.length) return 1;
+  if (!pb.pre.length) return -1;
+  const preLen = Math.max(pa.pre.length, pb.pre.length);
+  for (let i = 0; i < preLen; i++) {
+    const x = pa.pre[i];
+    const y = pb.pre[i];
+    // 前缀相同时段数少的更旧：1.0.0-alpha < 1.0.0-alpha.1
+    if (x === undefined) return -1;
+    if (y === undefined) return 1;
+    const xNum = /^\d+$/.test(x);
+    const yNum = /^\d+$/.test(y);
+    if (xNum && yNum) {
+      const dx = Number(x);
+      const dy = Number(y);
+      if (dx !== dy) return dx > dy ? 1 : -1;
+    } else if (xNum !== yNum) {
+      // 数字标识优先级低于字母标识：1.0.0-1 < 1.0.0-alpha
+      return xNum ? -1 : 1;
+    } else if (x !== y) {
+      return x > y ? 1 : -1;
+    }
   }
   return 0;
 }
