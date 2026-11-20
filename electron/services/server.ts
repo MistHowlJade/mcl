@@ -354,18 +354,21 @@ export function saveServerProperties(id: string, patch: ServerProperties): Serve
   // 值里出现换行会额外写进一行属性（甚至覆盖别的键），写盘前统一去掉
   const clean = (value: unknown) => String(value ?? '').replace(/[\r\n]+/g, ' ');
   const remaining = new Map(Object.entries(patch).map(([k, v]) => [clean(k), clean(v)]));
-  const out = lines.map(line => {
+  const replaced = new Set<string>();
+  const out: string[] = [];
+  for (const line of lines) {
     const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith('#') || !trimmed.includes('=')) return line;
+    if (!trimmed || trimmed.startsWith('#') || !trimmed.includes('=')) { out.push(line); continue; }
     const key = trimmed.slice(0, trimmed.indexOf('=')).trim();
-    if (remaining.has(key)) {
-      const value = remaining.get(key)!;
-      remaining.delete(key);
-      return `${key}=${value}`;
+    if (!remaining.has(key)) { out.push(line); continue; }
+    // readServerProperties 以最后一行为准：重复键必须全部处理，否则改了端口实际仍监听旧值
+    if (!replaced.has(key)) {
+      out.push(`${key}=${remaining.get(key)}`);
+      replaced.add(key);
     }
-    return line;
-  });
-  for (const [k, v] of remaining) out.push(`${k}=${v}`);
+    // 后续同 key 行直接丢弃，避免残留旧值重新生效
+  }
+  for (const [k, v] of remaining) if (!replaced.has(k)) out.push(`${k}=${v}`);
   fs.writeFileSync(file, `${out.filter((l, i) => l !== '' || i < out.length - 1).join('\n')}\n`, 'utf8');
   return readServerProperties(id);
 }

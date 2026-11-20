@@ -144,7 +144,14 @@ export async function importModpack(zipPath: string, targetName?: string, onLog?
       dest: safeTarget(game, f.path) ?? path.join(game, 'pack-files', sanitizeRemoteName(f.path.split('/').pop() ?? `file-${i}`)),
       name: sanitizeRemoteName(f.path.split('/').pop() ?? `file-${i}`),
     }));
-    const dl = new DownloadManager({ source: getSettings().download.source, maxThreads: getSettings().download.maxThreads, retries: 3, timeoutMs: getSettings().download.timeoutMs });
+    const downloadSettings = getSettings().download;
+    const dl = new DownloadManager({
+      source: downloadSettings.source,
+      customMirror: downloadSettings.customMirror,
+      maxThreads: downloadSettings.maxThreads,
+      retries: 3,
+      timeoutMs: downloadSettings.timeoutMs,
+    });
     const reports = await dl.run(tasks);
     const ok = reports.filter(r => r.ok).length;
     for (const r of reports) if (!r.ok) { skippedFiles.push(r.name); warnings.push(`下载失败：${r.name}（${r.error}）`); }
