@@ -71,7 +71,7 @@ export function zipWrite(entries: ZipEntryInput[]): Buffer {
 
     const central = Buffer.alloc(46);
     central.writeUInt32LE(0x02014b50, 0);
-    central.writeUInt16LE(20, 4);        // version made by
+    central.writeUInt16LE((3 << 8) | 20, 4); // version made by：高位 3 = Unix，让 external attrs 的 Unix mode 生效
     central.writeUInt16LE(20, 6);        // version needed
     central.writeUInt16LE(0x0800, 8);    // UTF-8 flag
     central.writeUInt16LE(method, 10);
@@ -85,7 +85,9 @@ export function zipWrite(entries: ZipEntryInput[]): Buffer {
     central.writeUInt16LE(0, 32);        // comment
     central.writeUInt16LE(0, 34);        // disk
     central.writeUInt16LE(0, 36);        // internal attrs
-    central.writeUInt32LE(0, 38);        // external attrs
+    // Unix mode：普通文件 0644，脚本/无扩展名可执行文件 0755（便携 ZIP 解压后需可直接运行）
+    const mode = /\.(sh|exe|app)$/i.test(entry.name) || !path.extname(entry.name) ? 0o100755 : 0o100644;
+    central.writeUInt32LE(mode * 0x10000, 38); // external attrs（用乘法，<< 会产生有符号 32 位整数）
     central.writeUInt32LE(offset, 42);   // local header offset
     centralParts.push(central, nameBuf);
 

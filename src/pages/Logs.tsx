@@ -13,6 +13,7 @@ export default function Logs() {
   const [selected, setSelected] = useState<string | null>(null);
   const [content, setContent] = useState('');
   const [query, setQuery] = useState('');
+  const [maxBytes, setMaxBytes] = useState(1024 * 1024);
   const toast = useToast();
   const listSeq = useRef(0);
   const readSeq = useRef(0);
@@ -47,13 +48,13 @@ export default function Logs() {
   useEffect(() => {
     const seq = ++readSeq.current;
     if (!selected) { setContent(''); return; }
-    api.logsRead(selected, instanceId ?? undefined).then(text => {
+    api.logsRead(selected, instanceId ?? undefined, maxBytes).then(text => {
       if (seq === readSeq.current) setContent(text);
     }).catch(e => {
       if (seq === readSeq.current) { setContent(''); toast.toast(String(e), 'error'); }
     });
     /* eslint-disable-next-line */
-  }, [selected, instanceId]);
+  }, [selected, instanceId, maxBytes]);
 
   const filtered = useMemo(() => {
     if (!query.trim()) return content.split(/\r?\n/);
@@ -106,7 +107,8 @@ export default function Logs() {
             <button className="btn small" onClick={() => setQuery('mixin')}>mixin</button>
             <button className="btn small" onClick={() => setQuery('OutOfMemory')}>OOM</button>
             {query && <button className="btn small ghost" onClick={() => setQuery('')}>清除</button>}
-            <span className="faint">{filtered.length} 行{query ? '匹配' : ''}</span>
+            <button className="btn small" onClick={() => setMaxBytes(b => Math.min(64 * 1024 * 1024, b * 4))} title="显示更早的日志内容（最多 64 MB）">显示更早</button>
+            <span className="faint">已读取 {formatBytes(maxBytes)} · {filtered.length} 行{query ? '匹配' : ''}</span>
           </div>
           <div className="mono" style={{ background: '#0b0e14', borderRadius: 8, padding: 12, height: '62vh', overflow: 'auto', fontSize: 11.5, lineHeight: 1.6 }}>
             {filtered.map((line, i) => {

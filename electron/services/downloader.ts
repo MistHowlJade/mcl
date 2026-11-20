@@ -12,6 +12,7 @@ import { EventEmitter } from 'events';
 import { cacheDir } from './paths';
 import { mapToMirror, USER_AGENT } from './net';
 import { createProxiedRequest } from './proxy';
+import { readJson, writeJson } from './store';
 
 export interface DownloadTask {
   id: string;
@@ -53,6 +54,36 @@ export function sha1File(file: string): Promise<string> {
     stream.on('end', () => resolve(hash.digest('hex')));
     stream.on('error', reject);
   });
+}
+
+interface VerifiedFile { size: number; mtime: number; sha1: string }
+type VerifyCache = Record<string, VerifiedFile>;
+
+const verifyCacheFile = () => path.join(cacheDir(), 'verified-files.json');
+let verifyCache: VerifyCache | null = null;
+
+function getVerifyCache(): VerifyCache {
+  if (!verifyCache) {
+    const raw = readJson<unknown>(verifyCacheFile(), {});
+    verifyCache = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw as VerifyCache : {};
+  }
+  return verifyCache;
+}
+
+/** 记录“该文件在某个 size+mtime 下 SHA-1 已验证”，下次启动免于重复全量哈希 */
+function markVerified(dest: string, stat: fs.Stats, sha1: string): void {
+  const cache = getVerifyCache();
+  cache[dest] = { size: stat.size, mtime: stat.mtimeMs, sha1 };
+  if (Object.keys(cache).length > 10000) {
+    verifyCache = {};
+    for (const [k, v] of Object.entries(cache)) if (k === dest) verifyCache[k] = v;
+  }
+  try { writeJson(verifyCacheFile(), verifyCache); } catch { /* 缓存失败只影响下次性能 */ }
+}
+
+function wasVerified(dest: string, stat: fs.Stats, sha1: string): boolean {
+  const hit = getVerifyCache()[dest];
+  return !!hit && hit.size === stat.size && hit.mtime === stat.mtimeMs && hit.sha1 === sha1;
 }
 
 export class DownloadManager extends EventEmitter {
@@ -195,6 +226,11 @@ export class DownloadManager extends EventEmitter {
     // 已完成且校验通过 → 直接复用
     if (fs.existsSync(dest)) {
       const cachedSize = fs.statSync(dest).size;
+      const cachedStat = fs.statSync(dest);
+      if (task.sha1 && wasVerified(dest, cachedStat, task.sha1.toLowerCase())) {
+        this.bytesDoneAll += cachedSize;
+        return { id: task.id, name, ok: true, bytes: cachedSize, fromCache: true };
+      }
       if (!task.sha1) {
         // 没有 SHA-1 的文件只能用声明大小判断完整性：上次中断留下的截断文件不能被当成缓存复用
         if (typeof task.size === 'number' && task.size > 0 && cachedSize !== task.size) {
@@ -207,6 +243,7 @@ export class DownloadManager extends EventEmitter {
         try {
           const hash = await sha1File(dest);
           if (hash === task.sha1.toLowerCase()) {
+            markVerified(dest, cachedStat, hash);
             this.bytesDoneAll += cachedSize;
             return { id: task.id, name, ok: true, bytes: cachedSize, fromCache: true };
           }
@@ -283,6 +320,7 @@ export class DownloadManager extends EventEmitter {
             fs.rmSync(dest, { force: true });
             throw new Error('文件校验失败（SHA-1 不匹配），正在尝试备用源');
           }
+          markVerified(dest, fs.statSync(dest), hash);
         }
         const bytes = fs.statSync(dest).size;
         return { id: task.id, name, ok: true, bytes, fromCache: false };

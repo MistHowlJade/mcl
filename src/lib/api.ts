@@ -130,7 +130,7 @@ export const api = {
   migrateImport: (root: string, selectedNames?: string[]) => invoke<MigrationResult>('migrate:import', root, selectedNames),
 
   logsList: (instanceId?: string | null) => invoke<Array<{ name: string; sizeBytes: number; mtime: number; kind: string }>>('logs:list', instanceId ?? null),
-  logsRead: (name: string, instanceId?: string | null) => invoke<string>('logs:read', name, instanceId ?? null),
+  logsRead: (name: string, instanceId?: string | null, maxBytes?: number) => invoke<string>('logs:read', name, instanceId ?? null, maxBytes),
 
   diagnosticExport: (instanceId?: string | null) => invoke<string | null>('diagnostic:export', instanceId ?? null),
   mirrorTest: () => invoke<{ source: 'official' | 'bmclapi' | 'custom'; latencies: Array<{ source: string; latencyMs: number; ok: boolean }> }>('mirror:test'),

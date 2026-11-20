@@ -431,7 +431,7 @@ export function registerIpcHandlers(): void {
 
   /* ---------- 日志 ---------- */
   ipcMain.handle('logs:list', (_e, instanceId?: string | null) => logsService.listLogs(instanceId));
-  ipcMain.handle('logs:read', (_e, name: string, instanceId?: string | null) => logsService.readLog(name, instanceId));
+  ipcMain.handle('logs:read', (_e, name: string, instanceId?: string | null, maxBytes?: number) => logsService.readLog(name, instanceId, maxBytes));
 
   /* ---------- 诊断包 ---------- */
   ipcMain.handle('diagnostic:export', (_e, instanceId?: string | null) => diagnostic.exportDiagnostic(instanceId ?? null));

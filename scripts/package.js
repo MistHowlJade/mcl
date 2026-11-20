@@ -76,15 +76,16 @@ if (fs.existsSync(appExe)) {
 }
 // macOS 不重命名 Electron.app：改名会破坏 .app 内部结构（签名/Info.plist 引用）
 
-// 3. 放入应用代码：resources/app/{dist,electron-dist,package.json}
-const appDir = path.join(outDir, 'resources', 'app');
+// 3. 放入应用代码：macOS 必须从 Electron.app/Contents/Resources/app 加载
+const resourcesDir = isMac ? path.join(outDir, 'Electron.app', 'Contents', 'Resources') : path.join(outDir, 'resources');
+const appDir = path.join(resourcesDir, 'app');
 fs.mkdirSync(appDir, { recursive: true });
 fs.cpSync(rendererDist, path.join(appDir, 'dist'), { recursive: true });
 fs.cpSync(mainDist, path.join(appDir, 'electron-dist'), { recursive: true });
 
 // Electron 自带的默认应用会影响启动，移除更干净
 for (const legacy of ['default_app.asar', 'default_app']) {
-  fs.rmSync(path.join(outDir, 'resources', legacy), { recursive: true, force: true });
+  fs.rmSync(path.join(resourcesDir, legacy), { recursive: true, force: true });
 }
 
 // 运行时只需要 main / version；依赖为零，无需 node_modules
@@ -108,7 +109,7 @@ fs.writeFileSync(path.join(outDir, '使用说明.txt'), [
   '',
   '便携模式：',
   '  在本目录新建一个空的 portable.txt 文件，数据会保存到同目录的 mcl-data/，',
-  '  不再写入 %APPDATA%。删除 portable.txt 即恢复默认。',
+  `  不再写入 ${isWin ? '%APPDATA%' : isMac ? '~/Library/Application Support' : '~/.config'}。删除 portable.txt 即恢复默认。`,
   '',
   '首次启动会按需下载：',
   '  - Minecraft 版本清单、游戏本体、共享库与资源',
@@ -121,7 +122,7 @@ fs.writeFileSync(path.join(outDir, '使用说明.txt'), [
   '',
   '开源协议：MIT · https://github.com/MistHowlJade/mcl',
   '',
-].join('\r\n'), 'utf8');
+].join('\n'), 'utf8');
 
 console.log('[package] 已生成免安装目录');
 

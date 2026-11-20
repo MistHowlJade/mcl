@@ -198,7 +198,15 @@ export function deleteInstance(id: string, backupDir?: string): { ok: boolean; b
     // 复用 backup 模块打包（延迟导入避免循环依赖）
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const { zipFromDir } = require('./zip') as typeof import('./zip');
-    fs.writeFileSync(dest, zipFromDir(dir));
+    // 删除前的备份只需留住用户数据；把 Forge 装进 game/libraries 的几百 MB 库也打包
+    // 会让删除大实例卡死甚至超过 32 位 ZIP 上限。
+    const USER_DATA = ['saves', 'mods', 'config', 'resourcepacks', 'shaderpacks', 'screenshots'];
+    const USER_FILES = ['options.txt', 'servers.dat', 'keybinds.txt'];
+    const data = zipFromDir(dir, rel => {
+      const top = rel.split('/')[0];
+      return USER_DATA.includes(top) || USER_FILES.includes(top);
+    });
+    fs.writeFileSync(dest, data);
     fs.rmSync(dir, { recursive: true, force: true });
     return { ok: true, backupPath: dest };
   }

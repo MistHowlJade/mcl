@@ -167,14 +167,24 @@ export function buildConfigOnlyJson(): string {
 
 export function buildFullSnapshotZip(): Buffer {
   const { manifest, saveDirs } = buildManifest(getSettings().cloud.includeSaves);
-  const entries: Array<{ name: string; data: Buffer; mtime?: Date }> = [
-    { name: 'mcl-cloud.json', data: Buffer.from(JSON.stringify(manifest, null, 2), 'utf8'), mtime: new Date() },
-  ];
+  const entries: Array<{ name: string; data: Buffer; mtime?: Date }> = [];
+  const failedSaves: string[] = [];
   for (const save of saveDirs) {
     try {
       entries.push({ name: `saves/${save.instanceId}.zip`, data: zipFromDir(save.dir), mtime: new Date() });
-    } catch { /* 单个存档打包失败不阻塞其它实例 */ }
+    } catch {
+      // 绝不能静默丢存档：打包失败要写进 manifest 警告，并在界面明确提示
+      failedSaves.push(save.instanceId);
+    }
   }
+  if (failedSaves.length > 0) {
+    manifest.warnings = [
+      ...(manifest.warnings ?? []),
+      `以下实例的存档打包失败，快照未包含：${failedSaves.join('、')}。请检查目录权限或磁盘空间后重试上传。`,
+    ];
+  }
+  // manifest 必须在存档打包完成后再序列化，才能把上面的警告写进去
+  entries.unshift({ name: 'mcl-cloud.json', data: Buffer.from(JSON.stringify(manifest, null, 2), 'utf8'), mtime: new Date() });
   return zipWrite(entries);
 }
 
@@ -330,7 +340,18 @@ function applyManifest(manifest: CloudManifest, saveArchives?: Map<string, Buffe
           const target = path.join(savesDir, top);
           if (!fs.existsSync(src)) continue;
           const oldDir = path.join(tempRoot, `.cloud-old-${suffix}-${i}`);
-          if (fs.existsSync(target)) fs.renameSync(target, oldDir);
+          // 恢复前先给本机同名世界留一份可一键恢复的备份，误操作不至于永久丢存档
+          if (fs.existsSync(target)) {
+            const backupPath = path.join(tempRoot, `cloud-restore-backup-${suffix}-${i}.zip`);
+            fs.writeFileSync(backupPath, zipFromDir(target));
+            writeJson(backupPath.replace(/\.zip$/, '.json'), {
+              name: `云恢复前自动备份：${path.basename(target)}`,
+              createdAt: Date.now(),
+              worldNames: [top],
+              kind: 'world',
+            });
+            fs.renameSync(target, oldDir);
+          }
           try {
             fs.renameSync(src, target);
             restored++;
@@ -362,6 +383,7 @@ export async function testCloud(): Promise<{ ok: boolean; message: string }> {
     try {
       const res = await fetchWithTimeout(url, { method: 'HEAD', headers: webdavHeaders(), timeoutMs: 15000 });
       if (res.status === 401 || res.status === 403) return { ok: false, message: `WebDAV 认证失败（HTTP ${res.status}），请检查用户名/密码` };
+      if (res.status >= 400 && res.status !== 404) return { ok: false, message: `WebDAV 返回 HTTP ${res.status}，连接不可用（如 405 表示服务端不支持 HEAD，请改用支持 WebDAV 的服务或检查地址）` };
       if (res.status >= 500) return { ok: false, message: `WebDAV 服务器错误（HTTP ${res.status}）` };
       return { ok: true, message: res.status === 404 ? '连接成功（云端还没有快照）' : `连接成功（HTTP ${res.status}）` };
     } catch (e) {

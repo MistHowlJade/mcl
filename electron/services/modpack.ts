@@ -237,9 +237,13 @@ export async function importModpack(zipPath: string, targetName?: string, onLog?
       warnings.push('MultiMC 整合包已转换为 MCL 实例，加载器将在首次启动时安装。');
     }
   }
-  // MultiMC / Prism 导出包：真正的游戏目录是 minecraft/ 子目录（若有）
-  const hasMinecraftDir = entries.some(e => e.name.replace(/\\/g, '/').startsWith(prefix + 'minecraft/'));
-  const gamePrefix = prefix + (hasMinecraftDir ? 'minecraft/' : '');
+  // MultiMC/Prism 各版本导出包可能用 minecraft/ 或 .minecraft/；
+  // MCL 自己导出的包用的是 .minecraft/，两种都要认，否则回导会落到 game/.minecraft/ 下读不到
+  const normalizedNames = entries.map(e => e.name.replace(/\\/g, '/'));
+  const gameSub = normalizedNames.some(n => n.startsWith(`${prefix}minecraft/`)) ? 'minecraft/'
+    : normalizedNames.some(n => n.startsWith(`${prefix}.minecraft/`)) ? '.minecraft/' : '';
+  const hasMinecraftDir = !!gameSub;
+  const gamePrefix = prefix + gameSub;
   const SKIP_META = new Set(['instance.cfg', 'mmc-pack.json', 'icon.png', 'instance.png', 'logo.png']);
   let copied = 0, modsCopied = 0, savesCopied = 0;
   for (const entry of entries) {
