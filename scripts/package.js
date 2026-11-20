@@ -63,15 +63,18 @@ fs.mkdirSync(outDir, { recursive: true });
 // 1. 复制 Electron 运行时
 fs.cpSync(electronDist, outDir, { recursive: true });
 
-// 2. 可执行文件改名（Windows）
-const exeName = platform === 'win32' ? 'electron.exe' : 'electron';
+// 2. 可执行文件改名：macOS 的可执行体在 Electron.app 内，不能按裸 electron 查找
+const isWin = platform === 'win32';
+const isMac = platform === 'darwin';
+const exeName = isWin ? 'electron.exe' : 'electron';
 const appExe = path.join(outDir, exeName);
 if (fs.existsSync(appExe)) {
-  const targetExe = path.join(outDir, platform === 'win32' ? 'MCL.exe' : 'MCL');
+  const targetExe = path.join(outDir, isWin ? 'MCL.exe' : 'MCL');
   fs.renameSync(appExe, targetExe);
-} else {
+} else if (!isMac) {
   console.warn(`[package] 警告：未找到 ${exeName}，可执行文件名保持原样`);
 }
+// macOS 不重命名 Electron.app：改名会破坏 .app 内部结构（签名/Info.plist 引用）
 
 // 3. 放入应用代码：resources/app/{dist,electron-dist,package.json}
 const appDir = path.join(outDir, 'resources', 'app');
@@ -101,7 +104,7 @@ fs.writeFileSync(path.join(outDir, '使用说明.txt'), [
   `版本：${pkg.version}`,
   `运行时：Electron ${electronVersion ?? '（未知）'} / ${platform}-${arch}`,
   '',
-  '启动：双击 MCL.exe',
+  `启动：${isWin ? '双击 MCL.exe' : isMac ? '双击 Electron.app（这是 MCL 的 macOS 应用包）' : '在终端运行 ./MCL'}`,
   '',
   '便携模式：',
   '  在本目录新建一个空的 portable.txt 文件，数据会保存到同目录的 mcl-data/，',
