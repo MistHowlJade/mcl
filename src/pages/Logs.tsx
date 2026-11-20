@@ -100,8 +100,12 @@ export default function Logs() {
           </div>
         </div>
         <div className="panel" style={{ flex: 1, minWidth: 0 }}>
-          <div className="row" style={{ gap: 8, marginBottom: 8 }}>
-            <input className="input" placeholder="在日志中搜索（如 error、mixin、OutOfMemory）…" value={query} onChange={e => setQuery(e.target.value)} />
+          <div className="row" style={{ gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
+            <input className="input" placeholder="在日志中搜索…" value={query} onChange={e => setQuery(e.target.value)} />
+            <button className="btn small" onClick={() => setQuery('error')}>error</button>
+            <button className="btn small" onClick={() => setQuery('mixin')}>mixin</button>
+            <button className="btn small" onClick={() => setQuery('OutOfMemory')}>OOM</button>
+            {query && <button className="btn small ghost" onClick={() => setQuery('')}>清除</button>}
             <span className="faint">{filtered.length} 行{query ? '匹配' : ''}</span>
           </div>
           <div className="mono" style={{ background: '#0b0e14', borderRadius: 8, padding: 12, height: '62vh', overflow: 'auto', fontSize: 11.5, lineHeight: 1.6 }}>
