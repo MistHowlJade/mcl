@@ -20,6 +20,7 @@ export default function Content() {
   const [deleteTarget, setDeleteTarget] = useState<{ kind: ContentKind; item: ContentItem; instanceId: string } | null>(null);
   const [onlineOpen, setOnlineOpen] = useState(false);
   const [instancesReady, setInstancesReady] = useState(false);
+  const [dragging, setDragging] = useState(false);
   const toast = useToast();
   const instanceIdRef = useRef(instanceId);
   const reloadSeq = useRef(0);
@@ -80,16 +81,32 @@ export default function Content() {
     } catch (e) { toast.toast(e instanceof Error ? e.message : String(e), 'error'); }
   };
 
+  const showImportResult = (result: { imported: number; skipped: string[] }) => {
+    toast.toast(result.imported > 0
+      ? `已导入 ${result.imported} 项${result.skipped.length ? `，${result.skipped.length} 项被跳过` : ''}`
+      : '没有可导入的内容', result.imported > 0 ? 'ok' : 'info');
+    void reload();
+  };
+
   const importItem = async (mode: 'file' | 'folder') => {
     if (!instanceId) return;
     try {
       const result = await api.contentImportDialog(instanceId, tab, mode);
-      if (!result) return;
-      toast.toast(result.imported > 0
-        ? `已导入 ${result.imported} 项${result.skipped.length ? `，${result.skipped.length} 项被跳过` : ''}`
-        : '没有可导入的内容', result.imported > 0 ? 'ok' : 'info');
-      void reload();
+      if (result) showImportResult(result);
     } catch (e) { toast.toast(e instanceof Error ? e.message : String(e), 'error'); }
+  };
+
+  // 系统文件拖放导入：Electron 的 File.path 可直接交给主进程的 importContent
+  const handleDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    setDragging(false);
+    if (!instanceId) return;
+    const paths = Array.from(e.dataTransfer.files)
+      .map(f => (f as File & { path?: string }).path)
+      .filter((p): p is string => typeof p === 'string' && !!p);
+    if (paths.length === 0) return;
+    try { showImportResult(await api.contentImportPaths(instanceId, tab, paths)); }
+    catch (err) { toast.toast(err instanceof Error ? err.message : String(err), 'error'); }
   };
 
   const doDelete = async () => {
@@ -138,7 +155,11 @@ export default function Content() {
   }
 
   return (
-    <div>
+    <div
+      onDragOver={e => { if (instanceId) { e.preventDefault(); setDragging(true); } }}
+      onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDragging(false); }}
+      onDrop={handleDrop}
+    >
       <div className="page-header">
         <div>
           <h1>内容管理</h1>
@@ -277,6 +298,8 @@ export default function Content() {
           onConfirm={doDelete}
         />
       )}
+
+      {dragging && <div className="drop-overlay">松开即可导入到「{currentTab.label}」</div>}
     </div>
   );
 }

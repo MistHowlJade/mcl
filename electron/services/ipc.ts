@@ -556,6 +556,11 @@ export function registerIpcHandlers(): void {
     if (result.canceled || result.filePaths.length === 0) return null;
     return contentService.importContent(instanceId, kind, result.filePaths);
   });
+  // 拖放导入：路径来自系统文件拖放，复用与对话框完全相同的校验与导入逻辑
+  ipcMain.handle('content:importPaths', (_e, instanceId: string, kind: any, paths: string[]) => {
+    if (kind === 'worlds') assertInstanceIdle(instanceId, '导入世界');
+    return contentService.importContent(instanceId, kind, Array.isArray(paths) ? paths.filter(p => typeof p === 'string') : []);
+  });
   ipcMain.handle('content:exportWorld', async (_e, instanceId: string, worldName: string) => {
     assertInstanceIdle(instanceId, '导出世界');
     const win = BrowserWindow.getFocusedWindow();

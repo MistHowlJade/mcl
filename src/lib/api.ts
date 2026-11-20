@@ -169,6 +169,7 @@ export const api = {
   contentDelete: (instanceId: string, kind: ContentKind, fileName: string) => invoke<{ deleted: boolean; backupPath?: string }>('content:delete', instanceId, kind, fileName),
   contentBackupWorld: (instanceId: string, worldName: string, displayName?: string) => invoke<string>('content:backupWorld', instanceId, worldName, displayName),
   contentImportDialog: (instanceId: string, kind: ContentKind, mode?: 'file' | 'folder') => invoke<{ imported: number; skipped: string[] } | null>('content:importDialog', instanceId, kind, mode),
+  contentImportPaths: (instanceId: string, kind: ContentKind, paths: string[]) => invoke<{ imported: number; skipped: string[] }>('content:importPaths', instanceId, kind, paths),
   contentExportWorld: (instanceId: string, worldName: string) => invoke<{ filePath: string; sizeBytes: number } | null>('content:exportWorld', instanceId, worldName),
   contentOpenItem: (path: string) => invoke('content:openItem', path),
   contentOpenFolder: (instanceId: string, kind: ContentKind) => invoke('content:openFolder', instanceId, kind),

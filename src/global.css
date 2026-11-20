@@ -292,3 +292,6 @@ textarea.input { resize: vertical; min-height: 120px; user-select: text; }
 
 .empty { text-align: center; padding: 44px 20px; color: var(--text-faint); }
 .empty .big { font-size: 34px; opacity: .5; margin-bottom: 8px; }
+
+/* 拖放导入提示层：不拦截鼠标，只显示可放置区域 */
+.drop-overlay { position: fixed; inset: 0; z-index: 100; display: grid; place-items: center; pointer-events: none; background: rgba(8, 12, 18, .72); border: 3px dashed var(--accent); color: var(--accent); font-size: 17px; font-weight: 700; }
