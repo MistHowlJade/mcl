@@ -87,6 +87,7 @@ async function createWindow(): Promise<void> {
     minHeight: 640,
     frame: false,
     backgroundColor: '#10131a',
+    icon: path.join(__dirname, '..', 'assets', 'app.ico'),
     show: false,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
