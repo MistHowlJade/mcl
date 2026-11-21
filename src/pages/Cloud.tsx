@@ -37,7 +37,11 @@ export default function Cloud() {
     /* eslint-disable-next-line */
   }, []);
 
-  const update = (patch: Partial<CloudSettings>) => setDraft(prev => prev ? { ...prev, ...patch } : prev);
+  const update = (patch: Partial<CloudSettings>) => {
+    // 地址/凭据/同步内容一改，上次的连接测试结果就不再可靠
+    setTestResult(null);
+    setDraft(prev => prev ? { ...prev, ...patch } : prev);
+  };
 
   const save = async (silent = false): Promise<boolean> => {
     if (!draft) return false;
@@ -72,6 +76,14 @@ export default function Cloud() {
       if (!(await save(true))) return;
       const info = await api.cloudUpload();
       setSnapshot(info);
+      // 上传后必须刷新连接提示：否则上一次「云端还没有快照」会一直留在页面上，
+      // 和下方「已有快照」的状态自相矛盾
+      setTestResult({
+        ok: true,
+        message: info?.exists !== false
+          ? `上传成功，云端快照已更新${info?.sizeBytes ? `（${formatBytes(info.sizeBytes)}）` : ''}`
+          : '上传成功',
+      });
       await loadSettings();
       toast.toast('已上传到云端', 'ok');
     } catch (e) { toast.toast(e instanceof Error ? e.message : String(e), 'error'); }
@@ -232,7 +244,7 @@ export default function Cloud() {
       {confirmAction === 'download' && (
         <ConfirmModal
           title="从云端下载"
-          message="将用云端快照覆盖本机的设置、实例与服务器配置。MCL 不会删除你的游戏文件；存档只有在快照包含存档时才会覆盖。\n\n建议先确认当前配置已备份。确定继续？"
+          message={`将用云端快照覆盖本机的设置、实例与服务器配置。MCL 不会删除你的游戏文件；存档只有在快照包含存档时才会覆盖。\n\n建议先确认当前配置已备份。确定继续？`}
           confirmText="下载并应用"
           danger
           onCancel={() => setConfirmAction(null)}

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../lib/api';
 import { useToast } from '../components/Toast';
 import { Modal, Tip, Toggle, ConfirmModal, formatBytes, timeAgo } from '../components/Modal';
@@ -314,14 +314,35 @@ function CreateInstanceModal({ onClose, onCreated }: { onClose: () => void; onCr
   const [preset, setPreset] = useState<MemoryPreset>('standard');
   const [recommendedJava, setRecommendedJava] = useState<number | null>(null);
   const [creating, setCreating] = useState(false);
+  const [versionsLoading, setVersionsLoading] = useState(true);
+  const [versionsError, setVersionsError] = useState<string | null>(null);
+  const versionsSeq = useRef(0);
   const toast = useToast();
 
-  useEffect(() => {
-    api.versionsList().then(list => {
+  const loadVersions = async () => {
+    const seq = ++versionsSeq.current;
+    setVersionsLoading(true);
+    setVersionsError(null);
+    try {
+      const list = await api.versionsList();
+      if (seq !== versionsSeq.current) return;
       setVersions(list);
       const firstRelease = list.find(v => v.type === 'release');
-      if (firstRelease) setMcVersion(firstRelease.id);
-    }).catch(e => toast.toast(`版本清单加载失败：${e}`, 'error'));
+      // 用户可能已经手动选过版本，重试成功时不要把它重置
+      if (firstRelease) setMcVersion(prev => prev || firstRelease.id);
+    } catch (e) {
+      if (seq !== versionsSeq.current) return;
+      const message = e instanceof Error ? e.message : String(e);
+      setVersionsError(message);
+      // 失败状态必须留在弹窗里，不能只闪一个 toast 然后永远显示「共 0 个」
+      toast.toast(`版本清单加载失败：${message}`, 'error');
+    } finally {
+      if (seq === versionsSeq.current) setVersionsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void loadVersions();
     /* eslint-disable-next-line */
   }, []);
 
@@ -372,7 +393,7 @@ function CreateInstanceModal({ onClose, onCreated }: { onClose: () => void; onCr
   return (
     <Modal title="创建实例" onClose={onClose} footer={<>
       <button className="btn ghost" onClick={onClose}>取消</button>
-      <button className="btn primary" onClick={submit} disabled={creating || !mcVersion}>{creating ? '创建中…' : '创建'}</button>
+      <button className="btn primary" onClick={submit} disabled={creating || !mcVersion || versionsLoading || !!versionsError}>{creating ? '创建中…' : '创建'}</button>
     </>}>
       <div className="setting-row" style={{ paddingTop: 4 }}>
         <div className="label">实例名称<Tip text="显示在启动台上的名字。留空会自动生成，比如「1.20.1 · fabric」。" /></div>
@@ -386,12 +407,27 @@ function CreateInstanceModal({ onClose, onCreated }: { onClose: () => void; onCr
             <input className="input" value={search} placeholder="搜索版本号，如 1.20 / 1.7.10…" onChange={e => setSearch(e.target.value)} />
             <Toggle checked={showSnapshots} onChange={setShowSnapshots} label="显示快照版本" />
           </div>
-          <select className="input" size={7} value={mcVersion} onChange={e => setMcVersion(e.target.value)}>
+          <select className="input" size={7} value={mcVersion} disabled={versionsLoading || !!versionsError || versions.length === 0} onChange={e => setMcVersion(e.target.value)}>
+            {versionsLoading && <option value="">正在加载版本清单…</option>}
+            {!versionsLoading && versionsError && <option value="">加载失败，请点下方「重试」</option>}
+            {!versionsLoading && !versionsError && filtered.length === 0 && <option value="">没有匹配的版本</option>}
             {filtered.map(v => <option key={v.id} value={v.id}>{v.id}{v.type !== 'release' ? `（${v.type}）` : ''}</option>)}
           </select>
-          <div className="faint">
-            版本清单共 {versions.length} 个，当前显示 {filtered.length} 个 · 已选 {mcVersion || '未选择'} · 需要 Java {recommendedJava ?? '…'}（MCL 会自动下载）
-          </div>
+          {versionsError ? (
+            <div className="row" style={{ gap: 8, alignItems: 'flex-start', padding: '8px 10px', borderRadius: 8, background: 'var(--red-soft)', border: '1px solid rgba(242,104,104,.4)' }}>
+              <div className="faint" style={{ flex: 1, lineHeight: 1.6 }}>
+                版本清单加载失败：{versionsError}
+                <br />可能是网络临时不可达或镜像超时，已安装的实例不受影响。
+              </div>
+              <button className="btn small" onClick={() => { void loadVersions(); }}>重试</button>
+            </div>
+          ) : (
+            <div className="faint">
+              {versionsLoading
+                ? '正在从 Mojang / 镜像获取版本清单…'
+                : `版本清单共 ${versions.length} 个，当前显示 ${filtered.length} 个 · 已选 ${mcVersion || '未选择'} · 需要 Java ${recommendedJava ?? '…'}（MCL 会自动下载）`}
+            </div>
+          )}
         </div>
       </div>
 

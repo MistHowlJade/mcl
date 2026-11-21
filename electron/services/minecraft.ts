@@ -566,7 +566,13 @@ export async function launchInstance(instanceId: string, options: LaunchOptions 
   });
   const totalBytes = plan.tasks.reduce((a, t) => a + (t.size ?? 0), 0);
   let doneBytes = 0;
+  let lastProgressAt = 0;
   const onProgress = () => {
+    // 下载器每个数据块都会触发一次；不节流会把几万条 IPC 进度消息灌给渲染进程。
+    // UI 只需要约 10Hz，真正的字节统计仍由 DownloadManager 内部保持精确。
+    const now = Date.now();
+    if (now - lastProgressAt < 100) return;
+    lastProgressAt = now;
     doneBytes = dl.totals.done;
     launchState.progress = { done: doneBytes, total: Math.max(totalBytes, doneBytes, 1) };
     launchEvents.emit('progress', launchState.progress);
@@ -594,7 +600,7 @@ export async function launchInstance(instanceId: string, options: LaunchOptions 
   const corrupted = findCorruptedLibraries(resolved, gameLibsDir);
   if (corrupted.length > 0) {
     emitLog(`[mcl] 警告：检测到 ${corrupted.length} 个可能损坏的库文件，将尝试重新下载`);
-    const repair = new DownloadManager({ source: settings.download.source, customMirror: settings.download.customMirror, maxThreads: 4, retries: 2, timeoutMs: settings.download.timeoutMs });
+    const repair = new DownloadManager({ source: settings.download.source, customMirror: settings.download.customMirror, maxThreads: settings.download.maxThreads, retries: 2, timeoutMs: settings.download.timeoutMs });
     const repairReports = await repair.run(corrupted.map(c => {
       const lib = versionService.collectLibraries(resolved).find(l => l.path === c.path)!;
       // 必须写回 findCorruptedLibraries 实际选中的位置：classpath 优先用 shared，

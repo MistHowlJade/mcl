@@ -295,6 +295,8 @@ export interface CrashFix {
 
 export interface CrashDiagnosis {
   matched: boolean;
+  /** 最近一次是正常退出（退出码 0），不是崩溃；界面上不应显示「未知崩溃」 */
+  normal?: boolean;
   ruleId?: string;
   title: string;
   /** 人话解释 */

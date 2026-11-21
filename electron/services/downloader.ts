@@ -112,7 +112,7 @@ export class DownloadManager extends EventEmitter {
       source: opts.source,
       customMirror: opts.customMirror ?? '',
       // 配置可能被手工改坏：非数字会让 while (active < maxThreads) 永远不成立，下载队列直接卡死
-      maxThreads: Number.isFinite(opts.maxThreads) ? Math.max(1, Math.min(64, Math.floor(opts.maxThreads))) : 4,
+      maxThreads: Number.isFinite(opts.maxThreads) ? Math.max(1, Math.min(64, Math.floor(opts.maxThreads))) : 16,
       segmentSizeMB: Number.isFinite(opts.segmentSizeMB) ? Math.max(1, Math.min(512, opts.segmentSizeMB!)) : 4,
       retries: Number.isFinite(opts.retries) ? Math.max(0, Math.min(10, Math.floor(opts.retries!))) : 3,
       timeoutMs: Number.isFinite(opts.timeoutMs) ? Math.max(3000, Math.min(300000, opts.timeoutMs!)) : 15000,
@@ -270,11 +270,17 @@ export class DownloadManager extends EventEmitter {
       let attemptBytes = 0;
       const count = (n: number) => { attemptBytes += n; this.addProgress(task, n); };
       try {
-        // 一次 HEAD 探测：大小 + 是否支持 Range
+        // 一次 HEAD 探测：大小 + 是否支持 Range。
+        // 任务声明了大小且小于分段阈值时不需要探测：Mojang 清单/资源索引都带 size，
+        // 首次安装 3500+ 个小资源时每个少一次往返，否则光 HEAD 就要多花几分钟。
         const threshold = this.opts.segmentSizeMB * 1024 * 1024;
-        const h = await this.head(url);
-        // HEAD 探测阶段也可能收到取消：必须在这里就退出，不能继续写出完整文件
-        if (this.canceled) return { id: task.id, name, ok: false, bytes: 0, error: '下载已取消', fromCache: false };
+        const knownSmall = typeof task.size === 'number' && task.size > 0 && task.size <= threshold;
+        let h: { status: number; size: number; acceptsRanges: boolean } = { status: 0, size: 0, acceptsRanges: false };
+        if (!knownSmall) {
+          h = await this.head(url);
+          // HEAD 探测阶段也可能收到取消：必须在这里就退出，不能继续写出完整文件
+          if (this.canceled) return { id: task.id, name, ok: false, bytes: 0, error: '下载已取消', fromCache: false };
+        }
         // 优先使用任务声明的大小 / HEAD 的完整大小；只有拿不到完整大小时才退回已有 part 大小
         let total = task.size ?? 0;
         if (!total) total = h.size;
