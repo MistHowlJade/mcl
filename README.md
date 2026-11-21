@@ -158,7 +158,7 @@ electron/
     crash.ts         崩溃模式库 → 人话 + 一键修复
     migrate.ts       其它启动器扫描/预览/导入
     diagnostic.ts    诊断包导出（已脱敏）
-    zip.ts           零依赖 ZIP 读写（防解压炸弹）
+    zip.ts           零依赖 ZIP 读写；流式写入 + ZIP64（>4GB / 65535 条目），防解压炸弹
 src/                 React 渲染进程（启动台/实例/服务器/模组/内容/备份/崩溃/迁移/账号/云同步/日志/设置）
 ```
 
@@ -186,7 +186,12 @@ src/                 React 渲染进程（启动台/实例/服务器/模组/内�
 - ⬜ macOS / Linux 体验打磨（开发环境即 Windows，当前优先 Windows）
 - ⬜ 代码签名（需要证书，当前开发版未签名，Defender 可能提示，请核对签名与源码一致）
 
-## 六、免责声明
+## 六、人工复测
+
+开发阶段只做了静态验证（`npm run typecheck` / `npm run build` / `node scripts/smoke-check.js`），
+未实际启动游戏或登录账号。完整的真机验证步骤见 [VERIFY.md](VERIFY.md)，欢迎按清单复测并提 Issue。
+
+## 七、免责声明
 
 MCL 是第三方启动器，与 Mojang Studios / Microsoft / CurseForge 无关联。Minecraft 是 Mojang 的商标。
 下载游戏本体需遵守 Mojang 的使用条款；MCL 只下载你本就有权获取的官方文件。
