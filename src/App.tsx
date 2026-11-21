@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ToastProvider, useToast } from './components/Toast';
 import { api, on } from './lib/api';
 import type { Account } from '../electron/shared/types';
@@ -51,6 +51,7 @@ function Shell() {
   const [page, setPage] = useState<PageId>('home');
   const [activeAccount, setActiveAccount] = useState<Account | null>(null);
   const [maximized, setMaximized] = useState(false);
+  const contentRef = useRef<HTMLElement>(null);
   const toast = useToast();
 
   useEffect(() => {
@@ -76,6 +77,9 @@ function Shell() {
     }
     return [...map.entries()];
   }, []);
+
+  // 切页回到顶部（借鉴 Modrinth：进入子页面时不应保留上一页的滚动位置）
+  useEffect(() => { contentRef.current?.scrollTo({ top: 0, behavior: 'smooth' }); }, [page]);
 
   const launchFail = (message: string) => toast.toast(message, 'error');
 
@@ -120,19 +124,21 @@ function Shell() {
             <div className="trust-note">开源 · 零遥测 · 令牌仅存本机<br />游戏本体仅从 Mojang 官方渠道获取</div>
           </div>
         </nav>
-        <main className="content">
-          {page === 'home' && <Home onNavigate={setPage} onLaunchFail={launchFail} />}
-          {page === 'instances' && <Instances />}
-          {page === 'servers' && <Servers />}
-          {page === 'mods' && <Mods />}
-          {page === 'content' && <Content />}
-          {page === 'backups' && <Backups />}
-          {page === 'crash' && <Crash />}
-          {page === 'migrate' && <Migrate />}
-          {page === 'accounts' && <Accounts />}
-          {page === 'cloud' && <Cloud />}
-          {page === 'logs' && <Logs />}
-          {page === 'settings' && <Settings onNavigate={setPage} />}
+        <main className="content" ref={contentRef}>
+          <div className="page-enter" key={page}>
+            {page === 'home' && <Home onNavigate={setPage} onLaunchFail={launchFail} />}
+            {page === 'instances' && <Instances />}
+            {page === 'servers' && <Servers />}
+            {page === 'mods' && <Mods />}
+            {page === 'content' && <Content />}
+            {page === 'backups' && <Backups />}
+            {page === 'crash' && <Crash />}
+            {page === 'migrate' && <Migrate />}
+            {page === 'accounts' && <Accounts />}
+            {page === 'cloud' && <Cloud />}
+            {page === 'logs' && <Logs />}
+            {page === 'settings' && <Settings onNavigate={setPage} />}
+          </div>
         </main>
       </div>
     </>

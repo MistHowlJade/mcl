@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 
 export function Modal({ title, onClose, children, footer }: {
   title: string;
@@ -6,15 +6,27 @@ export function Modal({ title, onClose, children, footer }: {
   children: React.ReactNode;
   footer?: React.ReactNode;
 }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
+  // PCL2/Modrinth 共有的基础交互：Esc 与遮罩都能关闭，打开时把焦点放到安全/默认动作上。
+  // 用 ref 保存回调，避免父组件重渲染时反复重置焦点（弹窗里输入到一半丢焦点很糟）。
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.stopPropagation(); closeRef.current(); } };
+    window.addEventListener('keydown', onKey, true);
+    const target = ref.current?.querySelector<HTMLElement>('[data-autofocus]') ?? ref.current;
+    target?.focus();
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, []);
   return (
     <div className="modal-mask" onClick={onClose}>
-      <div className="modal" onClick={e => e.stopPropagation()}>
+      <div className="modal" ref={ref} role="dialog" aria-modal="true" aria-label={title} tabIndex={-1} onClick={e => e.stopPropagation()}>
         <div className="row spread" style={{ marginBottom: 10 }}>
           <h2>{title}</h2>
           <button className="winbtn" onClick={onClose} aria-label="关闭">✕</button>
         </div>
         <div>{children}</div>
-        {footer && <div className="row" style={{ justifyContent: 'flex-end', marginTop: 16 }}>{footer}</div>}
+        {footer && <div className="row modal-footer" style={{ justifyContent: 'flex-end', marginTop: 16 }}>{footer}</div>}
       </div>
     </div>
   );
@@ -47,8 +59,8 @@ export function ConfirmModal({ title, message, confirmText, danger, onConfirm, o
 }) {
   return (
     <Modal title={title} onClose={onCancel} footer={<>
-      <button className="btn ghost" onClick={onCancel}>取消</button>
-      <button className={`btn ${danger ? 'danger' : 'primary'}`} onClick={onConfirm}>{confirmText ?? '确定'}</button>
+      <button className="btn ghost" data-autofocus={danger ? true : undefined} onClick={onCancel}>取消</button>
+      <button className={`btn ${danger ? 'danger' : 'primary'}`} data-autofocus={danger ? undefined : true} onClick={onConfirm}>{confirmText ?? '确定'}</button>
     </>}>
       <p style={{ whiteSpace: 'pre-wrap' }}>{message}</p>
     </Modal>

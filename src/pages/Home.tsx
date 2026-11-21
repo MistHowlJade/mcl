@@ -104,14 +104,17 @@ export default function Home({ onNavigate, onLaunchFail }: { onNavigate: (p: Pag
     }
   };
 
-  const doLaunch = async () => {
-    if (!selected) return;
+  // 单击选中、双击直接启动（PCL/HMCL 的实例卡交互），键盘 Enter 仍可选中
+  const launchInstance = (instance: InstanceInfo) => {
+    setSelectedId(instance.id);
     if (settings?.general.confirmBeforeLaunch) {
-      setConfirmLaunch(selected);
+      setConfirmLaunch(instance);
       return;
     }
-    await startLaunch(selected);
+    void startLaunch(instance);
   };
+
+  const doLaunch = () => { if (selected) launchInstance(selected); };
 
   const busy = launchState.status === 'preparing' || launchState.status === 'downloading' || launchState.status === 'launching' || launchState.status === 'running';
 
@@ -125,7 +128,8 @@ export default function Home({ onNavigate, onLaunchFail }: { onNavigate: (p: Pag
         <h1>欢迎回来，{accountName ?? '旅人'} 👋</h1>
         <p className="tagline">隔离你的每个世界，自动适配 Java，多线程满速下载，崩溃能看懂——这就是新一代启动器该有的样子。</p>
         <div className="row" style={{ gap: 18, flexWrap: 'wrap' }}>
-          <button className="launch-btn" onClick={doLaunch} disabled={busy || !selected}>
+          <button className="launch-btn" onClick={doLaunch} disabled={busy || !selected} aria-busy={busy}>
+            {busy && <span className="btn-spinner" aria-hidden="true" />}
             {busy ? (launchState.status === 'running' ? '游戏运行中' : '准备中…') : '启 动'}
           </button>
           {busy && launchState.status === 'downloading' && (
@@ -202,9 +206,11 @@ export default function Home({ onNavigate, onLaunchFail }: { onNavigate: (p: Pag
               key={inst.id}
               className={`instance-card ${selected?.id === inst.id ? 'selected' : ''}`}
               onClick={() => setSelectedId(inst.id)}
+              onDoubleClick={() => launchInstance(inst)}
+              title="单击选择，双击启动"
               role="button"
               tabIndex={0}
-              onKeyDown={e => e.key === 'Enter' && setSelectedId(inst.id)}
+              onKeyDown={e => { if (e.key === 'Enter') setSelectedId(inst.id); }}
             >
               <div className="mc-icon">🧱</div>
               <div className="n" title={inst.name}>{inst.name}</div>
