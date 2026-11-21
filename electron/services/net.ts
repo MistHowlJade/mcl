@@ -93,6 +93,28 @@ export class HttpError extends Error {
   constructor(public readonly status: number, message: string) { super(message); this.name = 'HttpError'; }
 }
 
+/**
+ * 从异常里提取能展示给玩家的原因。
+ * Node 双栈（happy-eyeballs）连接全部失败时会抛 AggregateError：
+ * name=AggregateError、code=ETIMEDOUT、message="" —— 直接拼 message 会得到「：。」这种空文案。
+ * 这里依次尝试：message → 子错误 → code → name，保证文案非空且不带技术性对象序列化。
+ */
+export function errorReason(e: unknown, depth = 0): string {
+  if (e instanceof Error) {
+    const message = e.message.trim();
+    if (message) return message;
+    if (depth < 2 && e instanceof AggregateError) {
+      const parts = e.errors.map(inner => errorReason(inner, depth + 1)).filter(Boolean);
+      if (parts.length) return parts.join('；');
+    }
+    const code = (e as NodeJS.ErrnoException).code;
+    if (code) return `连接失败（${code}）`;
+    if (e.name && e.name !== 'Error') return `连接失败（${e.name}）`;
+  }
+  const text = String(e).trim();
+  return text && text !== 'Error' && text !== 'null' && text !== 'undefined' ? text : '未知错误';
+}
+
 /** 把官方下载 URL 映射为镜像地址；official/auto 保持原样 */
 export function mapToMirror(url: string, source: 'official' | 'bmclapi' | 'custom', customBase?: string): string {
   const base = source === 'bmclapi' ? BMCLAPI : (source === 'custom' && customBase ? customBase.replace(/\/+$/, '') : null);

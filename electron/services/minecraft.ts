@@ -19,7 +19,7 @@ import { getInstance, touchPlayed, updateInstance } from './instances';
 import { writeJson } from './store';
 import { analyzeCrash } from './crash';
 import { EventEmitter } from 'events';
-import { fetchJson } from './net';
+import { errorReason, fetchJson } from './net';
 import { LoaderType, MemoryPreset, CrashDiagnosis } from '../shared/types';
 
 export const launchEvents = new EventEmitter();
@@ -277,7 +277,7 @@ async function resolveLoaderProfile(base: Record<string, any>, loader: LoaderTyp
       const profile = await fetchJson<Record<string, any>>(url, { timeoutMs: 20000 });
       return versionService.mergeProfile(base, profile);
     } catch (e) {
-      throw new Error(`Fabric 加载器 profile 获取失败：${url}\n${e instanceof Error ? e.message : e}\n请检查 loader 版本是否存在（如 fabric-loader 0.15.7 + MC 1.20.1）。`);
+      throw new Error(`Fabric 加载器 profile 获取失败：${url}\n${errorReason(e)}\n请检查 loader 版本是否存在（如 fabric-loader 0.15.7 + MC 1.20.1）。`);
     }
   }
   if (loader === 'quilt') {
@@ -287,7 +287,7 @@ async function resolveLoaderProfile(base: Record<string, any>, loader: LoaderTyp
       const profile = await fetchJson<Record<string, any>>(url, { timeoutMs: 20000 });
       return versionService.mergeProfile(base, profile);
     } catch (e) {
-      throw new Error(`Quilt 加载器 profile 获取失败：${url}\n${e instanceof Error ? e.message : e}\n请检查 loader 版本是否存在（如 quilt-loader 0.23.1 + MC 1.20.1）。`);
+      throw new Error(`Quilt 加载器 profile 获取失败：${url}\n${errorReason(e)}\n请检查 loader 版本是否存在（如 quilt-loader 0.23.1 + MC 1.20.1）。`);
     }
   }
   if (loader === 'forge' || loader === 'neoforge') {
@@ -622,7 +622,7 @@ export async function launchInstance(instanceId: string, options: LaunchOptions 
       const info = await createBackup(instanceId, 'auto', `启动前自动备份`);
       if (info) emitLog(`[mcl] 已自动备份存档：${info.name}`);
     } catch (e) {
-      emitLog(`[mcl] 自动备份失败（不影响启动）：${e instanceof Error ? e.message : e}`);
+      emitLog(`[mcl] 自动备份失败（不影响启动）：${errorReason(e)}`);
     }
   }
 

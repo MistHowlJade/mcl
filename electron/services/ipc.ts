@@ -27,6 +27,7 @@ import * as exporter from './exporter';
 import * as updateService from './update';
 import * as lanService from './lan';
 import { getVersionManifest } from './version';
+import { errorReason } from './net';
 import { CrashFix, LoaderType, MemoryPreset } from '../shared/types';
 
 const sendToAll = (channel: string, payload: unknown) => {
@@ -174,7 +175,7 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('launch:start', async (_e, instanceId: string, accountId?: string | null) => {
     // 状态由 launchInstance 自己接管（它的并发保护依赖 status，不能在这里预写 instanceId）
     void minecraft.launchInstance(instanceId, { accountId }).catch(err => {
-      const message = err instanceof Error ? err.message : String(err);
+      const message = errorReason(err);
       // 若只是"已有实例在运行"被拒绝，绝不能把正在运行的实例状态重置为 idle
       if (!(err instanceof minecraft.LaunchBusyError) && minecraft.launchState.instanceId === instanceId) {
         minecraft.launchState.status = 'idle';
@@ -202,7 +203,7 @@ export function registerIpcHandlers(): void {
     void authService.finishMicrosoftLogin(session).then(result => {
       sendToAll('accounts:microsoft-result', { ok: true, userCode: session.userCode, account: result.account, warn: result.warn ?? null });
     }).catch(err => {
-      const message = err instanceof Error ? err.message : String(err);
+      const message = errorReason(err);
       sendToAll('accounts:microsoft-result', { ok: false, userCode: session.userCode, canceled: message.includes('登录已取消'), error: message });
     });
     return session;

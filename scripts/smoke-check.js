@@ -198,4 +198,34 @@ check('退出码 0 的离线日志不判成网络崩溃（issue #35）', () => {
   }
 });
 
-process.exit(fail === 0 ? 0 : 1);
+// 异步用例（issue #45）：模拟 Node happy-eyeballs 抛出的 AggregateError（message 为空）
+(async () => {
+  const paths = require(path.join(dist, 'paths.js'));
+  const cacheFile = path.join(paths.cacheDir(), 'version_manifest.json');
+  const hadCache = fs.existsSync(cacheFile);
+  if (hadCache) fs.renameSync(cacheFile, `${cacheFile}.smoke-backup`);
+  const originalFetchJson = net.fetchJson;
+  try {
+    net.fetchJson = () => {
+      const e = new AggregateError([], '');
+      e.code = 'ETIMEDOUT';
+      throw e;
+    };
+    let message = '';
+    try { await version.getVersionManifest('official'); }
+    catch (e) { message = e instanceof Error ? e.message : String(e); }
+    check('AggregateError 空 message 时版本清单错误仍有原因（issue #45）', () => {
+      assert.ok(!message.includes('：。'), `不应出现空原因：${message}`);
+      assert.ok(message.includes('ETIMEDOUT'), `应回退到错误 code：${message}`);
+    });
+  } finally {
+    net.fetchJson = originalFetchJson;
+    if (hadCache) fs.renameSync(`${cacheFile}.smoke-backup`, cacheFile);
+  }
+  check('errorReason 对常见异常形态都给出非空人话', () => {
+    assert.strictEqual(net.errorReason(new Error('代理 CONNECT 失败（HTTP 502）')), '代理 CONNECT 失败（HTTP 502）');
+    assert.strictEqual(net.errorReason(new AggregateError([new Error('connect EHOSTUNREACH')], '')), 'connect EHOSTUNREACH');
+    assert.strictEqual(net.errorReason(null), '未知错误');
+  });
+  process.exit(fail === 0 ? 0 : 1);
+})().catch(e => { console.error(e); process.exit(1); });

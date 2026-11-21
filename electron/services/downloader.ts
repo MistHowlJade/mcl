@@ -10,7 +10,7 @@ import * as crypto from 'crypto';
 import { URL } from 'url';
 import { EventEmitter } from 'events';
 import { cacheDir } from './paths';
-import { mapToMirror, USER_AGENT } from './net';
+import { errorReason, mapToMirror, USER_AGENT } from './net';
 import { createProxiedRequest } from './proxy';
 import { readJson, writeJson } from './store';
 
@@ -343,7 +343,7 @@ export class DownloadManager extends EventEmitter {
         const bytes = fs.statSync(dest).size;
         return { id: task.id, name, ok: true, bytes, fromCache: false };
       } catch (e) {
-        lastError = e instanceof Error ? e.message : String(e);
+        lastError = errorReason(e);
         this.rollbackProgress(task, attemptBytes);
         // 失败后清理当前 part 与分段文件，换源重试
         if (attempt < this.opts.retries) this.cleanupParts(partFile);
@@ -493,7 +493,7 @@ export class DownloadManager extends EventEmitter {
           }).catch((e: unknown) => {
             // downloadTask 内部已兜底，这里防御漏网异常导致队列永久挂起
             const name = task.name ?? path.basename(task.dest);
-            this.reports.push({ id: task.id, name, ok: false, bytes: 0, error: e instanceof Error ? e.message : String(e), fromCache: false });
+            this.reports.push({ id: task.id, name, ok: false, bytes: 0, error: errorReason(e), fromCache: false });
             this.active--;
             tryNext();
           });
