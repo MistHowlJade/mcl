@@ -98,6 +98,13 @@ export default function Cloud() {
       if (!(await save(true))) return;
       const result = await api.cloudDownload();
       setDownloadResult(result);
+      // 上一次上传留下的「上传成功」不能继续显示在下载结果页上
+      setTestResult({
+        ok: result.applied,
+        message: result.applied
+          ? `下载成功，已应用云端配置（${result.instances} 个实例、${result.servers} 个服务器${result.saves ? `、${result.saves} 个存档` : ''}）`
+          : '云端快照为空，未应用任何配置',
+      });
       await loadSettings();
       await inspect();
       toast.toast(`云端配置已应用：${result.instances} 个实例、${result.servers} 个服务器${result.saves ? `、${result.saves} 个存档` : ''}`, 'ok');

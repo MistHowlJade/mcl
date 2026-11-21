@@ -19,6 +19,21 @@ import { AppSettings, CloudSnapshotInfo, ServerConfig } from '../shared/types';
 
 const GIST_API = 'https://api.github.com';
 
+/** 把 GitHub 的错误响应翻译成人话：403 最常见的原因是 Fine-grained PAT 没勾 Gist 写权限 */
+function gistApiError(action: string, status: number, body: Buffer): Error {
+  let remote = '';
+  try {
+    const parsed = JSON.parse(body.toString('utf8')) as { message?: unknown };
+    if (typeof parsed.message === 'string') remote = parsed.message.trim();
+  } catch { /* 非 JSON 响应忽略 */ }
+  const hint = status === 401 ? 'Token 无效或已过期'
+    : status === 403 ? 'Token 缺少 Gist 写权限，或已触发 GitHub API 限流'
+      : status === 404 ? 'Gist 不存在或当前 Token 无权访问'
+        : status === 422 ? '请求内容被 GitHub 拒绝（请检查配置格式）' : '';
+  const detail = [hint, remote].filter(Boolean).join('：');
+  return new Error(`Gist ${action}失败（HTTP ${status}）${detail ? `：${detail}` : ''}。请在 GitHub → Settings → Developer settings → Personal access tokens 中确认 Token 已勾选 Gist 写入权限。`);
+}
+
 interface CloudManifest {
   format: 'mcl-cloud';
   version: 1;
@@ -485,14 +500,14 @@ export async function uploadCloud(): Promise<CloudSnapshotInfo> {
       const res = await fetchWithTimeout(`${GIST_API}/gists/${id}`, {
         method: 'PATCH', headers, body: JSON.stringify({ files: { 'mcl-config.json': { content } } }), timeoutMs: 30000,
       });
-      if (res.status >= 400) throw new Error(`Gist 更新失败（HTTP ${res.status}）`);
+      if (res.status >= 400) throw gistApiError('更新', res.status, res.body);
     } else {
       const res = await fetchWithTimeout(`${GIST_API}/gists`, {
         method: 'POST', headers,
         body: JSON.stringify({ description: 'MCL 启动器配置快照（不含令牌与密钥）', public: false, files: { 'mcl-config.json': { content } } }),
         timeoutMs: 30000,
       });
-      if (res.status >= 400) throw new Error(`Gist 创建失败（HTTP ${res.status}）`);
+      if (res.status >= 400) throw gistApiError('创建', res.status, res.body);
       const json = JSON.parse(res.body.toString('utf8'));
       id = json.id;
       if (!id) throw new Error('Gist 创建成功但没有返回 ID');
