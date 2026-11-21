@@ -20,7 +20,21 @@ declare global {
   }
 }
 
-const invoke = <T>(channel: string, ...args: any[]): Promise<T> => window.mcl.invoke<T>(channel, ...args);
+/**
+ * Electron 会把主进程的异常包装成：
+ *   Error invoking remote method 'versions:list': Error: 原始人话文案
+ * 渲染进程只需要给人看原始文案；通道名属于技术细节，不应出现在错误块里。
+ */
+const IPC_ERROR_PREFIX = /^Error invoking remote method '[^']*':\s*(?:[A-Za-z]*Error:\s*)?/i;
+
+const invoke = async <T>(channel: string, ...args: any[]): Promise<T> => {
+  try {
+    return await window.mcl.invoke<T>(channel, ...args);
+  } catch (e) {
+    const raw = e instanceof Error ? e.message : String(e);
+    throw new Error(raw.replace(IPC_ERROR_PREFIX, ''));
+  }
+};
 
 /** 本地图片预览地址（mcl-media:// 只允许读取 MCL 数据目录） */
 export const mediaUrl = (filePath?: string | null): string | undefined =>

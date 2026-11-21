@@ -622,7 +622,7 @@ function CreateServerModal({ onClose, onCreated }: { onClose: () => void; onCrea
       setVersions(list);
       const first = list.find(v => v.type === 'release');
       if (first) setMcVersion(first.id);
-    }).catch(e => toast.toast(`版本清单加载失败：${e}`, 'error'));
+    }).catch((e: unknown) => toast.toast(`版本清单加载失败：${e instanceof Error ? e.message : String(e)}`, 'error'));
     /* eslint-disable-next-line */
   }, []);
 
