@@ -14,7 +14,7 @@ import { readJson, writeJson } from './store';
 import { getSettings, updateSettings } from './settings';
 import { listInstanceFiles } from './instances';
 import { zipFromDir, zipWrite, zipList, zipExtractEntry, zipExtractAll } from './zip';
-import { fetchWithTimeout, fetchJson, USER_AGENT } from './net';
+import { errorReason, fetchWithTimeout, fetchJson, USER_AGENT } from './net';
 import { AppSettings, CloudSnapshotInfo, ServerConfig } from '../shared/types';
 
 const GIST_API = 'https://api.github.com';
@@ -364,7 +364,7 @@ function applyManifest(manifest: CloudManifest, saveArchives?: Map<string, Buffe
         }
         if (restored > 0) savesApplied++;
       } catch (e) {
-        warnings.push(`恢复实例 ${instanceId} 的存档失败：${e instanceof Error ? e.message : e}`);
+        warnings.push(`恢复实例 ${instanceId} 的存档失败：${errorReason(e)}`);
       } finally {
         try { fs.rmSync(tempDir, { recursive: true, force: true }); } catch { /* ignore */ }
       }
@@ -387,7 +387,7 @@ export async function testCloud(): Promise<{ ok: boolean; message: string }> {
       if (res.status >= 500) return { ok: false, message: `WebDAV 服务器错误（HTTP ${res.status}）` };
       return { ok: true, message: res.status === 404 ? '连接成功（云端还没有快照）' : `连接成功（HTTP ${res.status}）` };
     } catch (e) {
-      return { ok: false, message: `无法连接 WebDAV：${e instanceof Error ? e.message : e}` };
+      return { ok: false, message: `无法连接 WebDAV：${errorReason(e)}` };
     }
   }
   if (settings.cloud.provider === 'gist') {
@@ -395,7 +395,7 @@ export async function testCloud(): Promise<{ ok: boolean; message: string }> {
       const gists = await fetchJson<Array<{ id: string }>>(`${GIST_API}/gists?per_page=1`, { headers: gistHeaders(), timeoutMs: 15000 });
       return { ok: true, message: `连接成功（可访问 ${Array.isArray(gists) ? gists.length : 0} 个 Gist）` };
     } catch (e) {
-      return { ok: false, message: `GitHub Token 无效或网络不可达：${e instanceof Error ? e.message : e}` };
+      return { ok: false, message: `GitHub Token 无效或网络不可达：${errorReason(e)}` };
     }
   }
   return { ok: false, message: '还没有选择云同步方式' };
@@ -413,7 +413,7 @@ export async function inspectCloud(): Promise<CloudSnapshotInfo> {
       const size = parseInt(String(res.headers['content-length'] ?? '0'), 10) || null;
       return { exists: true, updatedAt: Number.isFinite(modified) ? modified : null, sizeBytes: size, location: url, note: 'WebDAV 完整快照' };
     } catch (e) {
-      return { exists: false, updatedAt: null, sizeBytes: null, location: url, note: `连接失败：${e instanceof Error ? e.message : e}` };
+      return { exists: false, updatedAt: null, sizeBytes: null, location: url, note: `连接失败：${errorReason(e)}` };
     }
   }
   if (settings.cloud.provider === 'gist') {
@@ -430,7 +430,7 @@ export async function inspectCloud(): Promise<CloudSnapshotInfo> {
         note: 'GitHub Gist 配置快照',
       };
     } catch (e) {
-      return { exists: false, updatedAt: null, sizeBytes: null, location: id, note: `读取失败：${e instanceof Error ? e.message : e}` };
+      return { exists: false, updatedAt: null, sizeBytes: null, location: id, note: `读取失败：${errorReason(e)}` };
     }
   }
   return { exists: false, updatedAt: null, sizeBytes: null, location: '', note: '未配置云同步' };

@@ -7,7 +7,7 @@
 import { app } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
-import { fetchWithTimeout } from './net';
+import { errorReason, fetchWithTimeout } from './net';
 import { DownloadManager } from './downloader';
 import { UpdateInfo } from '../shared/types';
 
@@ -97,7 +97,7 @@ export async function checkUpdate(): Promise<UpdateInfo> {
       },
     });
   } catch (e) {
-    throw new Error(`无法连接 GitHub 检查更新：${e instanceof Error ? e.message : e}\n你可以手动打开 ${RELEASES_URL} 查看最新版本。`);
+    throw new Error(`无法连接 GitHub 检查更新：${errorReason(e)}\n你可以手动打开 ${RELEASES_URL} 查看最新版本。`);
   }
   if (res.status === 404) {
     return { current, latest: null, hasUpdate: false, url: RELEASES_URL, notes: null, publishedAt: null, assets: [] };
