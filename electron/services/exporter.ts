@@ -11,7 +11,7 @@ import * as path from 'path';
 import * as crypto from 'crypto';
 import * as paths from './paths';
 import { getInstance } from './instances';
-import { zipWrite, ZipEntryInput } from './zip';
+import { zipDirToFile, zipWrite, ZipEntryInput } from './zip';
 import { fetchJson, fetchWithTimeout } from './net';
 import { newestVersion } from './version';
 import { ExportFormat, ExportResult, InstanceInfo, LoaderType } from '../shared/types';
@@ -141,6 +141,20 @@ export async function exportInstance(instanceId: string, format: ExportFormat, d
     const prefix = `${instance.mcVersion}-`;
     return v.startsWith(prefix) ? v.slice(prefix.length) : v;
   };
+  // 完整快照动辄数 GB：直接流式打包实例目录，不把所有文件读进内存（#18/#28）
+  if (format === 'zip') {
+    const partPath = `${destPath}.part`;
+    fs.mkdirSync(path.dirname(destPath), { recursive: true });
+    try {
+      const files = await zipDirToFile(paths.instanceDir(instanceId), partPath, rel => !/^natives([\\/]|$)/i.test(rel));
+      fs.renameSync(partPath, destPath);
+      return { filePath: destPath, format, sizeBytes: fs.statSync(destPath).size, files, warnings };
+    } catch (e) {
+      try { fs.rmSync(partPath, { force: true }); } catch { /* ignore */ }
+      throw e;
+    }
+  }
+
   let entries: ZipEntryInput[] = [];
 
   if (format === 'mmc') {

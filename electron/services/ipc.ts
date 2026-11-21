@@ -157,7 +157,7 @@ export function registerIpcHandlers(): void {
     // 游戏运行时删除会把正在使用的存档/模组删到一半，先拒绝并给出人话提示
     assertInstanceIdle(id, '删除实例');
     const backupDir = path.join(paths.backupsDir(), 'deleted-instances');
-    return instances.deleteInstance(id, backupDir);
+    return instances.deleteInstanceWithBackup(id, backupDir);
   });
   ipcMain.handle('instances:diskUsage', (_e, id: string) => ({ instance: instances.instanceDiskBytes(id), shared: instances.sharedDiskBytes() }));
   ipcMain.handle('instances:openGameDir', (_e, id: string) => {

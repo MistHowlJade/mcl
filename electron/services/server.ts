@@ -21,7 +21,7 @@ import * as javaService from './java';
 import * as versionService from './version';
 import { DownloadManager } from './downloader';
 import { fetchJson, fetchWithTimeout } from './net';
-import { zipFromDir, zipExtractAll } from './zip';
+import { zipDirToFile, zipExtractAll } from './zip';
 import {
   ServerBackupInfo, ServerConfig, ServerInfo, ServerLoader, ServerProperties, ServerStatus,
 } from '../shared/types';
@@ -276,7 +276,7 @@ export async function deleteServer(id: string, backup = true): Promise<{ ok: boo
     fs.mkdirSync(destDir, { recursive: true });
     backupPath = path.join(destDir, `${cfg.name.replace(/[^\w\u4e00-\u9fa5-]/g, '_')}-${id}-${Date.now()}.zip`);
     try {
-      fs.writeFileSync(backupPath, zipFromDir(dir));
+      await zipDirToFile(dir, backupPath);
     } catch {
       // 备份失败就取消删除：确认框承诺了“先备份再删除”，不能把用户的世界直接删掉
       try { fs.rmSync(backupPath, { force: true }); } catch { /* ignore */ }
@@ -887,7 +887,7 @@ function resolveServerWorldDir(id: string, worldName: string): string {
   return worldDir;
 }
 
-export function backupServerWorld(id: string, name?: string): ServerBackupInfo {
+export async function backupServerWorld(id: string, name?: string): Promise<ServerBackupInfo> {
   const rt = runtimeOf(id);
   // 运行中的世界文件仍在被服务端写入，直接打包可能得到缺区块/半写入的损坏存档
   if (rt.child || (rt.status !== 'stopped' && rt.status !== 'crashed')) {
@@ -907,7 +907,7 @@ export function backupServerWorld(id: string, name?: string): ServerBackupInfo {
   // 先写 .part 再改名：打包中途进程退出时，列表里不会出现可恢复、实际已截断的备份
   const partPath = `${filePath}.part`;
   try {
-    fs.writeFileSync(partPath, zipFromDir(worldDir));
+    await zipDirToFile(worldDir, partPath);
     fs.renameSync(partPath, filePath);
   } catch (e) {
     try { fs.rmSync(partPath, { force: true }); } catch { /* ignore */ }

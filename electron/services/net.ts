@@ -26,7 +26,7 @@ export interface MirrorHealth { source: 'official' | 'bmclapi'; latencyMs: numbe
 
 export async function fetchWithTimeout(
   url: string,
-  options: { method?: string; headers?: Record<string, string>; body?: string | Buffer; timeoutMs?: number; redirectDepth?: number } = {},
+  options: { method?: string; headers?: Record<string, string>; body?: string | Buffer | NodeJS.ReadableStream; timeoutMs?: number; redirectDepth?: number } = {},
 ): Promise<{ status: number; headers: http.IncomingHttpHeaders; body: Buffer }> {
   const timeoutMs = options.timeoutMs ?? 15000;
   const redirectDepth = options.redirectDepth ?? 0;
@@ -73,8 +73,15 @@ export async function fetchWithTimeout(
       res.on('error', reject);
     });
     req.on('error', reject);
-    if (options.body) req.write(options.body);
-    req.end();
+    if (options.body) {
+      const body = options.body;
+      if (typeof body === 'string' || Buffer.isBuffer(body)) {
+        req.end(body);
+      } else {
+        // 大文件上传（云同步 ZIP）用流，避免再把整包读进内存
+        body.on('error', reject).pipe(req);
+      }
+    } else req.end();
   });
 }
 
