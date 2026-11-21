@@ -123,6 +123,7 @@ npm install        # 安装依赖（需要 Node.js 18+）
 npm run dev        # 开发模式（Vite HMR + Electron）
 npm run typecheck  # 类型检查
 npm run build      # 产物：dist/（渲染进程）+ electron-dist/（主进程）
+npm run verify     # typecheck + build + 逻辑冒烟（38 项，CI 同款）
 npm run start      # 运行构建产物
 npm run package    # 零依赖打包：release/MCL-<版本>-<平台>-<架构>/ + .zip
 ```
