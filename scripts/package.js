@@ -82,6 +82,9 @@ const appDir = path.join(resourcesDir, 'app');
 fs.mkdirSync(appDir, { recursive: true });
 fs.cpSync(rendererDist, path.join(appDir, 'dist'), { recursive: true });
 fs.cpSync(mainDist, path.join(appDir, 'electron-dist'), { recursive: true });
+// 应用图标（窗口/任务栏），与源码 assets/ 保持一致
+const assetsSource = path.join(root, 'assets');
+if (fs.existsSync(assetsSource)) fs.cpSync(assetsSource, path.join(appDir, 'assets'), { recursive: true });
 
 // Electron 自带的默认应用会影响启动，移除更干净
 for (const legacy of ['default_app.asar', 'default_app']) {
