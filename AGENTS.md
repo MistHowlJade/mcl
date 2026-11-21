@@ -102,6 +102,7 @@ src/                      渲染进程（React 18 + Vite）
 | 云同步 | `electron/services/cloud.ts` + `src/pages/Cloud.tsx`（凭据只存本机设置） |
 | 实例导出 | `electron/services/exporter.ts` + `Instances.tsx` 的导出弹窗 |
 | 设置项（必须带 Tip 解释）| `electron/services/settings.ts` 默认值 + `Settings.tsx` 行（每项配 `<Tip>`）|
+| 大文件打包/备份 | `electron/services/zip.ts` 的 `zipDirToFile` / `zipFilesToFile`（流式 + ZIP64，超 4GB/65535 条目自动切换）；`zipWrite`/`zipFromDir` 只用于小包 |
 | 数据目录布局 | `electron/services/paths.ts`（改这里要同步 README 目录结构图）|
 
 ## 8. 交付流程（用户原话：开发完需要测试 → 直接 git 到 GitHub）

@@ -87,9 +87,10 @@ export async function createBackup(instanceId: string, kind: BackupInfo['kind'],
     })
     : [];
 
-  // 构造打包清单：saves/ 整个目录 + 根目录的配置文件
-  const { zipWrite } = await import('./zip');
-  const files: Array<{ name: string; data: Buffer; mtime: Date }> = [];
+  // 构造打包清单：saves/ 整个目录 + 根目录的配置文件。
+  // 只收集路径，不读取文件内容：几百 MB 的存档不该先被塞进一个 Buffer（#18）。
+  const { zipFilesToFile } = await import('./zip');
+  const files: Array<{ name: string; absPath: string }> = [];
   const walkAdd = (absDir: string, relPrefix: string) => {
     let entries: fs.Dirent[] = [];
     try { entries = fs.readdirSync(absDir, { withFileTypes: true }); } catch { return; }
@@ -97,14 +98,14 @@ export async function createBackup(instanceId: string, kind: BackupInfo['kind'],
       const abs = path.join(absDir, entry.name);
       const rel = `${relPrefix}/${entry.name}`;
       if (entry.isDirectory()) walkAdd(abs, rel);
-      else { try { files.push({ name: rel, data: fs.readFileSync(abs), mtime: fs.statSync(abs).mtime }); } catch { /* skip */ } }
+      else files.push({ name: rel, absPath: abs });
     }
   };
   for (const inc of included) {
     const abs = path.join(gameDir, inc);
     try {
       if (fs.statSync(abs).isDirectory()) walkAdd(abs, inc);
-      else files.push({ name: inc, data: fs.readFileSync(abs), mtime: fs.statSync(abs).mtime });
+      else files.push({ name: inc, absPath: abs });
     } catch { /* 文件可能在备份瞬间被删除 */ }
   }
   if (files.length === 0) return null; // 空目录（如只有一个空 saves/）不产生空备份
@@ -118,7 +119,7 @@ export async function createBackup(instanceId: string, kind: BackupInfo['kind'],
   // 实际却已截断的 .zip（恢复时才发现损坏就晚了）
   const partPath = `${filePath}.part`;
   try {
-    fs.writeFileSync(partPath, zipWrite(files));
+    await zipFilesToFile(files, partPath);
     fs.renameSync(partPath, filePath);
   } catch (e) {
     try { fs.rmSync(partPath, { force: true }); } catch { /* ignore */ }

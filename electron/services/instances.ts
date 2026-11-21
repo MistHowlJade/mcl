@@ -10,6 +10,7 @@ import * as crypto from 'crypto';
 import * as paths from './paths';
 import { InstanceConfig, InstanceInfo, LoaderType, MemoryPreset } from '../shared/types';
 import { readJson, writeJson } from './store';
+import { zipDirToFile } from './zip';
 
 const newId = () => crypto.randomBytes(8).toString('hex');
 
@@ -188,6 +189,13 @@ function assertInstanceId(id: string): void {
   if (!/^[a-f0-9]{16}$/.test(String(id ?? ''))) throw new Error('实例不存在');
 }
 
+/** 删除前备份只保留用户数据；Forge 装进 game/libraries 的几百 MB 库不该再打包一遍 */
+function isUserDataPath(rel: string): boolean {
+  const top = rel.split('/')[0];
+  return ['saves', 'mods', 'config', 'resourcepacks', 'shaderpacks', 'screenshots'].includes(top)
+    || ['options.txt', 'servers.dat', 'keybinds.txt'].includes(top);
+}
+
 export function deleteInstance(id: string, backupDir?: string): { ok: boolean; backupPath?: string } {
   assertInstanceId(id);
   const dir = paths.instanceDir(id);
@@ -195,23 +203,37 @@ export function deleteInstance(id: string, backupDir?: string): { ok: boolean; b
   if (backupDir) {
     fs.mkdirSync(backupDir, { recursive: true });
     const dest = path.join(backupDir, `instance-${id}-${Date.now()}.zip`);
-    // 复用 backup 模块打包（延迟导入避免循环依赖）
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const { zipFromDir } = require('./zip') as typeof import('./zip');
-    // 删除前的备份只需留住用户数据；把 Forge 装进 game/libraries 的几百 MB 库也打包
-    // 会让删除大实例卡死甚至超过 32 位 ZIP 上限。
-    const USER_DATA = ['saves', 'mods', 'config', 'resourcepacks', 'shaderpacks', 'screenshots'];
-    const USER_FILES = ['options.txt', 'servers.dat', 'keybinds.txt'];
-    const data = zipFromDir(dir, rel => {
-      const top = rel.split('/')[0];
-      return USER_DATA.includes(top) || USER_FILES.includes(top);
-    });
-    fs.writeFileSync(dest, data);
+    fs.writeFileSync(dest, zipFromDir(dir, isUserDataPath));
     fs.rmSync(dir, { recursive: true, force: true });
     return { ok: true, backupPath: dest };
   }
   fs.rmSync(dir, { recursive: true, force: true });
   return { ok: true };
+}
+
+/**
+ * UI 删除实例走这条：流式打包 + ZIP64。
+ * 原来的 zipFromDir 先把所有文件读进一个 Buffer，2GB+ 整合包会让主进程卡死，
+ * 超过 4GB 则直接失败（#18）。这里按 1MB 分块写出，内存占用与包体无关。
+ */
+export async function deleteInstanceWithBackup(id: string, backupDir: string): Promise<{ ok: boolean; backupPath?: string }> {
+  assertInstanceId(id);
+  const dir = paths.instanceDir(id);
+  if (!fs.existsSync(dir)) return { ok: false };
+  fs.mkdirSync(backupDir, { recursive: true });
+  const dest = path.join(backupDir, `instance-${id}-${Date.now()}.zip`);
+  const part = `${dest}.part`;
+  try {
+    await zipDirToFile(dir, part, isUserDataPath);
+    fs.renameSync(part, dest);
+  } catch (e) {
+    try { fs.rmSync(part, { force: true }); } catch { /* ignore */ }
+    throw e;
+  }
+  fs.rmSync(dir, { recursive: true, force: true });
+  return { ok: true, backupPath: dest };
 }
 
 /** 实例磁盘占用（含共享库不计重复） */

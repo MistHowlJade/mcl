@@ -227,5 +227,56 @@ check('退出码 0 的离线日志不判成网络崩溃（issue #35）', () => {
     assert.strictEqual(net.errorReason(new AggregateError([new Error('connect EHOSTUNREACH')], '')), 'connect EHOSTUNREACH');
     assert.strictEqual(net.errorReason(null), '未知错误');
   });
+
+  const zipRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'mcl-zip64-'));
+  try {
+    const small = path.join(zipRoot, 'small.txt');
+    fs.writeFileSync(small, 'hello');
+    const big = path.join(zipRoot, 'big.bin');
+    fs.writeFileSync(big, Buffer.alloc(5 * 1024 * 1024, 7));
+    const stored = path.join(zipRoot, 'stored.bin');
+    fs.writeFileSync(stored, Buffer.alloc(1024 * 1024, 3));
+    const zipPath = path.join(zipRoot, 'out.zip');
+    await zip.zipWriteToFile([
+      { name: 'dir/small.txt', absPath: small, size: 5 },
+      { name: 'big.bin', absPath: big, size: 5 * 1024 * 1024 },
+      { name: 'stored.bin', absPath: stored, store: true },
+    ], zipPath);
+    const buf = fs.readFileSync(zipPath);
+    const list = zip.zipList(buf);
+    check('流式 ZIP 写入后可被自己列出并解压（#18/#28）', () => {
+      assert.strictEqual(list.length, 3);
+      assert.strictEqual(zip.zipExtractEntry(buf, list[0]).toString(), 'hello');
+      assert.ok(zip.zipExtractEntry(buf, list[1]).every(b => b === 7));
+      assert.ok(zip.zipExtractEntry(buf, list[2]).every(b => b === 3));
+    });
+    const extractDir = path.join(zipRoot, 'out');
+    const written = zip.zipExtractAll(buf, extractDir);
+    check('流式 ZIP 解压落盘路径与内容正确', () => {
+      assert.strictEqual(written.length, 3);
+      assert.strictEqual(fs.readFileSync(path.join(extractDir, 'dir', 'small.txt'), 'utf8'), 'hello');
+    });
+
+    const manyPath = path.join(zipRoot, 'many.zip');
+    const many = [];
+    for (let i = 0; i < 70000; i++) many.push({ name: `f${i}.txt`, absPath: small, size: 5, mtime: new Date(2020, 0, 1) });
+    await zip.zipWriteToFile(many, manyPath);
+    const manyBuf = fs.readFileSync(manyPath);
+    check('ZIP64：70000 条目可写可列出（#28）', () => {
+      const l = zip.zipList(manyBuf);
+      assert.strictEqual(l.length, 70000);
+      assert.strictEqual(zip.zipExtractEntry(manyBuf, l[69999]).toString(), 'hello');
+    });
+
+    const forcedPath = path.join(zipRoot, 'forced64.zip');
+    await zip.zipWriteToFile([
+      { name: 'a.txt', absPath: small, size: 5, mtime: new Date(2020, 0, 1) },
+    ], forcedPath, { zip64: true });
+    check('ZIP64：强制 ZIP64 模式的小包仍可正常读取', () => {
+      assert.strictEqual(zip.zipList(fs.readFileSync(forcedPath)).length, 1);
+    });
+  } finally {
+    fs.rmSync(zipRoot, { recursive: true, force: true });
+  }
   process.exit(fail === 0 ? 0 : 1);
 })().catch(e => { console.error(e); process.exit(1); });

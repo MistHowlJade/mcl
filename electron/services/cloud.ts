@@ -13,7 +13,7 @@ import * as paths from './paths';
 import { readJson, writeJson } from './store';
 import { getSettings, updateSettings } from './settings';
 import { listInstanceFiles } from './instances';
-import { zipFromDir, zipWrite, zipList, zipExtractEntry, zipExtractAll } from './zip';
+import { zipDirToFile, zipWriteToFile, zipList, zipExtractEntry, zipExtractAll } from './zip';
 import { errorReason, fetchWithTimeout, fetchJson, USER_AGENT } from './net';
 import { AppSettings, CloudSnapshotInfo, ServerConfig } from '../shared/types';
 
@@ -165,27 +165,41 @@ export function buildConfigOnlyJson(): string {
   return JSON.stringify(manifest, null, 2);
 }
 
-export function buildFullSnapshotZip(): Buffer {
+/**
+ * 构建完整快照到文件：每个存档先流式打成单独 ZIP，再把它们和 manifest 流式打进外层 ZIP。
+ * 全程不把存档读进内存；超过 4GB 自动写 ZIP64（#18/#28）。
+ */
+export async function buildFullSnapshotZipToFile(dest: string): Promise<void> {
   const { manifest, saveDirs } = buildManifest(getSettings().cloud.includeSaves);
-  const entries: Array<{ name: string; data: Buffer; mtime?: Date }> = [];
+  const tempRoot = path.join(paths.cacheDir(), `cloud-snapshot-${Date.now()}-${process.pid}`);
+  fs.mkdirSync(tempRoot, { recursive: true });
+  const entries: Array<{ name: string; absPath: string }> = [];
   const failedSaves: string[] = [];
-  for (const save of saveDirs) {
-    try {
-      entries.push({ name: `saves/${save.instanceId}.zip`, data: zipFromDir(save.dir), mtime: new Date() });
-    } catch {
-      // 绝不能静默丢存档：打包失败要写进 manifest 警告，并在界面明确提示
-      failedSaves.push(save.instanceId);
+  try {
+    for (const save of saveDirs) {
+      try {
+        const tmpZip = path.join(tempRoot, `${save.instanceId}.zip`);
+        await zipDirToFile(save.dir, tmpZip);
+        entries.push({ name: `saves/${save.instanceId}.zip`, absPath: tmpZip });
+      } catch {
+        // 绝不能静默丢存档：打包失败要写进 manifest 警告，并在界面明确提示
+        failedSaves.push(save.instanceId);
+      }
     }
+    if (failedSaves.length > 0) {
+      manifest.warnings = [
+        ...(manifest.warnings ?? []),
+        `以下实例的存档打包失败，快照未包含：${failedSaves.join('、')}。请检查目录权限或磁盘空间后重试上传。`,
+      ];
+    }
+    // manifest 必须在存档打包完成后再序列化，才能把上面的警告写进去
+    const manifestPath = path.join(tempRoot, 'mcl-cloud.json');
+    fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2), 'utf8');
+    fs.mkdirSync(path.dirname(dest), { recursive: true });
+    await zipWriteToFile([{ name: 'mcl-cloud.json', absPath: manifestPath }, ...entries], dest);
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
   }
-  if (failedSaves.length > 0) {
-    manifest.warnings = [
-      ...(manifest.warnings ?? []),
-      `以下实例的存档打包失败，快照未包含：${failedSaves.join('、')}。请检查目录权限或磁盘空间后重试上传。`,
-    ];
-  }
-  // manifest 必须在存档打包完成后再序列化，才能把上面的警告写进去
-  entries.unshift({ name: 'mcl-cloud.json', data: Buffer.from(JSON.stringify(manifest, null, 2), 'utf8'), mtime: new Date() });
-  return zipWrite(entries);
 }
 
 function mergeSettings(incoming: AppSettings): void {
@@ -206,7 +220,7 @@ function mergeSettings(incoming: AppSettings): void {
   updateSettings(next as any);
 }
 
-function applyManifest(manifest: CloudManifest, saveArchives?: Map<string, Buffer>): CloudApplyResult {
+async function applyManifest(manifest: CloudManifest, saveArchives?: Map<string, Buffer>): Promise<CloudApplyResult> {
   if (!manifest || typeof manifest !== 'object') throw new Error('这不是 MCL 云同步快照（内容为空或格式错误）');
   // warnings 会直接渲染到界面：快照可能被手工改坏，非字符串条目必须过滤，否则 React 渲染对象会白屏
   const warnings: string[] = Array.isArray(manifest.warnings)
@@ -343,7 +357,7 @@ function applyManifest(manifest: CloudManifest, saveArchives?: Map<string, Buffe
           // 恢复前先给本机同名世界留一份可一键恢复的备份，误操作不至于永久丢存档
           if (fs.existsSync(target)) {
             const backupPath = path.join(tempRoot, `world-${suffix}-${i}.zip`);
-            fs.writeFileSync(backupPath, zipFromDir(target));
+            await zipDirToFile(target, backupPath);
             writeJson(backupPath.replace(/\.zip$/, '.json'), {
               name: `云恢复前自动备份：${path.basename(target)}`,
               createdAt: Date.now(),
@@ -441,19 +455,27 @@ export async function uploadCloud(): Promise<CloudSnapshotInfo> {
   if (settings.cloud.provider === 'webdav') {
     // 先校验地址再打包（存档快照可能很大，地址没填就别白忙）
     const url = webdavEndpoint();
-    const buf = buildFullSnapshotZip();
-    const res = await fetchWithTimeout(url, {
-      method: 'PUT',
-      headers: { ...webdavHeaders(), 'Content-Type': 'application/zip', 'Content-Length': String(buf.length) },
-      body: buf,
-      timeoutMs: 120000,
-    });
-    if (res.status === 409 || res.status === 404) {
-      throw new Error(`WebDAV 上传失败（HTTP ${res.status}）：目标目录可能不存在。WebDAV 不会自动创建多级目录，请先在网盘里建好文件夹。`);
+    const tempZip = path.join(paths.cacheDir(), `cloud-upload-${Date.now()}-${process.pid}.zip`);
+    let stream: fs.ReadStream | null = null;
+    try {
+      await buildFullSnapshotZipToFile(tempZip);
+      stream = fs.createReadStream(tempZip);
+      const res = await fetchWithTimeout(url, {
+        method: 'PUT',
+        headers: { ...webdavHeaders(), 'Content-Type': 'application/zip', 'Content-Length': String(fs.statSync(tempZip).size) },
+        body: stream,
+        timeoutMs: 120000,
+      });
+      if (res.status === 409 || res.status === 404) {
+        throw new Error(`WebDAV 上传失败（HTTP ${res.status}）：目标目录可能不存在。WebDAV 不会自动创建多级目录，请先在网盘里建好文件夹。`);
+      }
+      if (res.status >= 400) throw new Error(`WebDAV 上传失败（HTTP ${res.status}）`);
+      updateSettings({ cloud: { ...getSettings().cloud, lastSyncAt: Date.now(), lastSyncDirection: 'upload' } });
+      return inspectCloud();
+    } finally {
+      stream?.destroy();
+      fs.rmSync(tempZip, { force: true });
     }
-    if (res.status >= 400) throw new Error(`WebDAV 上传失败（HTTP ${res.status}）`);
-    updateSettings({ cloud: { ...getSettings().cloud, lastSyncAt: Date.now(), lastSyncDirection: 'upload' } });
-    return inspectCloud();
   }
   if (settings.cloud.provider === 'gist') {
     const content = buildConfigOnlyJson();
@@ -503,7 +525,7 @@ export async function downloadCloud(): Promise<CloudApplyResult> {
       const hit = norm.match(/^saves\/([a-f0-9]{16})\.zip$/);
       if (hit) saveArchives.set(hit[1], zipExtractEntry(buf, entry));
     }
-    const result = applyManifest(manifest, saveArchives);
+    const result = await applyManifest(manifest, saveArchives);
     updateSettings({ cloud: { ...getSettings().cloud, lastSyncAt: Date.now(), lastSyncDirection: 'download' } });
     return result;
   }
@@ -533,7 +555,7 @@ export async function downloadCloud(): Promise<CloudApplyResult> {
       }
       throw new Error('Gist 里的 mcl-config.json 不是有效 JSON，内容可能已损坏。');
     }
-    const result = applyManifest(manifest);
+    const result = await applyManifest(manifest);
     updateSettings({ cloud: { ...getSettings().cloud, lastSyncAt: Date.now(), lastSyncDirection: 'download' } });
     return result;
   }

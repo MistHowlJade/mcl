@@ -8,15 +8,15 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as paths from './paths';
 import { getInstance } from './instances';
-import { zipFromDir, zipList, zipExtractAll } from './zip';
+import { zipDirToFile, zipList, zipExtractAll } from './zip';
 import { writeJson } from './store';
 import { ContentItem, ContentKind, ContentList } from '../shared/types';
 
-/** 世界备份动辄数百 MB：先写 .part 再改名，进程中断时不会留下能被恢复列表读到的截断 ZIP */
-function writeZipAtomic(filePath: string, data: Buffer): void {
+/** 世界备份动辄数百 MB：流式写 .part 再改名，进程中断时不会留下能被恢复列表读到的截断 ZIP */
+async function writeZipAtomic(filePath: string, dir: string): Promise<void> {
   const partPath = `${filePath}.part`;
   try {
-    fs.writeFileSync(partPath, data);
+    await zipDirToFile(dir, partPath);
     fs.renameSync(partPath, filePath);
   } catch (e) {
     try { fs.rmSync(partPath, { force: true }); } catch { /* ignore */ }
@@ -283,14 +283,14 @@ export function importWorldZip(instanceId: string, zipPath: string): { worldName
 }
 
 /** 把世界导出为 ZIP（用于分享或手动备份） */
-export function exportWorldZip(instanceId: string, worldName: string, destPath: string): { filePath: string; sizeBytes: number } {
+export async function exportWorldZip(instanceId: string, worldName: string, destPath: string): Promise<{ filePath: string; sizeBytes: number }> {
   const instance = getInstance(instanceId);
   if (!instance) throw new Error('实例不存在');
   const worldDir = worldDirOf(instance.gameDir, worldName);
   if (!fs.existsSync(worldDir) || !fs.statSync(worldDir).isDirectory()) throw new Error('世界不存在');
   fs.mkdirSync(path.dirname(destPath), { recursive: true });
   // 覆盖已有导出文件时先写 .part：磁盘满/中途失败不会把原来那份好文件也毁掉
-  writeZipAtomic(destPath, zipFromDir(worldDir));
+  await writeZipAtomic(destPath, worldDir);
   return { filePath: destPath, sizeBytes: fs.statSync(destPath).size };
 }
 
@@ -342,7 +342,7 @@ export function importContent(instanceId: string, kind: ContentKind, sourcePaths
   return { imported, skipped };
 }
 
-export function deleteContent(instanceId: string, kind: ContentKind, fileName: string): { deleted: boolean; backupPath?: string } {
+export async function deleteContent(instanceId: string, kind: ContentKind, fileName: string): Promise<{ deleted: boolean; backupPath?: string }> {
   const instance = getInstance(instanceId);
   if (!instance) throw new Error('实例不存在');
   if (!['resourcepacks', 'shaderpacks', 'screenshots', 'worlds'].includes(kind)) throw new Error('未知的内容类型');
@@ -361,14 +361,14 @@ export function deleteContent(instanceId: string, kind: ContentKind, fileName: s
     fs.mkdirSync(dir, { recursive: true });
     const ts = Date.now();
     backupPath = path.join(dir, `world-${ts}.zip`);
-    writeZipAtomic(backupPath, zipFromDir(target));
+    await writeZipAtomic(backupPath, target);
     writeJson(backupPath.replace(/\.zip$/, '.json'), { name: `删除世界前自动备份：${path.basename(fileName)}`, createdAt: ts, worldNames: [path.basename(fileName)], kind: 'world' });
   }
   fs.rmSync(target, { recursive: true, force: true });
   return { deleted: true, backupPath };
 }
 
-export function backupWorld(instanceId: string, worldName: string, displayName?: string): string {
+export async function backupWorld(instanceId: string, worldName: string, displayName?: string): Promise<string> {
   const instance = getInstance(instanceId);
   if (!instance) throw new Error('实例不存在');
   const worldDir = worldDirOf(instance.gameDir, worldName);
@@ -377,7 +377,7 @@ export function backupWorld(instanceId: string, worldName: string, displayName?:
   fs.mkdirSync(dir, { recursive: true });
   const ts = Date.now();
   const filePath = path.join(dir, `world-${ts}.zip`);
-  writeZipAtomic(filePath, zipFromDir(worldDir));
+  await writeZipAtomic(filePath, worldDir);
   writeJson(filePath.replace(/\.zip$/, '.json'), { name: displayName ?? `世界备份：${path.basename(worldName)}`, createdAt: ts, worldNames: [path.basename(worldName)], kind: 'world' });
   return filePath;
 }
