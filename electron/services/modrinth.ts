@@ -242,7 +242,7 @@ export async function installContent(
     const temp = path.join(paths.cacheDir(), `mcl-world-${Date.now()}-${safeName}`);
     try {
       const sizeBytes = await downloadTo(temp);
-      const imported = importWorldZip(instanceId, temp);
+      const imported = await importWorldZip(instanceId, temp);
       return { fileName: safeName, path: imported.path, sizeBytes, worldName: imported.worldName };
     } finally {
       try { fs.rmSync(temp, { force: true }); } catch { /* ignore */ }

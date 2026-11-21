@@ -13,7 +13,7 @@ import * as paths from './paths';
 import { readJson, writeJson } from './store';
 import { getSettings, updateSettings } from './settings';
 import { listInstanceFiles } from './instances';
-import { zipDirToFile, zipWriteToFile, zipList, zipExtractEntry, zipExtractAll } from './zip';
+import { zipDirToFile, zipWriteToFile, zipListFromFile, zipExtractEntryToFile, zipExtractAllFromFile } from './zip';
 import { errorReason, fetchWithTimeout, fetchJson, USER_AGENT } from './net';
 import { AppSettings, CloudSnapshotInfo, ServerConfig } from '../shared/types';
 
@@ -220,7 +220,7 @@ function mergeSettings(incoming: AppSettings): void {
   updateSettings(next as any);
 }
 
-async function applyManifest(manifest: CloudManifest, saveArchives?: Map<string, Buffer>): Promise<CloudApplyResult> {
+async function applyManifest(manifest: CloudManifest, saveArchives?: Map<string, string>): Promise<CloudApplyResult> {
   if (!manifest || typeof manifest !== 'object') throw new Error('这不是 MCL 云同步快照（内容为空或格式错误）');
   // warnings 会直接渲染到界面：快照可能被手工改坏，非字符串条目必须过滤，否则 React 渲染对象会白屏
   const warnings: string[] = Array.isArray(manifest.warnings)
@@ -318,7 +318,7 @@ async function applyManifest(manifest: CloudManifest, saveArchives?: Map<string,
 
   let savesApplied = 0;
   if (saveArchives && saveArchives.size > 0) {
-    for (const [instanceId, buf] of saveArchives) {
+    for (const [instanceId, archivePath] of saveArchives) {
       // 快照可以手工编辑：只恢复本次清单里真实存在的实例，避免凭空创建幽灵存档目录
       if (!appliedInstanceIds.has(instanceId)) {
         warnings.push(`已跳过未知实例 ${instanceId} 的存档`);
@@ -331,7 +331,7 @@ async function applyManifest(manifest: CloudManifest, saveArchives?: Map<string,
       const tempDir = path.join(tempRoot, `.cloud-${suffix}`);
       try {
         fs.mkdirSync(tempDir, { recursive: true });
-        const written = zipExtractAll(buf, tempDir);
+        const written = await zipExtractAllFromFile(archivePath, tempDir);
         if (written.length === 0) continue;
         // 归档内容就是 saves 下的世界目录。直接往 saves 里覆盖会把快照里已不存在的
         // 旧区块留在原地，恢复出“半新半旧”的世界；这里逐个世界整体替换。
@@ -506,28 +506,41 @@ export async function uploadCloud(): Promise<CloudSnapshotInfo> {
 export async function downloadCloud(): Promise<CloudApplyResult> {
   const settings = getSettings();
   if (settings.cloud.provider === 'webdav') {
-    const res = await fetchWithTimeout(webdavEndpoint(), { method: 'GET', headers: webdavHeaders(), timeoutMs: 120000 });
-    if (res.status === 404) throw new Error('云端还没有快照，请先上传一次');
-    if (res.status >= 400) throw new Error(`WebDAV 下载失败（HTTP ${res.status}）`);
-    const buf = res.body;
-    const entries = zipList(buf);
-    const manifestEntry = entries.find(e => e.name.replace(/\\/g, '/') === 'mcl-cloud.json');
-    if (!manifestEntry) throw new Error('快照里缺少 mcl-cloud.json，文件可能损坏');
-    let manifest: CloudManifest;
+    const tempRoot = path.join(paths.cacheDir(), `cloud-download-${Date.now()}-${process.pid}`);
+    fs.mkdirSync(tempRoot, { recursive: true });
+    const zipPath = path.join(tempRoot, 'snapshot.zip');
     try {
-      manifest = JSON.parse(zipExtractEntry(buf, manifestEntry).toString('utf8')) as CloudManifest;
-    } catch {
-      throw new Error('快照里的 mcl-cloud.json 不是有效 JSON，文件可能已损坏。');
+      const res = await fetchWithTimeout(webdavEndpoint(), {
+        method: 'GET', headers: webdavHeaders(), timeoutMs: 120000, outputFile: zipPath,
+      });
+      if (res.status === 404) throw new Error('云端还没有快照，请先上传一次');
+      if (res.status >= 400) throw new Error(`WebDAV 下载失败（HTTP ${res.status}）`);
+      const entries = await zipListFromFile(zipPath);
+      const manifestEntry = entries.find(e => e.name.replace(/\\/g, '/') === 'mcl-cloud.json');
+      if (!manifestEntry) throw new Error('快照里缺少 mcl-cloud.json，文件可能损坏');
+      const manifestPath = path.join(tempRoot, 'mcl-cloud.json');
+      await zipExtractEntryToFile(zipPath, manifestEntry, manifestPath);
+      let manifest: CloudManifest;
+      try {
+        manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8')) as CloudManifest;
+      } catch {
+        throw new Error('快照里的 mcl-cloud.json 不是有效 JSON，文件可能已损坏。');
+      }
+      // 存档包只落到临时目录，后续由 applyManifest 流式解压；整个快照不再驻留内存
+      const saveArchives = new Map<string, string>();
+      for (const entry of entries) {
+        const hit = entry.name.replace(/\\/g, '/').match(/^saves\/([a-f0-9]{16})\.zip$/);
+        if (!hit) continue;
+        const archivePath = path.join(tempRoot, `${hit[1]}.zip`);
+        await zipExtractEntryToFile(zipPath, entry, archivePath);
+        saveArchives.set(hit[1], archivePath);
+      }
+      const result = await applyManifest(manifest, saveArchives);
+      updateSettings({ cloud: { ...getSettings().cloud, lastSyncAt: Date.now(), lastSyncDirection: 'download' } });
+      return result;
+    } finally {
+      fs.rmSync(tempRoot, { recursive: true, force: true });
     }
-    const saveArchives = new Map<string, Buffer>();
-    for (const entry of entries) {
-      const norm = entry.name.replace(/\\/g, '/');
-      const hit = norm.match(/^saves\/([a-f0-9]{16})\.zip$/);
-      if (hit) saveArchives.set(hit[1], zipExtractEntry(buf, entry));
-    }
-    const result = await applyManifest(manifest, saveArchives);
-    updateSettings({ cloud: { ...getSettings().cloud, lastSyncAt: Date.now(), lastSyncDirection: 'download' } });
-    return result;
   }
   if (settings.cloud.provider === 'gist') {
     const id = settings.cloud.gistId.trim();

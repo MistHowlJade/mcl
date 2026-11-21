@@ -5,7 +5,7 @@
  */
 import * as fs from 'fs';
 import * as path from 'path';
-import { zipList, zipExtractEntry } from './zip';
+import { zipListFromFile, zipExtractEntryToFile } from './zip';
 import { createInstance, listInstances, updateInstance } from './instances';
 import * as paths from './paths';
 import { fetchJson, USER_AGENT } from './net';
@@ -71,8 +71,7 @@ const safeTarget = (root: string, rel: string): string | null => {
 
 export async function importModpack(zipPath: string, targetName?: string, onLog?: (line: string) => void): Promise<ImportResult> {
   const log = onLog ?? (() => {});
-  const buf = fs.readFileSync(zipPath);
-  const entries = zipList(buf);
+  const entries = await zipListFromFile(zipPath);
   const root = findPackRoot(entries);
   if (!root) {
     return { instanceId: null, format: 'unknown', importedMods: 0, skippedFiles: [], warnings: ['无法识别的整合包格式：找不到 modrinth.index.json / manifest.json / mmc-pack.json。支持 Modrinth、CurseForge 与 MultiMC 整合包。'] };
@@ -80,15 +79,23 @@ export async function importModpack(zipPath: string, targetName?: string, onLog?
   const { format, prefix } = root;
   log(`识别到 ${format} 格式整合包${prefix ? `（根目录：${prefix}）` : ''}`);
 
-  const readEntry = (fileName: string): Buffer | null => {
+  const readEntry = async (fileName: string): Promise<Buffer | null> => {
     const hit = entries.find(e => e.name.replace(/\\/g, '/') === prefix + fileName);
-    return hit ? zipExtractEntry(buf, hit) : null;
+    if (!hit) return null;
+    // 只读元数据小文件；用文件级解压避免把整个整合包读进内存
+    const tmp = path.join(paths.cacheDir(), `modpack-meta-${Date.now()}-${process.pid}-${Math.random().toString(36).slice(2, 8)}.bin`);
+    try {
+      await zipExtractEntryToFile(zipPath, hit, tmp);
+      return fs.readFileSync(tmp);
+    } finally {
+      fs.rmSync(tmp, { force: true });
+    }
   };
 
   const warnings: string[] = [];
   const skippedFiles: string[] = [];
 
-  const copyOverrides = (overridesDirName: string, destGameDir: string) => {
+  const copyOverrides = async (overridesDirName: string, destGameDir: string) => {
     const overPrefix = prefix + overridesDirName + '/';
     let count = 0;
     for (const entry of entries) {
@@ -99,7 +106,7 @@ export async function importModpack(zipPath: string, targetName?: string, onLog?
       if (!target) { warnings.push(`已跳过可疑路径：${norm}`); continue; }
       try {
         fs.mkdirSync(path.dirname(target), { recursive: true });
-        fs.writeFileSync(target, zipExtractEntry(buf, entry));
+        await zipExtractEntryToFile(zipPath, entry, target);
         count++;
       } catch (e) {
         // 单个覆盖文件失败不应让整个整合包导入中断，记录下来让用户知道
@@ -111,7 +118,7 @@ export async function importModpack(zipPath: string, targetName?: string, onLog?
 
   if (format === 'modrinth') {
     let index: any;
-    try { index = JSON.parse(readEntry('modrinth.index.json')!.toString('utf8')); }
+    try { index = JSON.parse((await readEntry('modrinth.index.json'))!.toString('utf8')); }
     catch { throw new Error('整合包索引 modrinth.index.json 不是有效 JSON，文件可能已损坏。'); }
     const mcVersion: string = String(index?.dependencies?.minecraft ?? '1.20.1');
     let loader: LoaderType = 'vanilla';
@@ -156,15 +163,15 @@ export async function importModpack(zipPath: string, targetName?: string, onLog?
     const reports = await dl.run(tasks);
     const ok = reports.filter(r => r.ok).length;
     for (const r of reports) if (!r.ok) { skippedFiles.push(r.name); warnings.push(`下载失败：${r.name}（${r.error}）`); }
-    const overridden = copyOverrides('overrides', game);
-    const clientOverridden = copyOverrides('client-overrides', game); // 客户端覆盖层：同名文件覆盖 overrides
+    const overridden = await copyOverrides('overrides', game);
+    const clientOverridden = await copyOverrides('client-overrides', game); // 客户端覆盖层：同名文件覆盖 overrides
     log(`完成：${ok}/${downloadable.length} 个文件下载成功，overrides ${overridden} 个、client-overrides ${clientOverridden} 个文件，实例已创建。`);
     return { instanceId: instance.id, format, importedMods: ok, skippedFiles, warnings };
   }
 
   if (format === 'curseforge') {
     let manifest: any;
-    try { manifest = JSON.parse(readEntry('manifest.json')!.toString('utf8')); }
+    try { manifest = JSON.parse((await readEntry('manifest.json'))!.toString('utf8')); }
     catch { throw new Error('整合包清单 manifest.json 不是有效 JSON，文件可能已损坏。'); }
     const mcVersion: string = String(manifest?.minecraft?.version ?? '1.20.1');
     const rawLoaders = manifest?.minecraft?.modLoaders;
@@ -177,7 +184,7 @@ export async function importModpack(zipPath: string, targetName?: string, onLog?
     if (m) { loader = m[1] as LoaderType; loaderVersion = m[2]; }
     const instance = createInstance({ name: targetName ?? manifest?.name ?? 'CurseForge 整合包', mcVersion, loader, loaderVersion, memoryPreset: 'heavy' as MemoryPreset });
     const game = paths.gameDir(instance.id);
-    copyOverrides('overrides', game);
+    await copyOverrides('overrides', game);
     const rawCfFiles = Array.isArray(manifest?.files) ? manifest.files : [];
     // 清单里的 projectID/fileID 必须是正整数：否则会拼出 /mods/undefined/files/undefined 的无效请求
     const files: Array<{ projectID: number; fileID: number }> = rawCfFiles.filter((f: any) =>
@@ -225,7 +232,7 @@ export async function importModpack(zipPath: string, targetName?: string, onLog?
     // MCL 自己的完整实例快照：instance.json + game/...
     // 必须放在通用 createInstance 之前，否则会多建一个只有 instance.json 的空孤儿实例
     let rawCfg: any = {};
-    try { rawCfg = JSON.parse(readEntry('instance.json')!.toString('utf8')); }
+    try { rawCfg = JSON.parse((await readEntry('instance.json'))!.toString('utf8')); }
     catch { throw new Error('实例快照里的 instance.json 不是有效 JSON，文件可能已损坏。'); }
     const instance = createInstance({
       name: targetName ?? (typeof rawCfg.name === 'string' ? rawCfg.name : 'MCL 实例快照'),
@@ -246,7 +253,7 @@ export async function importModpack(zipPath: string, targetName?: string, onLog?
       if (!target) { warnings.push(`已跳过可疑路径：${norm}`); continue; }
       try {
         fs.mkdirSync(path.dirname(target), { recursive: true });
-        fs.writeFileSync(target, zipExtractEntry(buf, entry));
+        await zipExtractEntryToFile(zipPath, entry, target);
         copied++;
       } catch (e) { warnings.push(`文件写入失败：${norm}（${e instanceof Error ? e.message : String(e)}）`); }
     }
@@ -257,7 +264,7 @@ export async function importModpack(zipPath: string, targetName?: string, onLog?
   const instance = createInstance({ name: targetName ?? path.basename(zipPath, '.zip'), mcVersion: '1.20.1', loader: 'vanilla', memoryPreset: 'standard' });
   const game = paths.gameDir(instance.id);
   let mmcJson: any = null;
-  try { mmcJson = JSON.parse(readEntry('mmc-pack.json')!.toString('utf8')); } catch { warnings.push('mmc-pack.json 解析失败，按 vanilla 1.20.1 创建'); }
+  try { mmcJson = JSON.parse((await readEntry('mmc-pack.json'))!.toString('utf8')); } catch { warnings.push('mmc-pack.json 解析失败，按 vanilla 1.20.1 创建'); }
   if (Array.isArray(mmcJson?.components)) {
     const mc = mmcJson.components.find((c: any) => c?.uid === 'net.minecraft');
     const loaderComp = mmcJson.components.find((c: any) => ['net.fabricmc.fabric-loader', 'net.minecraftforge', 'org.quiltmc.quilt-loader', 'net.neoforged'].includes(c?.uid));
@@ -289,7 +296,7 @@ export async function importModpack(zipPath: string, targetName?: string, onLog?
     if (!target) { warnings.push(`已跳过可疑路径：${norm}`); continue; }
     try {
       fs.mkdirSync(path.dirname(target), { recursive: true });
-      fs.writeFileSync(target, zipExtractEntry(buf, entry));
+      await zipExtractEntryToFile(zipPath, entry, target);
       copied++;
       if (rel.startsWith('mods/')) modsCopied++;
       else if (rel.startsWith('saves/')) savesCopied++;

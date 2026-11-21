@@ -3,6 +3,7 @@
  * 痛点 #9/#12/#14/#15/#16 的核心改造点
  */
 import * as http from 'http';
+import * as fs from 'fs';
 import { URL } from 'url';
 import { readJson, writeJson } from './store';
 import { dataRoot } from './paths';
@@ -26,7 +27,7 @@ export interface MirrorHealth { source: 'official' | 'bmclapi'; latencyMs: numbe
 
 export async function fetchWithTimeout(
   url: string,
-  options: { method?: string; headers?: Record<string, string>; body?: string | Buffer | NodeJS.ReadableStream; timeoutMs?: number; redirectDepth?: number } = {},
+  options: { method?: string; headers?: Record<string, string>; body?: string | Buffer | NodeJS.ReadableStream; timeoutMs?: number; redirectDepth?: number; outputFile?: string } = {},
 ): Promise<{ status: number; headers: http.IncomingHttpHeaders; body: Buffer }> {
   const timeoutMs = options.timeoutMs ?? 15000;
   const redirectDepth = options.redirectDepth ?? 0;
@@ -65,6 +66,16 @@ export async function fetchWithTimeout(
           }
         } catch { /* 原 URL 解析失败时保持原样 */ }
         fetchWithTimeout(next.toString(), nextOptions).then(resolve, reject);
+        return;
+      }
+      if (options.outputFile) {
+        // 大文件下载（云快照）直接落盘，避免 res.body 把整包留在内存
+        try { fs.mkdirSync(path.dirname(options.outputFile), { recursive: true }); } catch (e) { reject(e); return; }
+        const out = fs.createWriteStream(options.outputFile);
+        out.once('error', reject);
+        res.once('error', (e) => { out.destroy(); reject(e); });
+        out.once('finish', () => resolve({ status, headers: res.headers, body: Buffer.alloc(0) }));
+        res.pipe(out);
         return;
       }
       const chunks: Buffer[] = [];

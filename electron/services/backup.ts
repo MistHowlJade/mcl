@@ -8,7 +8,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as paths from './paths';
 import { BackupInfo } from '../shared/types';
-import { zipExtractAll, zipList } from './zip';
+import { zipExtractAllFromFile, zipListFromFile } from './zip';
 import { getSettings } from './settings';
 import { getInstance } from './instances';
 import { writeJson } from './store';
@@ -180,9 +180,8 @@ export async function restoreBackup(backupId: string, instanceId: string): Promi
   const safeId = path.basename(String(backupId ?? ''));
   const zipPath = path.join(dir, `${safeId}.zip`);
   if (!fs.existsSync(zipPath)) throw new Error('备份文件不存在');
-  // 先把待恢复内容读进内存：下面的“恢复前备份”会触发自动清理，
-  // 若正在恢复的恰是最旧的自动备份，晚读会因为文件已被清掉而报 ENOENT。
-  const buf = fs.readFileSync(zipPath);
+  // createBackup 的 excludeId 会保护本次要恢复的备份不被自动清理；
+  // 这里用文件级流式读取，恢复几百 MB 存档不再把整包读进内存。
   // 恢复前先自动备份一次当前状态（痛点 #29：后悔药），同时保护本次要恢复的备份不被清理
   await createBackup(instanceId, 'pre-restore', '恢复前自动备份', safeId);
   const gameDir = paths.gameDir(instanceId);
@@ -192,7 +191,7 @@ export async function restoreBackup(backupId: string, instanceId: string): Promi
   let targetDir = gameDir;
   const metaPath = zipPath.replace(/\.zip$/, '.json');
   const meta = readBackupMeta(metaPath);
-  const entries = zipList(buf).map(e => e.name.replace(/\\/g, '/'));
+  const entries = (await zipListFromFile(zipPath)).map(e => e.name.replace(/\\/g, '/'));
   const alreadyPrefixed = entries.some(n => n === 'saves' || n.startsWith('saves/'));
   // 备份 ZIP 可能是别人分享的：完整备份只允许写入 MCL 自己会备份的顶层路径。
   // 否则 zip 里夹带 mods/xxx.jar 就会在下次启动被当模组加载（任意代码执行）。
@@ -218,7 +217,7 @@ export async function restoreBackup(backupId: string, instanceId: string): Promi
     const oldDir = path.join(tempRoot, `.old-${suffix}`);
     try {
       fs.mkdirSync(tempDir, { recursive: true });
-      const written = zipExtractAll(buf, tempDir);
+      const written = await zipExtractAllFromFile(zipPath, tempDir);
       // 直接往现有世界目录覆盖会把比备份新的区块留在原地，恢复出新旧混杂的存档；
       // 先解压到临时目录再整体替换（恢复前已自动整份备份，失败也能回退）
       if (!written.some(p => path.basename(p) === 'level.dat')) throw new Error('备份里找不到 level.dat，不是有效的世界存档');
@@ -248,7 +247,7 @@ export async function restoreBackup(backupId: string, instanceId: string): Promi
     let oldSeq = 0;
     try {
       fs.mkdirSync(tempDir, { recursive: true });
-      const written = zipExtractAll(buf, tempDir);
+      const written = await zipExtractAllFromFile(zipPath, tempDir);
       // 根目录配置只还原备份里实际存在的，缺的文件保留当前版本
       for (const file of BACKUP_SUBSET) {
         if (file === 'saves') continue;
@@ -285,6 +284,6 @@ export async function restoreBackup(backupId: string, instanceId: string): Promi
   }
 
   // 只允许还原到白名单子目录（zipExtractAll 内部还会做目录穿越防护）
-  const written = zipExtractAll(buf, targetDir, undefined);
+  const written = await zipExtractAllFromFile(zipPath, targetDir);
   return { restoredFiles: written.length };
 }

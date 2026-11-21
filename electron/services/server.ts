@@ -21,7 +21,7 @@ import * as javaService from './java';
 import * as versionService from './version';
 import { DownloadManager } from './downloader';
 import { fetchJson, fetchWithTimeout } from './net';
-import { zipDirToFile, zipExtractAll } from './zip';
+import { zipDirToFile, zipExtractAllFromFile } from './zip';
 import {
   ServerBackupInfo, ServerConfig, ServerInfo, ServerLoader, ServerProperties, ServerStatus,
 } from '../shared/types';
@@ -917,7 +917,7 @@ export async function backupServerWorld(id: string, name?: string): Promise<Serv
   return { name: base, filePath, sizeBytes: fs.statSync(filePath).size, createdAt: Date.now() };
 }
 
-export function restoreServerWorld(id: string, backupName: string): { restoredFiles: number } {
+export async function restoreServerWorld(id: string, backupName: string): Promise<{ restoredFiles: number }> {
   const rt = runtimeOf(id);
   if (rt.child || (rt.status !== 'stopped' && rt.status !== 'crashed')) throw new Error('请先停止服务器再恢复世界备份');
   readConfig(id);
@@ -926,7 +926,6 @@ export function restoreServerWorld(id: string, backupName: string): { restoredFi
   const zipPath = path.join(paths.serverBackupsDir(id), `${path.basename(backupName)}.zip`);
   if (!fs.existsSync(zipPath)) throw new Error('备份文件不存在');
   const worldDir = resolveServerWorldDir(id, worldName);
-  const buf = fs.readFileSync(zipPath);
   const suffix = Date.now().toString(36);
   // 临时目录放在服务端备份目录：恢复中途崩溃时不会被误认成世界/安装文件
   const tempRoot = paths.serverBackupsDir(id);
@@ -936,7 +935,7 @@ export function restoreServerWorld(id: string, backupName: string): { restoredFi
   fs.mkdirSync(path.dirname(worldDir), { recursive: true });
   try {
     fs.mkdirSync(tempDir, { recursive: true });
-    const files = zipExtractAll(buf, tempDir);
+    const files = await zipExtractAllFromFile(zipPath, tempDir);
     // 直接往现有世界目录覆盖会把比备份新的区块留在原地，恢复出新旧混杂的存档；
     // 先解压到临时目录再整体替换，失败时原世界保持不动
     if (!files.some(p => path.basename(p) === 'level.dat')) throw new Error('备份里找不到 level.dat，不是有效的世界存档');
