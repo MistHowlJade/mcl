@@ -562,7 +562,7 @@ export default function Servers() {
       {killTarget && (
         <ConfirmModal
           title="强制结束服务器"
-          message="强制结束进程可能丢失最近几秒的世界进度（服务器来不及保存）。\n\n确定要强制结束吗？"
+          message={`强制结束进程可能丢失最近几秒的世界进度（服务器来不及保存）。\n\n确定要强制结束吗？`}
           confirmText="强制结束"
           danger
           onCancel={() => setKillTarget(null)}

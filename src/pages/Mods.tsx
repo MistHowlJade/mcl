@@ -6,6 +6,20 @@ import type { InstanceInfo, InstalledMod, ModHealthIssue, ModSearchResult } from
 
 type Tab = 'installed' | 'search' | 'import';
 
+/**
+ * Modrinth 搜索结果的 versions 一般按从旧到新排序，直接 slice(0, 4) 会展示最旧的四个版本，
+ * 出现「按 1.20.1 搜索却显示支持 1.16.x」的误导。优先标出当前实例版本。
+ */
+function versionSupportLabel(versions: string[], current: string): string {
+  if (!Array.isArray(versions) || versions.length === 0) return '支持版本未知';
+  const hasCurrent = versions.includes(current);
+  const newest = versions[versions.length - 1];
+  if (hasCurrent) {
+    return `支持当前 ${current}${newest && newest !== current ? ` · 最新 ${newest}` : ''} · 共 ${versions.length} 个版本`;
+  }
+  return newest ? `最新 ${newest} · 共 ${versions.length} 个版本` : `共 ${versions.length} 个版本`;
+}
+
 export default function Mods() {
   const [tab, setTab] = useState<Tab>('installed');
   const [instances, setInstances] = useState<InstanceInfo[]>([]);
@@ -291,7 +305,7 @@ function SearchTab({ instance }: { instance: InstanceInfo }) {
             <div style={{ flex: 1, minWidth: 0 }}>
               <div className="row" style={{ gap: 8 }}><strong style={{ fontSize: 13.5 }}>{r.title}</strong><span className="faint">by {r.author}</span></div>
               <div className="faint" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.description}</div>
-              <div className="faint" style={{ marginTop: 2 }}>⬇ {r.downloads.toLocaleString()} · ❤ {r.follows.toLocaleString()} · 支持 {r.gameVersions.slice(0, 4).join(' / ')}</div>
+              <div className="faint" style={{ marginTop: 2 }} title={r.gameVersions.length > 0 ? `支持的游戏版本：${r.gameVersions.join(' / ')}` : undefined}>⬇ {r.downloads.toLocaleString()} · ❤ {r.follows.toLocaleString()} · {versionSupportLabel(r.gameVersions, instance.mcVersion)}</div>
             </div>
             <button className="btn small primary" onClick={() => install(r)} disabled={!loader || !!installing}>{installing === r.projectId ? '安装中…' : '安装'}</button>
           </div>

@@ -60,14 +60,29 @@ export async function getVersionManifest(source: DownloadSource, customMirror?: 
     return cache.manifest;
   }
   const url = resolveSourceUrl(OFFICIAL.versionManifest, source, customMirror);
-  const manifest = await fetchJson<VersionManifest>(url, { timeoutMs: 20000 });
-  if (!manifest || !Array.isArray(manifest.versions)) {
-    throw new Error('版本清单格式不正确（缺少 versions 列表），请更换下载源或稍后重试。');
+  // 镜像偶尔 20 秒超时：再补一次官方源，避免创建实例弹窗直接停在「0 个版本」
+  const candidates = url === OFFICIAL.versionManifest ? [url] : [url, OFFICIAL.versionManifest];
+  let lastError: unknown = null;
+  for (const candidate of candidates) {
+    try {
+      const manifest = await fetchJson<VersionManifest>(candidate, { timeoutMs: 20000 });
+      if (!manifest || !Array.isArray(manifest.versions)) {
+        throw new Error('版本清单格式不正确（缺少 versions 列表）');
+      }
+      try {
+        writeJson(manifestCacheFile(), { at: Date.now(), manifest });
+      } catch { /* 缓存失败不阻塞 */ }
+      return manifest;
+    } catch (e) {
+      lastError = e;
+    }
   }
-  try {
-    writeJson(manifestCacheFile(), { at: Date.now(), manifest });
-  } catch { /* 缓存失败不阻塞 */ }
-  return manifest;
+  // 全部源都失败时退回旧缓存：比「一个版本都没有」更能让用户完成创建
+  if (cache?.manifest && Array.isArray(cache.manifest.versions)) {
+    console.warn('[mcl] 版本清单刷新失败，使用旧缓存：', lastError instanceof Error ? lastError.message : String(lastError));
+    return cache.manifest;
+  }
+  throw new Error(`版本清单加载失败：${lastError instanceof Error ? lastError.message : String(lastError)}。请检查网络或在设置中切换下载源后重试。`);
 }
 
 /** auto 模式实际生效源：读最近测速缓存（无测速或过期则默认 BMCLAPI，mirror:test 可刷新） */

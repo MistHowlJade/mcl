@@ -91,7 +91,7 @@ export default function Crash() {
 
       {diagnosis && (
         <div className={`panel diagnosis ${diagnosis.fixes[0]?.severity === 'high' ? 'high' : ''}`}>
-          <div className="panel-title">{diagnosis.matched ? '🩺 诊断结果' : '❓ 未知崩溃'}</div>
+          <div className="panel-title">{diagnosis.normal ? '✅ 没有崩溃' : diagnosis.matched ? '🩺 诊断结果' : '❓ 未知崩溃'}</div>
           <h3>{diagnosis.title}</h3>
           <p style={{ margin: '8px 0', lineHeight: 1.7 }}>{diagnosis.summary}</p>
           <details style={{ marginTop: 6 }}>

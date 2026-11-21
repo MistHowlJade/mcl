@@ -147,6 +147,10 @@ check('26.x 与快照版本推荐 Java 25/21', () => {
 check('中文「退出码 137」能命中强杀诊断', () => {
   assert.strictEqual(crash.analyzeLogText('[mcl] 游戏进程退出，退出码 137').ruleId, 'killed-exit-137');
 });
+check('离线日志里的 authlib 验证提示不算网络崩溃', () => {
+  const text = '[Render thread/INFO]: [com.mojang.authlib.minecraft.MinecraftSessionService/4a1]: Connection refused';
+  assert.notStrictEqual(crash.analyzeLogText(text).ruleId, 'connection-reset');
+});
 check('崩溃归因不误报正常日志', () => {
   assert.notStrictEqual(crash.analyzeLogText('Loading Minecraft 1.20.0\nReading class file cache').ruleId, 'unsupported-class-version');
   assert.notStrictEqual(crash.analyzeLogText('handshake completed with remote peer').ruleId, 'connection-reset');
@@ -167,6 +171,30 @@ check('ZIP 指定前缀只解压该子树', () => {
     assert.ok(!fs.existsSync(path.join(dir, 'screenshots')));
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+check('退出码 0 的离线日志不判成网络崩溃（issue #35）', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mcl-crash-'));
+  const oldHome = process.env.MCL_HOME;
+  process.env.MCL_HOME = root;
+  try {
+    const id = 'a'.repeat(16);
+    const gameLogs = path.join(root, 'instances', id, 'game', 'logs');
+    fs.mkdirSync(gameLogs, { recursive: true });
+    fs.writeFileSync(path.join(gameLogs, 'latest.log'), [
+      '[Render thread/INFO]: [com.mojang.authlib.minecraft.MinecraftSessionService/1a2b]: Failed to verify authentication',
+      'java.net.ConnectException: Connect timed out',
+      '[Render thread/INFO]: Stopping!',
+    ].join('\n'));
+    fs.mkdirSync(path.join(root, 'logs'), { recursive: true });
+    fs.writeFileSync(path.join(root, 'logs', `launch-${id}-1700000000000.log`), '[mcl] 游戏进程退出，退出码 0\n');
+    const d = crash.analyzeCrash(id);
+    assert.strictEqual(d.normal, true, '退出码 0 应直接判为正常退出');
+    assert.notStrictEqual(d.ruleId, 'connection-reset');
+  } finally {
+    if (oldHome === undefined) delete process.env.MCL_HOME;
+    else process.env.MCL_HOME = oldHome;
+    fs.rmSync(root, { recursive: true, force: true });
   }
 });
 

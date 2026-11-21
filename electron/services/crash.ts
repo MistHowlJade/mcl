@@ -203,12 +203,73 @@ function readTail(file: string, bytes = 512 * 1024): string {
   return buf.toString('utf8');
 }
 
+/**
+ * 找该实例最近一次 MCL 启动日志，并读取其中的退出码。
+ * 崩溃分析页会在页面打开时自动分析，如果最近一次是正常退出（退出码 0），
+ * 就不应该再去 latest.log 里找网络警告，否则离线运行时 authlib 的
+ * “Failed to verify authentication / Connect timed out” 会被误判成崩溃。
+ */
+function latestLaunchLog(instanceId: string): { file: string; startedAt: number; exitCode: number | null } | null {
+  const dir = paths.logsDir();
+  let names: string[];
+  try { names = fs.readdirSync(dir); } catch { return null; }
+  const safe = instanceId.replace(/[^a-zA-Z0-9_-]/g, '');
+  const re = new RegExp(`^launch-${safe}-(\\d+)\\.log$`);
+  let best: { file: string; startedAt: number } | null = null;
+  for (const name of names) {
+    const m = name.match(re);
+    if (!m) continue;
+    const startedAt = parseInt(m[1], 10);
+    if (!Number.isFinite(startedAt)) continue;
+    if (!best || startedAt > best.startedAt) best = { file: path.join(dir, name), startedAt };
+  }
+  if (!best) return null;
+  let exitCode: number | null = null;
+  try {
+    const text = readTail(best.file, 128 * 1024);
+    const exits = [...text.matchAll(/\[mcl\] 游戏进程退出，退出码 (-?\d+)/g)];
+    if (exits.length > 0) exitCode = parseInt(exits[exits.length - 1][1], 10);
+  } catch { /* 日志读不到时按未知处理 */ }
+  return { ...best, exitCode };
+}
+
+/** 没有 crash-report 时，只有这些强证据才值得继续套崩溃规则 */
+const STRONG_CRASH_EVIDENCE = /---- Minecraft Crash Report ----|---- Debug Crash Report ----|The game crashed|A fatal error has been detected|Exception in thread "main"|net\.minecraft\.crash/i;
+
+/** authlib 在离线/验证服务器抖动时的提示不是崩溃原因，命中的行属于这类直接跳过该规则 */
+function isBenignAuthLine(ruleId: string, text: string, idx: number): boolean {
+  if (ruleId !== 'connection-reset') return false;
+  const lineStart = text.lastIndexOf('\n', idx) + 1;
+  const lineEnd = text.indexOf('\n', idx);
+  const line = text.slice(lineStart, lineEnd === -1 ? text.length : lineEnd);
+  return /authlib|Failed to verify authentication|com\.mojang\.authlib/i.test(line);
+}
+
 export function analyzeCrash(instanceId: string, logPath?: string, startedAt?: number): CrashDiagnosis {
   if (!/^[a-f0-9]{16}$/.test(String(instanceId ?? ''))) throw new Error('实例不存在');
   const game = paths.gameDir(instanceId);
-  const crashReport = findLatestCrashReport(game, startedAt);
+  const launch = latestLaunchLog(instanceId);
+  // 浏览器打开分析页时没有 startedAt：用最近一次启动时间过滤旧 crash-report，
+  // 否则上上次的崩溃会一直覆盖本次「正常退出」的结果。
+  const effectiveStartedAt = startedAt ?? launch?.startedAt;
+  const crashReport = findLatestCrashReport(game, effectiveStartedAt);
   const logFallback = logPath ?? path.join(game, 'logs', 'latest.log');
-  const sourceFile = crashReport ?? logFallback;
+  const sourceFile = crashReport ?? (launch?.exitCode === 0 ? launch.file : logFallback);
+
+  // 最近一次由 MCL 启动且退出码为 0：没有崩溃，直接给出正常结果
+  if (!crashReport && launch?.exitCode === 0) {
+    return {
+      matched: false,
+      normal: true,
+      title: '最近一次游戏正常退出',
+      summary: '上次游戏是正常退出的（退出码 0），没有崩溃可以分析。启动日志里的 authlib 验证提示属于离线模式下的正常现象，不是错误。',
+      detail: `已检查：${launch.file}`,
+      fixes: [],
+      sourceFile: launch.file,
+      excerpt: '',
+    };
+  }
+
   let text = '';
   try { text = readTail(sourceFile); } catch {
     return {
@@ -222,12 +283,33 @@ export function analyzeCrash(instanceId: string, logPath?: string, startedAt?: n
     };
   }
 
+  // 没有 crash-report、退出码也不明确（不是 MCL 启动或还没写到退出码）时，
+  // 普通 latest.log 里的 authlib 警告 / 可恢复异常不能被当成崩溃。
+  const mayHaveCrashed = !!crashReport
+    || (typeof launch?.exitCode === 'number' && launch.exitCode !== 0)
+    || STRONG_CRASH_EVIDENCE.test(text);
+  if (!mayHaveCrashed) {
+    return {
+      matched: false,
+      normal: true,
+      title: '没有发现崩溃记录',
+      summary: '这份日志里没有崩溃报告，也没有致命异常特征，最近一次运行看起来是正常的。离线模式下 authlib 的验证提示不算错误。',
+      detail: `已检查：${sourceFile}`,
+      fixes: [],
+      sourceFile,
+      excerpt: '',
+    };
+  }
+
   for (const rule of RULES) {
     const m = text.match(rule.pattern);
     if (m) {
+      const idx = Math.max(0, text.indexOf(m[0]));
+      // authlib 在离线/验证服务器抖动时总会打印这些提示，游戏通常照常运行；
+      // 只有真正的崩溃上下文才把网络规则算数，避免成功启动被误判成「网络连接失败」。
+      if (isBenignAuthLine(rule.id, text, idx)) continue;
       const summary = typeof rule.summary === 'function' ? rule.summary(m) : rule.summary;
       const detail = typeof rule.detail === 'function' ? rule.detail(m) : rule.detail;
-      const idx = Math.max(0, text.indexOf(m[0]));
       const excerpt = text.slice(Math.max(0, idx - 200), Math.min(text.length, idx + 600));
       return {
         matched: true,
@@ -260,9 +342,11 @@ export function analyzeLogText(text: string): CrashDiagnosis {
   for (const rule of RULES) {
     const m = text.match(rule.pattern);
     if (m) {
+      const idx = Math.max(0, text.indexOf(m[0]));
+      // 粘贴一段正常的离线日志时，authlib 的验证提示同样不算网络崩溃
+      if (isBenignAuthLine(rule.id, text, idx)) continue;
       const summary = typeof rule.summary === 'function' ? rule.summary(m) : rule.summary;
       const detail = typeof rule.detail === 'function' ? rule.detail(m) : rule.detail;
-      const idx = Math.max(0, text.indexOf(m[0]));
       return {
         matched: true,
         ruleId: rule.id,
