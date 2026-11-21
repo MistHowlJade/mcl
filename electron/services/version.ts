@@ -82,7 +82,8 @@ export async function getVersionManifest(source: DownloadSource, customMirror?: 
     console.warn('[mcl] 版本清单刷新失败，使用旧缓存：', lastError instanceof Error ? lastError.message : String(lastError));
     return cache.manifest;
   }
-  throw new Error(`版本清单加载失败：${lastError instanceof Error ? lastError.message : String(lastError)}。请检查网络或在设置中切换下载源后重试。`);
+  // 前缀由渲染层统一添加，这里只描述连接失败原因，避免「版本清单加载失败」重复两次
+  throw new Error(`无法连接下载源：${lastError instanceof Error ? lastError.message : String(lastError)}。请检查网络或在设置中切换下载源后重试。`);
 }
 
 /** auto 模式实际生效源：读最近测速缓存（无测速或过期则默认 BMCLAPI，mirror:test 可刷新） */

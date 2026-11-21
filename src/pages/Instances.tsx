@@ -417,7 +417,7 @@ function CreateInstanceModal({ onClose, onCreated }: { onClose: () => void; onCr
             <div className="row" style={{ gap: 8, alignItems: 'flex-start', padding: '8px 10px', borderRadius: 8, background: 'var(--red-soft)', border: '1px solid rgba(242,104,104,.4)' }}>
               <div className="faint" style={{ flex: 1, lineHeight: 1.6 }}>
                 版本清单加载失败：{versionsError}
-                <br />可能是网络临时不可达或镜像超时，已安装的实例不受影响。
+                <br />已安装的实例和游戏文件不受影响，可稍后重试或换个下载源。
               </div>
               <button className="btn small" onClick={() => { void loadVersions(); }}>重试</button>
             </div>
