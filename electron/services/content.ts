@@ -8,7 +8,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as paths from './paths';
 import { getInstance } from './instances';
-import { zipDirToFile, zipList, zipExtractAll } from './zip';
+import { zipDirToFile, zipListFromFile, zipExtractAllFromFile } from './zip';
 import { writeJson } from './store';
 import { ContentItem, ContentKind, ContentList } from '../shared/types';
 
@@ -251,12 +251,11 @@ function uniqueDir(dir: string, name: string): string {
 }
 
 /** 导入世界 ZIP：自动识别/剥离世界根目录，校验 level.dat，返回实际世界名 */
-export function importWorldZip(instanceId: string, zipPath: string): { worldName: string; path: string; files: number } {
+export async function importWorldZip(instanceId: string, zipPath: string): Promise<{ worldName: string; path: string; files: number }> {
   const instance = getInstance(instanceId);
   if (!instance) throw new Error('实例不存在');
-  const buf = fs.readFileSync(zipPath);
   let entries;
-  try { entries = zipList(buf); } catch { throw new Error('世界 ZIP 已损坏或不是有效的 ZIP 文件'); }
+  try { entries = await zipListFromFile(zipPath); } catch { throw new Error('世界 ZIP 已损坏或不是有效的 ZIP 文件'); }
   const normalized = entries.filter(e => !e.name.endsWith('/')).map(e => e.name.replace(/\\/g, '/'));
   if (normalized.length === 0) throw new Error('世界 ZIP 是空的');
   // 找到 level.dat，把它所在的目录作为世界根（兼容 zip 里再套一层文件夹）
@@ -273,7 +272,7 @@ export function importWorldZip(instanceId: string, zipPath: string): { worldName
   const worldPath = uniqueDir(savesDir, safeName(suggested));
   fs.mkdirSync(worldPath, { recursive: true });
   try {
-    const written = zipExtractAll(buf, worldPath, prefix);
+    const written = await zipExtractAllFromFile(zipPath, worldPath, prefix);
     if (!written.some(p => path.basename(p) === 'level.dat')) throw new Error('解压后没有找到 level.dat');
     return { worldName: path.basename(worldPath), path: worldPath, files: written.length };
   } catch (e) {

@@ -441,30 +441,16 @@ function parseZip64Extra(extra: Buffer, needU: boolean, needC: boolean, needO: b
   throw new Error('ZIP64 条目缺少 0x0001 扩展字段');
 }
 
-export function zipList(buf: Buffer): ZipEntry[] {
-  if (buf.length < 22) throw new Error('不是有效的 ZIP 文件（文件过小）');
-  // 从尾部找 End of Central Directory
-  let eocd = -1;
+function findEocd(buf: Buffer): number {
   for (let i = buf.length - 22; i >= Math.max(0, buf.length - 22 - 65536); i--) {
-    if (buf.readUInt32LE(i) === SIG_EOCD) { eocd = i; break; }
+    if (buf.readUInt32LE(i) === SIG_EOCD) return i;
   }
-  if (eocd < 0) throw new Error('不是有效的 ZIP 文件（找不到中央目录）');
-  const count16 = buf.readUInt16LE(eocd + 10);
-  let cdOffset = buf.readUInt32LE(eocd + 16);
-  const cdSize32 = buf.readUInt32LE(eocd + 12);
-  let count = count16;
-  const sentinel = count16 === 0xffff || cdOffset === U32_MAX || cdSize32 === U32_MAX;
-  const zip64 = readZip64Directory(buf, eocd);
-  if (sentinel && !zip64) throw new Error('ZIP64 目录损坏（找不到 ZIP64 EOCD）');
-  if (zip64) {
-    count = zip64.count;
-    cdOffset = zip64.cdOffset;
-  }
-  if (count > MAX_ENTRIES) throw new Error(`ZIP 条目过多（${count} > ${MAX_ENTRIES}）`);
-  if (!Number.isSafeInteger(count) || !Number.isSafeInteger(cdOffset)) throw new Error('ZIP 条目数或偏移超出安全范围');
+  return -1;
+}
 
+function parseCentralDirectory(buf: Buffer, count: number, start: number): ZipEntry[] {
   const entries: ZipEntry[] = [];
-  let ptr = cdOffset;
+  let ptr = start;
   let totalUncompressed = 0;
   for (let i = 0; i < count; i++) {
     if (ptr + 46 > buf.length || buf.readUInt32LE(ptr) !== SIG_CENTRAL) {
@@ -497,6 +483,23 @@ export function zipList(buf: Buffer): ZipEntry[] {
   return entries;
 }
 
+export function zipList(buf: Buffer): ZipEntry[] {
+  if (buf.length < 22) throw new Error('不是有效的 ZIP 文件（文件过小）');
+  const eocd = findEocd(buf);
+  if (eocd < 0) throw new Error('不是有效的 ZIP 文件（找不到中央目录）');
+  const count16 = buf.readUInt16LE(eocd + 10);
+  const cdOffset = buf.readUInt32LE(eocd + 16);
+  const cdSize32 = buf.readUInt32LE(eocd + 12);
+  const sentinel = count16 === 0xffff || cdOffset === U32_MAX || cdSize32 === U32_MAX;
+  const zip64 = readZip64Directory(buf, eocd);
+  if (sentinel && !zip64) throw new Error('ZIP64 目录损坏（找不到 ZIP64 EOCD）');
+  const count = zip64 ? zip64.count : count16;
+  const directoryOffset = zip64 ? zip64.cdOffset : cdOffset;
+  if (count > MAX_ENTRIES) throw new Error(`ZIP 条目过多（${count} > ${MAX_ENTRIES}）`);
+  if (!Number.isSafeInteger(count) || !Number.isSafeInteger(directoryOffset)) throw new Error('ZIP 条目数或偏移超出安全范围');
+  return parseCentralDirectory(buf, count, directoryOffset);
+}
+
 export function zipExtractEntry(buf: Buffer, entry: ZipEntry): Buffer {
   if (entry.uncompressedSize > MAX_SYNC_ENTRY) {
     throw new Error(`ZIP 条目超过 ${MAX_SYNC_ENTRY / 1024 / 1024}MB，无法整块解压；请改用流式解压接口`);
@@ -525,28 +528,169 @@ export function zipExtractEntry(buf: Buffer, entry: ZipEntry): Buffer {
   throw new Error(`不支持的压缩方式（method=${entry.method}）：${entry.name}`);
 }
 
+/** 统一分隔符 + 前缀剥离 + 目录穿越防护，Buffer 与流式解压共用 */
+function extractTarget(entryName: string, root: string, prefix: string): string | null {
+  let rel = entryName.replace(/\\/g, '/');
+  if (prefix) {
+    if (!rel.startsWith(prefix)) return null;
+    rel = rel.slice(prefix.length);
+  }
+  if (!rel || rel.endsWith('/')) return null;
+  const target = path.resolve(root, rel);
+  if (!target.startsWith(root + path.sep) && target !== root) {
+    throw new Error(`ZIP 包含非法路径（目录穿越）：${entryName}`);
+  }
+  return target;
+}
+
 export function zipExtractAll(buf: Buffer, destDir: string, stripPrefix?: string): string[] {
   const entries = zipList(buf);
   const written: string[] = [];
   const root = path.resolve(destDir);
-  // Windows 打包的 ZIP 条目可能用反斜杠：必须先统一分隔符再做前缀剥离，
-  // 否则调用方按 / 计算的前缀（如世界 ZIP 的 world/）永远匹配不上，解压会多套一层目录。
-  // 指定前缀时只解压该子树：世界 ZIP 里常夹带截图/备份等无关目录，
-  // 原样落进 saves/<世界名>/ 会污染世界目录（甚至让游戏读到不认识的文件）。
   const prefix = (stripPrefix ?? '').replace(/\\/g, '/');
   for (const entry of entries) {
-    let rel = entry.name.replace(/\\/g, '/');
-    if (prefix) {
-      if (!rel.startsWith(prefix)) continue;
-      rel = rel.slice(prefix.length);
-    }
-    if (!rel || rel.endsWith('/')) continue;
-    const target = path.resolve(root, rel);
-    if (!target.startsWith(root + path.sep) && target !== root) {
-      throw new Error(`ZIP 包含非法路径（目录穿越）：${entry.name}`);
-    }
+    const target = extractTarget(entry.name, root, prefix);
+    if (!target) continue;
     fs.mkdirSync(path.dirname(target), { recursive: true });
     fs.writeFileSync(target, zipExtractEntry(buf, entry));
+    written.push(target);
+  }
+  return written;
+}
+
+/* ---------- 流式读（大包 / ZIP64） ---------- */
+function readAt(fd: number, buf: Buffer, offset: number): number {
+  let read = 0;
+  while (read < buf.length) {
+    const n = fs.readSync(fd, buf, read, buf.length - read, offset + read);
+    if (n <= 0) break;
+    read += n;
+  }
+  return read;
+}
+
+/** 从文件读取中央目录，不把整个 ZIP 读进内存 */
+export async function zipListFromFile(zipPath: string): Promise<ZipEntry[]> {
+  const fd = fs.openSync(zipPath, 'r');
+  try {
+    const size = fs.statSync(zipPath).size;
+    if (size < 22) throw new Error('不是有效的 ZIP 文件（文件过小）');
+    const tailLen = Math.min(size, 65536 + 22 + 56);
+    const tail = Buffer.alloc(tailLen);
+    readAt(fd, tail, size - tailLen);
+    const eocd = findEocd(tail);
+    if (eocd < 0) throw new Error('不是有效的 ZIP 文件（找不到中央目录）');
+    const count16 = tail.readUInt16LE(eocd + 10);
+    const cdOffset32 = tail.readUInt32LE(eocd + 16);
+    const cdSize32 = tail.readUInt32LE(eocd + 12);
+    let count = count16;
+    let cdOffset = cdOffset32;
+    let cdSize = cdSize32;
+    if ((count16 === 0xffff || cdOffset32 === U32_MAX || cdSize32 === U32_MAX)
+      || (eocd >= 20 && tail.readUInt32LE(eocd - 20) === SIG_ZIP64_LOCATOR)) {
+      if (eocd < 20 || tail.readUInt32LE(eocd - 20) !== SIG_ZIP64_LOCATOR) {
+        throw new Error('ZIP64 目录损坏（找不到定位器）');
+      }
+      const z64Offset = Number(tail.readBigUInt64LE(eocd - 20 + 8));
+      if (!Number.isSafeInteger(z64Offset) || z64Offset < 0 || z64Offset + 56 > size) {
+        throw new Error('ZIP64 EOCD 偏移非法');
+      }
+      const z64 = Buffer.alloc(56);
+      if (readAt(fd, z64, z64Offset) !== 56 || z64.readUInt32LE(0) !== SIG_ZIP64_EOCD) {
+        throw new Error('ZIP64 EOCD 损坏');
+      }
+      count = Number(z64.readBigUInt64LE(32));
+      cdSize = Number(z64.readBigUInt64LE(40));
+      cdOffset = Number(z64.readBigUInt64LE(48));
+    }
+    if (count > MAX_ENTRIES) throw new Error(`ZIP 条目过多（${count} > ${MAX_ENTRIES}）`);
+    if (!Number.isSafeInteger(count) || !Number.isSafeInteger(cdOffset) || !Number.isSafeInteger(cdSize)) {
+      throw new Error('ZIP 条目数或偏移超出安全范围');
+    }
+    if (cdOffset < 0 || cdSize < 0 || cdOffset + cdSize > size) throw new Error('ZIP 中央目录越界');
+    if (cdSize > 512 * 1024 * 1024) throw new Error('ZIP 中央目录超过 512MB，无法安全读取');
+    const central = Buffer.alloc(cdSize);
+    if (readAt(fd, central, cdOffset) !== cdSize) throw new Error('ZIP 中央目录读取不完整');
+    return parseCentralDirectory(central, count, 0);
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
+/** 从文件流式解压单个条目；输出超过条目声明大小立即中止（解压炸弹防护） */
+export async function zipExtractEntryToFile(zipPath: string, entry: ZipEntry, dest: string): Promise<void> {
+  const fd = fs.openSync(zipPath, 'r');
+  let outFd = -1;
+  try {
+    const size = fs.statSync(zipPath).size;
+    const header = Buffer.alloc(30);
+    if (readAt(fd, header, entry.localHeaderOffset) !== 30 || header.readUInt32LE(0) !== SIG_LOCAL) {
+      throw new Error(`ZIP 本地条目损坏：${entry.name}`);
+    }
+    const nameLen = header.readUInt16LE(26);
+    const extraLen = header.readUInt16LE(28);
+    const dataStart = entry.localHeaderOffset + 30 + nameLen + extraLen;
+    if (dataStart + entry.compressedSize > size) throw new Error(`ZIP 数据区越界：${entry.name}`);
+    fs.mkdirSync(path.dirname(dest), { recursive: true });
+    outFd = fs.openSync(dest, 'w');
+    const chunk = Buffer.allocUnsafe(CHUNK_SIZE);
+    if (entry.method === 0) {
+      let remaining = entry.compressedSize;
+      let pos = dataStart;
+      while (remaining > 0) {
+        const want = Math.min(CHUNK_SIZE, remaining);
+        const n = fs.readSync(fd, chunk, 0, want, pos);
+        if (n <= 0) throw new Error(`ZIP 数据区提前结束：${entry.name}`);
+        writeAll(outFd, chunk.subarray(0, n));
+        pos += n;
+        remaining -= n;
+      }
+      return;
+    }
+    if (entry.method !== 8) throw new Error(`不支持的压缩方式（method=${entry.method}）：${entry.name}`);
+    const limit = Math.max(entry.uncompressedSize, 0);
+    let written = 0;
+    const inflate = zlib.createInflateRaw();
+    inflate.on('data', (out: Buffer) => {
+      written += out.length;
+      if (written > limit) { inflate.destroy(new Error(`ZIP 解压炸弹：输出超过声明大小：${entry.name}`)); return; }
+      writeAll(outFd, out);
+    });
+    let remaining = entry.compressedSize;
+    await new Promise<void>((resolve, reject) => {
+      inflate.once('end', resolve);
+      inflate.once('error', reject);
+      const pump = () => {
+        if (remaining <= 0) { inflate.end(); return; }
+        const want = Math.min(CHUNK_SIZE, remaining);
+        const pos = dataStart + (entry.compressedSize - remaining);
+        const n = fs.readSync(fd, chunk, 0, want, pos);
+        if (n <= 0) { reject(new Error(`ZIP 数据区提前结束：${entry.name}`)); return; }
+        remaining -= n;
+        if (!inflate.write(chunk.subarray(0, n))) inflate.once('drain', pump);
+        else pump();
+      };
+      pump();
+    });
+    if (written !== entry.uncompressedSize) {
+      throw new Error(`ZIP 条目大小不符（声明 ${entry.uncompressedSize}，实际 ${written}）：${entry.name}`);
+    }
+  } finally {
+    if (outFd >= 0) fs.closeSync(outFd);
+    fs.closeSync(fd);
+  }
+}
+
+/** 从文件流式解压全部（或指定前缀子树），不把 ZIP/条目读进内存 */
+export async function zipExtractAllFromFile(zipPath: string, destDir: string, stripPrefix?: string): Promise<string[]> {
+  const entries = await zipListFromFile(zipPath);
+  const written: string[] = [];
+  const root = path.resolve(destDir);
+  const prefix = (stripPrefix ?? '').replace(/\\/g, '/');
+  for (const entry of entries) {
+    const target = extractTarget(entry.name, root, prefix);
+    if (!target) continue;
+    await zipExtractEntryToFile(zipPath, entry, target);
     written.push(target);
   }
   return written;

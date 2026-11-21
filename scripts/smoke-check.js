@@ -257,6 +257,19 @@ check('退出码 0 的离线日志不判成网络崩溃（issue #35）', () => {
       assert.strictEqual(fs.readFileSync(path.join(extractDir, 'dir', 'small.txt'), 'utf8'), 'hello');
     });
 
+    const fileList = await zip.zipListFromFile(zipPath);
+    check('流式 ZIP 可从文件直接列出中央目录（不读整包）', () => {
+      assert.strictEqual(fileList.length, 3);
+      assert.strictEqual(fileList[0].name, 'dir/small.txt');
+    });
+    const fileExtractDir = path.join(zipRoot, 'file-out');
+    const fileWritten = await zip.zipExtractAllFromFile(zipPath, fileExtractDir);
+    check('流式 ZIP 可从文件流式解压且内容一致', () => {
+      assert.strictEqual(fileWritten.length, 3);
+      assert.strictEqual(fs.readFileSync(path.join(fileExtractDir, 'dir', 'small.txt'), 'utf8'), 'hello');
+      assert.strictEqual(fs.readFileSync(path.join(fileExtractDir, 'big.bin')).length, 5 * 1024 * 1024);
+    });
+
     const manyPath = path.join(zipRoot, 'many.zip');
     const many = [];
     for (let i = 0; i < 70000; i++) many.push({ name: `f${i}.txt`, absPath: small, size: 5, mtime: new Date(2020, 0, 1) });
@@ -266,6 +279,10 @@ check('退出码 0 的离线日志不判成网络崩溃（issue #35）', () => {
       const l = zip.zipList(manyBuf);
       assert.strictEqual(l.length, 70000);
       assert.strictEqual(zip.zipExtractEntry(manyBuf, l[69999]).toString(), 'hello');
+    });
+    const fileMany = await zip.zipListFromFile(manyPath);
+    check('ZIP64：70000 条目也可从文件流式列出', () => {
+      assert.strictEqual(fileMany.length, 70000);
     });
 
     const forcedPath = path.join(zipRoot, 'forced64.zip');

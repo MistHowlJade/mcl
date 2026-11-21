@@ -9,7 +9,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { execFile } from 'child_process';
 import { javaDir } from './paths';
-import { zipExtractAll } from './zip';
+import { zipExtractAllFromFile } from './zip';
 import { fetchJson, USER_AGENT } from './net';
 import { createProxiedRequest } from './proxy';
 import { JavaInfo } from '../shared/types';
@@ -282,7 +282,7 @@ export async function installJava(major: number, onProgress?: (stage: 'fetch' | 
         execFile('tar', ['-xzf', tmp, '-C', stagingDir], { timeout: 120000 }, (err) => err ? reject(new Error(`tar 解压失败：${err.message}`)) : resolve());
       });
     } else {
-      zipExtractAll(fs.readFileSync(tmp), stagingDir);
+      await zipExtractAllFromFile(tmp, stagingDir);
     }
     // Temurin 包内层为 jdk-xx/ 或 jre-xx/ 目录；macOS 的可执行文件在 Contents/Home/bin 下
     const inner = fs.readdirSync(stagingDir).find(d => fs.statSync(path.join(stagingDir, d)).isDirectory());
