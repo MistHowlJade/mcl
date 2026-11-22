@@ -113,6 +113,11 @@ body::after {
 
 :focus-visible { outline: 2px solid var(--a-3); outline-offset: 2px; border-radius: 6px; }
 
+/* 统一线性图标：与文字基线对齐，不随字体渲染变化 */
+.ui-icon { display: inline-block; vertical-align: -0.15em; flex-shrink: 0; }
+.btn .ui-icon, .quick-card .ui-icon, .stat-icon .ui-icon { vertical-align: middle; }
+.empty .big .ui-icon { vertical-align: middle; opacity: .55; }
+
 /* ========== 标题栏 ========== */
 .titlebar {
   height: 40px;
@@ -718,6 +723,7 @@ textarea.input { height: auto; padding: 9px 11px; resize: vertical; min-height: 
 .fix-item .fx-label { font-weight: 650; font-size: 12.5px; }
 .fix-item .fx-desc { color: var(--text-dim); font-size: 11px; margin-top: 2px; }
 
+.list-icon { width: 30px; height: 30px; flex-shrink: 0; border-radius: 8px; display: grid; place-items: center; color: var(--text-dim); background: rgba(255,255,255,.04); border: 1px solid var(--hairline); }
 .list { display: flex; flex-direction: column; }
 .list-row { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 10px; border: 1px solid transparent; }
 .list-row:hover { background: rgba(255, 255, 255, 0.035); }

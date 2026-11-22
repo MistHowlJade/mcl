@@ -3,6 +3,7 @@ import { api } from '../lib/api';
 import { useToast } from '../components/Toast';
 import { Modal, Tip, Toggle, ConfirmModal, formatBytes, timeAgo } from '../components/Modal';
 import { VersionList } from '../components/VersionList';
+import { Icon } from '../components/Icon';
 import type { ExportFormat, InstanceConfig, InstanceInfo, LoaderType, MemoryPreset } from '../../electron/shared/types';
 
 const PRESET_INFO: Record<MemoryPreset, { label: string; hint: string; badge: string }> = {
@@ -61,8 +62,8 @@ export default function Instances() {
       </div>
 
       {list.length === 0 && (search
-        ? <div className="empty"><div className="big">🔍</div>没有符合「{search}」的实例</div>
-        : <div className="empty"><div className="big">📦</div>还没有实例，点上方创建第一个</div>)}
+        ? <div className="empty"><div className="big"><Icon name="search" size={30} /></div>没有符合「{search}」的实例</div>
+        : <div className="empty"><div className="big"><Icon name="box" size={30} /></div>还没有实例，点上方创建第一个</div>)}
 
       <div className="instance-grid">
         {list.map(inst => (
@@ -168,8 +169,8 @@ export function InstanceCard({ inst, onReload, onDiskUsage, onDelete, onExport, 
         )}
 
         <div className="instance-tile-meta">
-          <span>🧩 <b>{inst.modsCount}</b> 模组</span>
-          <span>🌍 <b>{inst.savesCount}</b> 存档</span>
+          <span><Icon name="puzzle" size={12} /> <b>{inst.modsCount}</b> 模组</span>
+          <span><Icon name="globe" size={12} /> <b>{inst.savesCount}</b> 存档</span>
           <span>🕐 {timeAgo(inst.lastPlayedAt)}</span>
         </div>
 
@@ -195,7 +196,7 @@ export function InstanceCard({ inst, onReload, onDiskUsage, onDelete, onExport, 
             </>
           ) : (
             <>
-              <button className="btn small primary" onClick={() => onLaunch(inst)}>▶ 启动</button>
+              <button className="btn small primary" onClick={() => onLaunch(inst)}><Icon name="play" size={11} /> 启动</button>
               <button className="btn small" onClick={() => setEditing(true)}>重命名</button>
             </>
           )}
@@ -204,13 +205,13 @@ export function InstanceCard({ inst, onReload, onDiskUsage, onDelete, onExport, 
           <details className="more-menu">
             <summary><span>更多 ▾</span></summary>
             <div className="menu-pop">
-              <button className="btn small" onClick={() => api.instanceOpenGameDir(inst.id).catch(e => toast.toast(String(e), 'error'))}>📂 打开游戏目录</button>
-              <button className="btn small" onClick={() => api.instanceOpenDir(inst.id).catch(e => toast.toast(String(e), 'error'))}>🗂 实例文件夹</button>
-              <button className="btn small" onClick={() => onDiskUsage(inst.id)}>💽 磁盘占用</button>
+              <button className="btn small" onClick={() => api.instanceOpenGameDir(inst.id).catch(e => toast.toast(String(e), 'error'))}><Icon name="folder" size={12} /> 打开游戏目录</button>
+              <button className="btn small" onClick={() => api.instanceOpenDir(inst.id).catch(e => toast.toast(String(e), 'error'))}><Icon name="folderTree" size={12} /> 实例文件夹</button>
+              <button className="btn small" onClick={() => onDiskUsage(inst.id)}><Icon name="disk" size={12} /> 磁盘占用</button>
               <button className="btn small" onClick={duplicate} disabled={duplicating} title="完整复制模组、存档与配置，适合开新档或测试模组">
-                {duplicating ? '复制中…' : '⧉ 复制实例'}
+                {duplicating ? '复制中…' : <><Icon name="copy" size={12} /> 复制实例</>}
               </button>
-              <button className="btn small danger" onClick={() => onDelete(inst)}>🗑 删除…</button>
+              <button className="btn small danger" onClick={() => onDelete(inst)}><Icon name="trash" size={12} /> 删除…</button>
             </div>
           </details>
         </div>
@@ -356,7 +357,7 @@ function ExportModal({ inst, onClose }: { inst: InstanceInfo; onClose: () => voi
       </div>
       {result && (
         <div className="mt" style={{ padding: '10px 14px', borderRadius: 9, background: 'var(--accent-soft)', border: '1px solid rgba(93,211,158,.35)' }}>
-          <div style={{ fontWeight: 700 }}>✓ 导出完成</div>
+          <div className="row" style={{ fontWeight: 700, gap: 6 }}><Icon name="check" size={14} /> 导出完成</div>
           <div className="faint mono" style={{ marginTop: 6, wordBreak: 'break-all' }}>{result.filePath}</div>
           <div className="faint">大小 {formatBytes(result.sizeBytes)} · {result.files} 个文件</div>
           {result.warnings && result.warnings.length > 0 && (

@@ -3,13 +3,14 @@ import { api, dropPaths, mediaUrl } from '../lib/api';
 import { useToast } from '../components/Toast';
 import { ConfirmModal, Modal, formatBytes, timeAgo } from '../components/Modal';
 import { FavoriteButton, useFavorites } from '../components/FavoriteButton';
+import { Icon } from '../components/Icon';
 import type { ContentItem, ContentKind, ContentList, InstanceInfo, ModSearchResult } from '../../electron/shared/types';
 
 const TABS: Array<{ id: ContentKind; label: string; icon: string; empty: string; tip: string }> = [
-  { id: 'resourcepacks', label: '资源包', icon: '🎨', empty: '还没有资源包。把 ZIP 拖进来或点「导入 ZIP」。', tip: '资源包会改变材质、声音与界面。启用状态直接写入 options.txt，进游戏立即生效。' },
-  { id: 'shaderpacks', label: '光影包', icon: '🌅', empty: '还没有光影包。需要安装 Iris / OptiFine 才能使用。', tip: '光影开关会同时写入 iris.properties 与 optionsshaders.txt，Iris 和 OptiFine 都能识别。' },
-  { id: 'screenshots', label: '截图', icon: '📸', empty: '还没有截图。游戏里按 F2 截图，会自动出现在这里。', tip: '截图直接从实例的 screenshots 目录读取，不会上传到任何服务器。' },
-  { id: 'worlds', label: '世界', icon: '🌍', empty: '还没有世界。创建世界后会出现在这里。', tip: '删除世界前会自动打包到该实例的备份目录，后悔了可以去「存档备份」恢复。' },
+  { id: 'resourcepacks', label: '资源包', icon: 'palette', empty: '还没有资源包。把 ZIP 拖进来或点「导入 ZIP」。', tip: '资源包会改变材质、声音与界面。启用状态直接写入 options.txt，进游戏立即生效。' },
+  { id: 'shaderpacks', label: '光影包', icon: 'shader', empty: '还没有光影包。需要安装 Iris / OptiFine 才能使用。', tip: '光影开关会同时写入 iris.properties 与 optionsshaders.txt，Iris 和 OptiFine 都能识别。' },
+  { id: 'screenshots', label: '截图', icon: 'camera', empty: '还没有截图。游戏里按 F2 截图，会自动出现在这里。', tip: '截图直接从实例的 screenshots 目录读取，不会上传到任何服务器。' },
+  { id: 'worlds', label: '世界', icon: 'globe', empty: '还没有世界。创建世界后会出现在这里。', tip: '删除世界前会自动打包到该实例的备份目录，后悔了可以去「存档备份」恢复。' },
 ];
 
 export default function Content() {
@@ -148,7 +149,7 @@ export default function Content() {
     return (
       <div>
         <div className="page-header"><div><h1>内容管理</h1><div className="sub">资源包 / 光影 / 截图 / 世界，一个页面全管</div></div></div>
-        <div className="empty"><div className="big">🎨</div>先创建一个实例，再回来管理它的资源包、光影和世界</div>
+        <div className="empty"><div className="big"><Icon name="palette" size={30} /></div>先创建一个实例，再回来管理它的资源包、光影和世界</div>
       </div>
     );
   }
@@ -180,14 +181,14 @@ export default function Content() {
               className={`btn ${tab === t.id ? 'primary' : ''}`}
               onClick={() => { setTab(t.id); setOnlineOpen(false); }}
             >
-              {t.icon} {t.label}
+              <Icon name={t.icon} size={14} /> {t.label}
               <span className="tag" style={{ marginLeft: 6 }}>{content?.[t.id].length ?? 0}</span>
             </button>
           ))}
           <span className="spacer" style={{ flex: 1 }} />
           {(tab === 'resourcepacks' || tab === 'shaderpacks' || tab === 'worlds') && (
             <button className="btn primary" onClick={() => setOnlineOpen(true)} disabled={!instanceId}>
-              ☁️ 在线下载
+              <Icon name="cloud" size={14} /> 在线下载
             </button>
           )}
           {tab === 'worlds' ? (
@@ -379,7 +380,7 @@ function OnlineContentModal({ instance, kind, onClose, onInstalled }: {
         />
         <input className="input" style={{ width: 120 }} placeholder="游戏版本" value={gameVersion} onChange={e => setGameVersion(e.target.value)} />
         <button className="btn primary" onClick={() => void search(query, gameVersion)} disabled={searching}>{searching ? '搜索中…' : '搜索'}</button>
-        <button className={`btn small ${onlyFavorites ? 'primary' : ''}`} onClick={() => setOnlyFavorites(v => !v)} title="只看收藏的资源（PCL CE 式资源收藏夹）">★ 只看收藏</button>
+        <button className={`btn small ${onlyFavorites ? 'primary' : ''}`} onClick={() => setOnlyFavorites(v => !v)} title="只看收藏的资源（PCL CE 式资源收藏夹）"><Icon name="star" size={12} /> 只看收藏</button>
       </div>
       <div className="faint mt">目标实例：{instance.name} · {instance.mcVersion} · {instance.loader}</div>
 
@@ -390,7 +391,7 @@ function OnlineContentModal({ instance, kind, onClose, onInstalled }: {
           {(onlyFavorites ? results.filter(item => favoriteIds.includes(item.projectId)) : results).map(item => (
             <div key={item.projectId} className="list-row" style={{ alignItems: 'flex-start' }}>
               <div style={{ width: 42, height: 42, borderRadius: 9, background: 'var(--panel-3)', overflow: 'hidden', display: 'grid', placeItems: 'center', flexShrink: 0 }}>
-                {item.iconUrl ? <img src={item.iconUrl} alt="" style={{ width: 42, height: 42, objectFit: 'cover' }} /> : '📦'}
+                {item.iconUrl ? <img src={item.iconUrl} alt="" style={{ width: 42, height: 42, objectFit: 'cover' }} /> : <Icon name="box" size={18} />}
               </div>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>

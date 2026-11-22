@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { Icon } from './Icon';
 
 /**
  * 资源收藏夹（PCL CE 特色功能）：以 Modrinth projectId 为键，存在本机 localStorage。
@@ -45,6 +46,6 @@ export function FavoriteButton({ id }: { id: string }) {
       onClick={() => toggle(id)}
       title={active ? '取消收藏' : '收藏资源（PCL CE 式资源收藏夹）'}
       aria-pressed={active}
-    >{active ? '★' : '☆'}</button>
+    ><Icon name="star" size={14} /></button>
   );
 }

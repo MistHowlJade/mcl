@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../lib/api';
 import { useToast } from '../components/Toast';
 import { ConfirmModal, formatBytes, timeAgo } from '../components/Modal';
+import { Icon } from '../components/Icon';
 import type { BackupInfo, InstanceInfo } from '../../electron/shared/types';
 
 export default function Backups() {
@@ -64,7 +65,7 @@ export default function Backups() {
     } catch (e) { toast.toast(String(e), 'error'); } finally { setCreating(false); }
   };
 
-  if (instances.length === 0) return <div className="empty"><div className="big">💾</div>还没有实例。先创建一个，存档备份才有意义。</div>;
+  if (instances.length === 0) return <div className="empty"><div className="big"><Icon name="save" size={30} /></div>还没有实例。先创建一个，存档备份才有意义。</div>;
 
   return (
     <div>
@@ -93,13 +94,13 @@ export default function Backups() {
       </div>
 
       {backups.length === 0 ? (
-        <div className="empty"><div className="big">🗄️</div>还没有备份。建议先手动备份一次，崩溃或更新翻车都能回去。</div>
+        <div className="empty"><div className="big"><Icon name="save" size={30} /></div>还没有备份。建议先手动备份一次，崩溃或更新翻车都能回去。</div>
       ) : (
         <div className="panel">
           <div className="list">
             {backups.map(b => (
               <div key={b.id} className="list-row">
-                <div style={{ fontSize: 20 }}>{b.kind === 'auto' ? '⏰' : b.kind === 'pre-restore' ? '🛟' : b.kind === 'world' ? '🌍' : '💾'}</div>
+                <div className="list-icon"><Icon name={b.kind === 'auto' ? 'clock' : b.kind === 'pre-restore' ? 'shield' : b.kind === 'world' ? 'globe' : 'save'} size={18} /></div>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div className="row" style={{ gap: 8 }}>
                     <strong style={{ fontSize: 13 }}>{b.name}</strong>

@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { api } from '../lib/api';
 import { useToast } from '../components/Toast';
 import { formatBytes } from '../components/Modal';
+import { Icon } from '../components/Icon';
 import type { MigrationCandidate, MigrationPreview, MigrationResult } from '../../electron/shared/types';
 
 export default function Migrate() {
@@ -97,7 +98,7 @@ export default function Migrate() {
               <input type="checkbox" checked={selected.includes(inst.name)} onChange={e => setSelected(prev => e.target.checked ? [...prev, inst.name] : prev.filter(n => n !== inst.name))} />
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div className="row" style={{ gap: 8 }}><strong>{inst.name}</strong>{inst.mcVersion && <span className="tag">{inst.mcVersion}</span>}{inst.loader !== 'vanilla' && <span className="tag blue">{inst.loader}</span>}</div>
-                <div className="faint">🌍 {inst.saves.length} 存档{inst.saves.length > 0 ? `（${inst.saves.slice(0, 2).join('、')}${inst.saves.length > 2 ? '…' : ''}）` : ''} · 🧩 {inst.modsCount} 模组 · ⚙️ {inst.configFiles} 配置 · {formatBytes(inst.totalBytes)}</div>
+                <div className="faint"><Icon name="globe" size={12} /> {inst.saves.length} 存档{inst.saves.length > 0 ? `（${inst.saves.slice(0, 2).join('、')}${inst.saves.length > 2 ? '…' : ''}）` : ''} · <Icon name="puzzle" size={12} /> {inst.modsCount} 模组 · <Icon name="cog" size={12} /> {inst.configFiles} 配置 · {formatBytes(inst.totalBytes)}</div>
               </div>
             </label>
           ))}
@@ -116,7 +117,7 @@ export default function Migrate() {
           {result.imported.length > 0 && <div className="tag green" style={{ marginRight: 6 }}>成功 {result.imported.length} 个：{result.imported.join('、')}</div>}
           {result.warnings && result.warnings.length > 0 && (
             <div className="mt" style={{ border: '1px solid var(--amber-soft)', background: 'var(--amber-soft)', borderRadius: 8, padding: '8px 12px' }}>
-              <div style={{ fontWeight: 700, marginBottom: 4 }}>⚠ 需要注意</div>
+              <div className="row" style={{ fontWeight: 700, marginBottom: 4, gap: 6 }}><Icon name="warn" size={14} /> 需要注意</div>
               <ul className="faint" style={{ paddingLeft: 18, margin: 0 }}>{result.warnings.map((w, i) => <li key={i}>{w}</li>)}</ul>
             </div>
           )}
