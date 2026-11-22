@@ -11,6 +11,17 @@ const PRESET_INFO: Record<MemoryPreset, { label: string; hint: string; badge: st
   heavy: { label: '大型整合包 / 光影', hint: '4G 初始 / 8G 最大 + G1GC 低停顿参数（Aikar 参数），光影与大型包专用', badge: '8G' },
 };
 
+const LOADER_LABEL: Record<string, string> = { vanilla: '原版', fabric: 'Fabric', forge: 'Forge', neoforge: 'NeoForge', quilt: 'Quilt' };
+
+function loaderKey(loader: string | null | undefined): string {
+  const l = (loader ?? '').toLowerCase();
+  if (l.includes('neo')) return 'neoforge';
+  if (l.includes('forge')) return 'forge';
+  if (l.includes('quilt')) return 'quilt';
+  if (l.includes('fabric')) return 'fabric';
+  return 'vanilla';
+}
+
 export default function Instances() {
   const [instances, setInstances] = useState<InstanceInfo[]>([]);
   const [creating, setCreating] = useState(false);
@@ -35,12 +46,15 @@ export default function Instances() {
           <h1>实例管理</h1>
           <div className="sub">每个实例 = 一个完全隔离的世界：存档、模组、配置互不影响</div>
         </div>
-        <button className="btn primary" onClick={() => setCreating(true)}>＋ 创建实例</button>
+        <div className="row" style={{ gap: 10 }}>
+          {instances.length > 0 && <span className="tag">{instances.length} 个实例</span>}
+          <button className="btn primary" onClick={() => setCreating(true)}>＋ 创建实例</button>
+        </div>
       </div>
 
       {instances.length === 0 && <div className="empty"><div className="big">📦</div>还没有实例，点右上角创建第一个</div>}
 
-      <div className="grid cols-2">
+      <div className="instance-grid">
         {instances.map(inst => (
           <InstanceCard key={inst.id} inst={inst} onReload={reload} onDiskUsage={diskUsage} onDelete={setDeleteTarget} onExport={setExportTarget} />
         ))}
@@ -114,70 +128,81 @@ export function InstanceCard({ inst, onReload, onDiskUsage, onDelete, onExport }
     setEditing(false);
   };
 
+  const key = loaderKey(inst.loader);
+  const preset = inst.memoryPreset ?? 'standard';
+
   return (
-    <div className="panel">
-      <div className="row spread" style={{ marginBottom: 10 }}>
-        <div className="row">
-          <div className="mc-icon" style={{ width: 46, height: 46, borderRadius: 10, display: 'grid', placeItems: 'center', background: 'linear-gradient(140deg,#3b4a3f,#222c26)', fontSize: 22 }}>🧱</div>
-          <div>
-            {editing ? (
-              <input className="input" style={{ maxWidth: 200, padding: '4px 8px' }} value={name} onChange={e => setName(e.target.value)} autoFocus onKeyDown={e => e.key === 'Enter' && save()} />
-            ) : (
-              <div style={{ fontWeight: 750 }}>{inst.name}</div>
-            )}
-            <div className="faint">
-              {inst.mcVersion === 'unknown'
-                ? <span className="tag amber">MC 版本未识别</span>
-                : `${inst.mcVersion}`} · {inst.loader}{inst.loaderVersion ? ` ${inst.loaderVersion}` : ''}
-            </div>
+    <div className="instance-tile">
+      <div className={`cover cover-tile loader-${key}`}>
+        <div className="cover-topline">
+          <span className="cover-pill">{LOADER_LABEL[key]}{inst.loaderVersion ? ` ${inst.loaderVersion}` : ''}</span>
+          <span className="cover-pill">{PRESET_INFO[preset].badge} 内存</span>
+        </div>
+        <div className="cover-version">{inst.mcVersion === 'unknown' ? '?' : inst.mcVersion}</div>
+      </div>
+
+      <div className="instance-tile-body">
+        <div className="instance-tile-title">
+          {editing
+            ? <input className="input rename-input" value={name} onChange={e => setName(e.target.value)} autoFocus onKeyDown={e => e.key === 'Enter' && save()} />
+            : <h3 title={inst.name}>{inst.name}</h3>}
+          {inst.mcVersion === 'unknown' && <span className="tag amber">MC 版本未识别</span>}
+        </div>
+
+        {inst.mcVersion === 'unknown' && (
+          <div className="row" style={{ gap: 8 }}>
+            <span className="faint">设置版本后才能启动</span>
+            <input className="input" style={{ width: 120, height: 30 }} placeholder="如 1.20.1" value={mcVersion} onChange={e => setMcVersion(e.target.value)} onKeyDown={e => e.key === 'Enter' && save()} />
+            <button className="btn small primary" onClick={save}>保存</button>
+          </div>
+        )}
+
+        <div className="instance-tile-meta">
+          <span>🧩 <b>{inst.modsCount}</b> 模组</span>
+          <span>🌍 <b>{inst.savesCount}</b> 存档</span>
+          <span>🕐 {timeAgo(inst.lastPlayedAt)}</span>
+        </div>
+
+        <div className="memory-line">
+          <div className="row" style={{ gap: 8 }}>
+            <span className="faint">禁止 Mod 自动更新</span>
+            <Tip text="开启后，此实例不会提示任何模组可更新。适合整合包玩家避免随手更新导致版本错乱（大坑，官方没有这个开关时只能服主口头叮嘱）。" />
+            <Toggle checked={!!inst.noModUpdate} onChange={v => { api.instanceUpdate(inst.id, { noModUpdate: v }).then(onReload).catch(e => toast.toast(String(e), 'error')); }} label="禁止 Mod 自动更新" />
+          </div>
+          <div className="row" style={{ gap: 6 }}>
+            <span className="faint">内存</span>
+            <select className="input" value={preset} onChange={e => { api.instanceUpdate(inst.id, { memoryPreset: e.target.value }).then(onReload).catch(err => toast.toast(String(err), 'error')); }}>
+              {(Object.keys(PRESET_INFO) as MemoryPreset[]).map(k => <option key={k} value={k}>{PRESET_INFO[k].label}</option>)}
+            </select>
           </div>
         </div>
-        <span className="tag blue">{PRESET_INFO[inst.memoryPreset ?? 'standard'].badge} 内存</span>
-      </div>
-      {inst.mcVersion === 'unknown' && (
-        <div className="row mt" style={{ gap: 8 }}>
-          <span className="faint">设置版本后才能启动</span>
-          <input className="input" style={{ width: 120, padding: '4px 8px' }} placeholder="如 1.20.1" value={mcVersion} onChange={e => setMcVersion(e.target.value)} onKeyDown={e => e.key === 'Enter' && save()} />
-          <button className="btn small primary" onClick={save}>保存</button>
+
+        <div className="instance-tile-actions">
+          {editing ? (
+            <>
+              <button className="btn small primary" onClick={save}>保存</button>
+              <button className="btn small ghost" onClick={() => { setEditing(false); setName(inst.name); setMcVersion(inst.mcVersion === 'unknown' ? '' : inst.mcVersion); }}>取消</button>
+            </>
+          ) : (
+            <button className="btn small" onClick={() => setEditing(true)}>重命名</button>
+          )}
+          <button className="btn small" onClick={() => setAdvanced(true)}>高级设置</button>
+          <button className="btn small" onClick={() => onExport(inst)}>导出…</button>
+          <details className="more-menu">
+            <summary className="btn small ghost">更多 ▾</summary>
+            <div className="menu-pop">
+              <button className="btn small" onClick={() => api.instanceOpenGameDir(inst.id).catch(e => toast.toast(String(e), 'error'))}>📂 打开游戏目录</button>
+              <button className="btn small" onClick={() => api.instanceOpenDir(inst.id).catch(e => toast.toast(String(e), 'error'))}>🗂 实例文件夹</button>
+              <button className="btn small" onClick={() => onDiskUsage(inst.id)}>💽 磁盘占用</button>
+              <button className="btn small" onClick={duplicate} disabled={duplicating} title="完整复制模组、存档与配置，适合开新档或测试模组">
+                {duplicating ? '复制中…' : '⧉ 复制实例'}
+              </button>
+              <button className="btn small danger" onClick={() => onDelete(inst)}>🗑 删除…</button>
+            </div>
+          </details>
         </div>
-      )}
-      <div className="row faint" style={{ gap: 14 }}>
-        <span>🧩 {inst.modsCount} 模组</span>
-        <span>🌍 {inst.savesCount} 存档</span>
-        <span>🕐 {timeAgo(inst.lastPlayedAt)}</span>
       </div>
-      <div className="row spread mt">
-        <div className="row" style={{ gap: 8 }}>
-          <span className="faint">禁止 Mod 自动更新</span>
-          <Tip text="开启后，此实例不会提示任何模组可更新。适合整合包玩家避免随手更新导致版本错乱（大坑，官方没有这个开关时只能服主口头叮嘱）。" />
-          <Toggle checked={!!inst.noModUpdate} onChange={v => { api.instanceUpdate(inst.id, { noModUpdate: v }).then(onReload).catch(e => toast.toast(String(e), 'error')); }} label="禁止 Mod 自动更新" />
-        </div>
-        <div className="row" style={{ gap: 6 }}>
-          <span className="faint">内存</span>
-          <select className="input" style={{ width: 110, padding: '4px 8px' }} value={inst.memoryPreset ?? 'standard'} onChange={e => { api.instanceUpdate(inst.id, { memoryPreset: e.target.value }).then(onReload).catch(err => toast.toast(String(err), 'error')); }}>
-            {(Object.keys(PRESET_INFO) as MemoryPreset[]).map(k => <option key={k} value={k}>{PRESET_INFO[k].label}</option>)}
-          </select>
-        </div>
-      </div>
-      <div className="row mt" style={{ gap: 8, flexWrap: 'wrap' }}>
-        {editing ? (
-          <>
-            <button className="btn small primary" onClick={save}>保存</button>
-            <button className="btn small ghost" onClick={() => { setEditing(false); setName(inst.name); setMcVersion(inst.mcVersion === 'unknown' ? '' : inst.mcVersion); }}>取消</button>
-          </>
-        ) : (
-          <button className="btn small" onClick={() => setEditing(true)}>重命名</button>
-        )}
-        <button className="btn small" onClick={() => api.instanceOpenGameDir(inst.id).catch(e => toast.toast(String(e), 'error'))}>打开游戏目录</button>
-        <button className="btn small" onClick={() => api.instanceOpenDir(inst.id).catch(e => toast.toast(String(e), 'error'))}>实例文件夹</button>
-        <button className="btn small" onClick={() => onDiskUsage(inst.id)}>磁盘占用</button>
-        <button className="btn small" onClick={() => setAdvanced(true)}>高级设置</button>
-        <button className="btn small" onClick={duplicate} disabled={duplicating} title="完整复制模组、存档与配置，适合开新档或测试模组">
-          {duplicating ? '复制中…' : '复制实例'}
-        </button>
-        <button className="btn small" onClick={() => onExport(inst)}>导出…</button>
-        <button className="btn small danger" onClick={() => onDelete(inst)}>删除…</button>
-      </div>
+
       {advanced && <AdvancedSettingsModal inst={inst} onClose={() => setAdvanced(false)} onSaved={() => { setAdvanced(false); onReload(); }} />}
     </div>
   );
