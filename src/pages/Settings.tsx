@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { api, on } from '../lib/api';
 import { useToast } from '../components/Toast';
 import { ConfirmModal, Tip, Toggle, formatBytes } from '../components/Modal';
+import { usePrefs } from '../lib/theme';
 import type { AppSettings, JavaInfo, UpdateInfo } from '../../electron/shared/types';
 
 /** 与主进程 settings.ts 一致的深合并：保证嵌套分区只改传入字段 */
@@ -38,6 +39,7 @@ export default function Settings({ onNavigate }: { onNavigate?: (page: 'cloud') 
   const [cacheClearing, setCacheClearing] = useState(false);
   const [confirmClearCache, setConfirmClearCache] = useState(false);
   const toast = useToast();
+  const { theme, nav, setTheme, setNav } = usePrefs();
 
   useEffect(() => {
     api.settingsGet().then(setSettings).catch(e => toast.toast(String(e), 'error'));
@@ -138,6 +140,24 @@ export default function Settings({ onNavigate }: { onNavigate?: (page: 'cloud') 
       {/* ========== 常规 ========== */}
       <div className="panel">
         <div className="panel-title">常规</div>
+        <div className="setting-row">
+          <div className="label">外观主题<Tip text="极光深色：低饱和暗色 + 青绿强调，沉稳护眼；PCL 浅色：蓝白圆角卡片 + 明亮启动按钮，接近 PCL2 的经典观感。只影响启动器界面，不影响游戏。" /></div>
+          <div className="control">
+            <div className="segmented">
+              <button className={`btn small ${theme === 'aurora' ? 'primary' : ''}`} onClick={() => setTheme('aurora')}>极光深色</button>
+              <button className={`btn small ${theme === 'pcl' ? 'primary' : ''}`} onClick={() => setTheme('pcl')}>PCL 浅色</button>
+            </div>
+          </div>
+        </div>
+        <div className="setting-row">
+          <div className="label">导航样式<Tip text="侧边栏：左侧分组导航，空间利用率高；顶部标签：PCL2 那种标题栏下的横向标签页，切换更直观。只影响启动器界面。" /></div>
+          <div className="control">
+            <div className="segmented">
+              <button className={`btn small ${nav === 'side' ? 'primary' : ''}`} onClick={() => setNav('side')}>侧边栏</button>
+              <button className={`btn small ${nav === 'top' ? 'primary' : ''}`} onClick={() => setNav('top')}>顶部标签</button>
+            </div>
+          </div>
+        </div>
         <div className="setting-row">
           <div className="label">界面缩放<Tip text="等价于 Windows 的 DPI 设置，解决高分屏字太小/界面错位。立即生效，下次启动保持。" /></div>
           <div className="control">

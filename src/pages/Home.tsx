@@ -162,7 +162,7 @@ export default function Home({ onNavigate, onLaunchFail }: { onNavigate: (p: Pag
               <div className="hero-hint">
                 {selected
                   ? <>当前：<b>{selected.name}</b> · {selected.mcVersion} · {LOADER_LABEL[loaderKey(selected.loader)]} · 上次游玩 {timeAgo(selected.lastPlayedAt)}</>
-                  : '还没有实例。创建或迁移一个后即可从这里启动。'}
+                  : '先创建一个实例，或从别的启动器迁移过来——剩下的交给 MCL。'}
               </div>
             </div>
           </div>
