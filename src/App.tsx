@@ -1,6 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ToastProvider, useToast } from './components/Toast';
 import { api, on } from './lib/api';
+import { getTheme, setTheme } from './lib/theme';
+import { Icon } from './components/Icon';
 import type { Account } from '../electron/shared/types';
 import Home from './pages/Home';
 import Instances from './pages/Instances';
@@ -88,6 +90,7 @@ function Shell() {
       <div className="titlebar">
         <div className="brand"><div className="logo">M</div>MCL<small>新一代我的世界启动器</small></div>
         <div className="spacer" />
+        <button className="winbtn theme-toggle" onClick={() => setTheme(getTheme() === 'pcl' ? 'aurora' : 'pcl')} title="切换外观主题（暗色 / PCL 浅色）"><Icon name="palette" size={14} /></button>
         <button className="winbtn" onClick={() => api.windowMinimize().catch(() => undefined)} title="最小化">─</button>
         <button className="winbtn" onClick={() => api.windowToggleMaximize().then(setMaximized).catch(() => undefined)} title="最大化/还原">{maximized ? '❐' : '□'}</button>
         <button className="winbtn close" onClick={() => api.windowClose().catch(() => undefined)} title="关闭">✕</button>
