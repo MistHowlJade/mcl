@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "description": "MCL · 新一代我的世界启动器 —— 为解决第三方启动器痛点而生",
+  "author": "MistHowlJade",
   "main": "electron-dist/main.js",
   "scripts": {
     "predev": "node scripts/ensure-electron.js",
@@ -11,7 +12,8 @@
     "typecheck": "tsc -p tsconfig.electron.json --noEmit && tsc -p tsconfig.json --noEmit",
     "verify": "npm run typecheck && npm run build && node scripts/smoke-check.js",
     "start": "electron .",
-    "package": "npm run build && node scripts/package.js"
+    "package": "npm run build && cross-env ELECTRON_BUILDER_BINARIES_MIRROR=https://npmmirror.com/mirrors/electron-builder-binaries/ electron-builder --win portable --config electron-builder.yml",
+    "package:dir": "npm run build && node scripts/package.js"
   },
   "engines": {
     "node": ">=18"
@@ -25,12 +27,11 @@
     "concurrently": "^9.1.0",
     "cross-env": "^7.0.3",
     "electron": "^33.2.0",
+    "electron-builder": "^25.1.8",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
     "typescript": "^5.6.3",
     "vite": "^5.4.11",
     "wait-on": "^8.0.1"
-  },
-  "dependencies": {
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1"
   }
 }

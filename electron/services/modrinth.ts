@@ -10,6 +10,7 @@ import { ContentInstallResult, ContentProjectType, InstalledMod, ModSearchResult
 import { readJson, writeJson } from './store';
 import { DownloadManager } from './downloader';
 import { importWorldZip } from './content';
+import { importModpack } from './modpack';
 import { getInstance } from './instances';
 
 const API = 'https://api.modrinth.com/v2';
@@ -208,22 +209,23 @@ export async function installMod(instanceId: string, projectId: string, versionI
   return { primary: primary!, installed, optionalDependencies };
 }
 
-/** 下载并安装资源包 / 光影 / 世界（世界会解压到 saves 下） */
+/** 下载并安装整合包 / 资源包 / 光影 / 世界（世界会解压到 saves 下，整合包会创建新实例） */
 export async function installContent(
   instanceId: string,
   projectId: string,
   versionId: string | null,
-  kind: 'resourcepacks' | 'shaderpacks' | 'worlds',
-  opts: { gameVersion?: string; loader?: string } = {},
+  kind: 'modpack' | 'resourcepacks' | 'shaderpacks' | 'worlds',
+  opts: { gameVersion?: string; loader?: string; name?: string } = {},
 ): Promise<ContentInstallResult> {
-  assertInstance(instanceId);
+  // 整合包不需要目标实例（它会创建新实例），其余类型必须落到已有实例目录
+  if (kind !== 'modpack') assertInstance(instanceId);
   // kind 在 IPC 边界只是 TS 类型，运行时要再确认一次，否则可拼接出实例目录之外的路径
-  if (!['resourcepacks', 'shaderpacks', 'worlds'].includes(kind)) throw new Error('不支持的内容类型');
+  if (!['modpack', 'resourcepacks', 'shaderpacks', 'worlds'].includes(kind)) throw new Error('不支持的内容类型');
   const versions = await getProjectVersions(projectId, {
     // 世界存档通常不标注游戏版本
     gameVersion: kind === 'worlds' ? undefined : opts.gameVersion,
-    // 资源包/光影/世界没有加载器筛选
-    loader: kind === 'worlds' || kind === 'resourcepacks' || kind === 'shaderpacks' ? undefined : opts.loader,
+    // 只有整合包有加载器概念；资源包 / 光影 / 世界不按加载器筛选
+    loader: kind === 'modpack' ? opts.loader : undefined,
   });
   const target = versionId ? versions.find(v => v.id === versionId) : versions[0];
   if (!target) throw new Error('没有找到兼容该 Minecraft 版本的文件。');
@@ -237,6 +239,23 @@ export async function installContent(
     if (!reports[0]?.ok) throw new Error(`下载失败（${safeName}）：${reports[0]?.error ?? '未知错误'}`);
     return fs.statSync(dest).size;
   };
+
+  if (kind === 'modpack') {
+    const temp = path.join(paths.cacheDir(), `mcl-modpack-${Date.now()}-${safeName}`);
+    try {
+      const sizeBytes = await downloadTo(temp);
+      const result = await importModpack(temp, opts.name ?? safeName);
+      return {
+        fileName: safeName,
+        path: '',
+        sizeBytes,
+        instanceId: result.instanceId ?? undefined,
+        warnings: result.warnings,
+      };
+    } finally {
+      try { fs.rmSync(temp, { force: true }); } catch { /* ignore */ }
+    }
+  }
 
   if (kind === 'worlds') {
     const temp = path.join(paths.cacheDir(), `mcl-world-${Date.now()}-${safeName}`);

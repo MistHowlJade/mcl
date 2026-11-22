@@ -242,6 +242,10 @@ export interface ContentInstallResult {
   sizeBytes: number;
   /** 世界：解压后的世界文件夹名 */
   worldName?: string;
+  /** 整合包：导入后创建的新实例 ID */
+  instanceId?: string;
+  /** 整合包：导入过程中的提示（如 CurseForge 需手动下载） */
+  warnings?: string[];
 }
 
 export interface VersionManifestEntry {

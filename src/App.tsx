@@ -1,13 +1,14 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ToastProvider, useToast } from './components/Toast';
 import { api, on } from './lib/api';
-import { getTheme, setTheme } from './lib/theme';
 import { Icon } from './components/Icon';
-import type { Account } from '../electron/shared/types';
+import { formatBytes } from './components/Modal';
+import type { Account, LaunchState, ServerInfo } from '../electron/shared/types';
 import Home from './pages/Home';
 import Instances from './pages/Instances';
 import Servers from './pages/Servers';
 import Mods from './pages/Mods';
+import Download from './pages/Download';
 import Content from './pages/Content';
 import Backups from './pages/Backups';
 import Crash from './pages/Crash';
@@ -17,10 +18,11 @@ import Cloud from './pages/Cloud';
 import Logs from './pages/Logs';
 import Settings from './pages/Settings';
 
-type PageId = 'home' | 'instances' | 'servers' | 'mods' | 'content' | 'backups' | 'crash' | 'migrate' | 'accounts' | 'cloud' | 'logs' | 'settings';
+type PageId = 'home' | 'instances' | 'servers' | 'mods' | 'download' | 'content' | 'backups' | 'crash' | 'migrate' | 'accounts' | 'cloud' | 'logs' | 'settings';
 
 const ICONS: Record<PageId, React.ReactNode> = {
   home: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 10.5 12 3l9 7.5" /><path d="M5 9.5V21h14V9.5" /><path d="M9.5 21v-6h5v6" /></svg>,
+  download: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3v12" /><path d="m7 11 5 5 5-5" /><path d="M4 20h16" /></svg>,
   instances: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7.5" height="7.5" rx="1.6" /><rect x="13.5" y="3" width="7.5" height="7.5" rx="1.6" /><rect x="3" y="13.5" width="7.5" height="7.5" rx="1.6" /><rect x="13.5" y="13.5" width="7.5" height="7.5" rx="1.6" /></svg>,
   servers: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="6" rx="2" /><rect x="3" y="14" width="18" height="6" rx="2" /><circle cx="7" cy="7" r=".8" fill="currentColor" /><circle cx="7" cy="17" r=".8" fill="currentColor" /><path d="M11 7h6M11 17h6" /></svg>,
   mods: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3 3 8v8l9 5 9-5V8l-9-5Z" /><path d="M12 12 3 8" /><path d="M12 12l9-4" /><path d="M12 12v9" /></svg>,
@@ -38,14 +40,15 @@ const NAV: Array<{ id: PageId; label: string; section: string }> = [
   { id: 'home', label: '启动台', section: '游戏' },
   { id: 'instances', label: '实例', section: '游戏' },
   { id: 'servers', label: '服务器', section: '游戏' },
-  { id: 'mods', label: '模组中心', section: '内容' },
-  { id: 'content', label: '内容管理', section: '内容' },
-  { id: 'backups', label: '存档备份', section: '内容' },
-  { id: 'crash', label: '崩溃分析', section: '内容' },
-  { id: 'migrate', label: '迁移中心', section: '工具' },
-  { id: 'accounts', label: '账号', section: '工具' },
-  { id: 'logs', label: '日志', section: '工具' },
-  { id: 'cloud', label: '云同步', section: '系统' },
+  { id: 'mods', label: '模组中心', section: '模组与资源' },
+  { id: 'download', label: '资源下载', section: '模组与资源' },
+  { id: 'content', label: '内容管理', section: '模组与资源' },
+  { id: 'backups', label: '存档备份', section: '模组与资源' },
+  { id: 'crash', label: '崩溃分析', section: '诊断与工具' },
+  { id: 'migrate', label: '迁移中心', section: '诊断与工具' },
+  { id: 'logs', label: '日志', section: '诊断与工具' },
+  { id: 'accounts', label: '账号', section: '账号与同步' },
+  { id: 'cloud', label: '云同步', section: '账号与同步' },
   { id: 'settings', label: '设置', section: '系统' },
 ];
 
@@ -55,6 +58,10 @@ function Shell() {
   const [maximized, setMaximized] = useState(false);
   const contentRef = useRef<HTMLElement>(null);
   const toast = useToast();
+  const [launchState, setLaunchState] = useState<LaunchState>({ instanceId: null, status: 'idle' });
+  const [launchProgress, setLaunchProgress] = useState<{ done: number; total: number } | null>(null);
+  const [serverInfo, setServerInfo] = useState<ServerInfo | null>(null);
+  const [updateProgress, setUpdateProgress] = useState<{ done: number; total: number } | null>(null);
 
   useEffect(() => {
     api.accountsActive().then(setActiveAccount).catch(() => setActiveAccount(null));
@@ -65,8 +72,24 @@ function Shell() {
     return off;
   }, []);
 
+  // 全局状态条：集中订阅启动 / 下载 / 服务端 / 更新事件，避免每个页面各做一套
   useEffect(() => {
-    const timer = window.setInterval(() => { api.accountsActive().then(setActiveAccount).catch(() => undefined); }, 5000);
+    const offs = [
+      on('launch:status', (s: LaunchState) => setLaunchState(s)),
+      on('launch:progress', (p: { done: number; total: number }) => setLaunchProgress(p)),
+      on('launch:exit', () => { setLaunchProgress(null); setLaunchState({ instanceId: null, status: 'exited' }); }),
+      on('launch:failed', () => { setLaunchProgress(null); setLaunchState({ instanceId: null, status: 'crashed' }); }),
+      on('launch:crash', () => { setLaunchProgress(null); setLaunchState({ instanceId: null, status: 'crashed' }); }),
+      on('server:status', (info: ServerInfo) => setServerInfo(info)),
+      on('app:updateProgress', (p: { done: number; total: number }) => setUpdateProgress(p)),
+    ];
+    const onUpdateDone = () => setUpdateProgress(null);
+    window.addEventListener('mcl:updateDone', onUpdateDone);
+    return () => { offs.forEach(f => f()); window.removeEventListener('mcl:updateDone', onUpdateDone); };
+  }, []);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => { api.accountsActive().then(setActiveAccount).catch(() => undefined); }, 15000);
     return () => window.clearInterval(timer);
   }, []);
 
@@ -80,6 +103,29 @@ function Shell() {
     return [...map.entries()];
   }, []);
 
+  const status = useMemo<{ label: string; detail?: string; tone: 'idle' | 'busy' | 'ok' | 'error'; page?: PageId }>(() => {
+    if (updateProgress) {
+      const pct = Math.min(100, Math.round((updateProgress.done / Math.max(1, updateProgress.total)) * 100));
+      return { label: '下载启动器更新', detail: `${pct}% · ${formatBytes(updateProgress.done)} / ${formatBytes(updateProgress.total)}`, tone: 'busy', page: 'settings' };
+    }
+    const ls = launchState.status;
+    if (ls === 'crashed') return { label: '游戏异常退出', detail: launchState.message ?? undefined, tone: 'error', page: 'crash' };
+    if (['preparing', 'downloading', 'launching', 'running'].includes(ls)) {
+      const label = ls === 'downloading' ? '下载游戏文件' : ls === 'launching' ? '正在启动游戏' : ls === 'running' ? '游戏运行中' : '准备游戏…';
+      const detail = launchProgress && launchProgress.total > 0
+        ? `${formatBytes(launchProgress.done)} / ${formatBytes(launchProgress.total)}`
+        : launchState.message ?? undefined;
+      return { label, detail, tone: 'busy', page: 'home' };
+    }
+    const ss = serverInfo?.status;
+    if (ss === 'crashed') return { label: '服务端异常退出', tone: 'error', page: 'servers' };
+    if (ss && ['preparing', 'starting', 'stopping', 'running'].includes(ss)) {
+      const label = ss === 'preparing' ? '安装服务端' : ss === 'starting' ? '启动服务端' : ss === 'stopping' ? '停止服务端' : '服务端运行中';
+      return { label, detail: serverInfo?.name, tone: 'busy', page: 'servers' };
+    }
+    return { label: '就绪', tone: 'idle' };
+  }, [launchState, launchProgress, serverInfo, updateProgress]);
+
   // 切页回到顶部（借鉴 Modrinth：进入子页面时不应保留上一页的滚动位置）
   useEffect(() => { contentRef.current?.scrollTo({ top: 0, behavior: 'smooth' }); }, [page]);
 
@@ -90,10 +136,14 @@ function Shell() {
       <div className="titlebar">
         <div className="brand"><div className="logo">M</div>MCL<small>新一代我的世界启动器</small></div>
         <div className="spacer" />
-        <button className="winbtn theme-toggle" onClick={() => setTheme(getTheme() === 'pcl' ? 'aurora' : 'pcl')} title="切换外观主题（暗色 / PCL 浅色）"><Icon name="palette" size={14} /></button>
         <button className="winbtn" onClick={() => api.windowMinimize().catch(() => undefined)} title="最小化">─</button>
         <button className="winbtn" onClick={() => api.windowToggleMaximize().then(setMaximized).catch(() => undefined)} title="最大化/还原">{maximized ? '❐' : '□'}</button>
         <button className="winbtn close" onClick={() => api.windowClose().catch(() => undefined)} title="关闭">✕</button>
+      </div>
+      <div className="statusbar">
+        <span className={`status-item ${status.tone}`}><span className="dot" />{status.label}</span>
+        {status.detail && <span className="faint" style={{ maxWidth: 420, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{status.detail}</span>}
+        {status.page && <button className="status-link" onClick={() => setPage(status.page!)}>查看 →</button>}
       </div>
       <div className="app-shell">
         <nav className="sidebar">
@@ -133,6 +183,7 @@ function Shell() {
             {page === 'instances' && <Instances />}
             {page === 'servers' && <Servers />}
             {page === 'mods' && <Mods />}
+            {page === 'download' && <Download />}
             {page === 'content' && <Content />}
             {page === 'backups' && <Backups />}
             {page === 'crash' && <Crash />}

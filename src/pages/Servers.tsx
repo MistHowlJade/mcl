@@ -63,6 +63,8 @@ export default function Servers() {
   const [tab, setTab] = useState<Tab>('console');
   const [logs, setLogs] = useState<string[]>([]);
   const [command, setCommand] = useState('');
+  const [cmdHistory, setCmdHistory] = useState<string[]>([]);
+  const [historyIndex, setHistoryIndex] = useState<number | null>(null);
   const [properties, setProperties] = useState<ServerProperties>({});
   const [propDraft, setPropDraft] = useState<ServerProperties>({});
   const [settingsDraft, setSettingsDraft] = useState<ServerSettingsDraft | null>(null);
@@ -216,9 +218,12 @@ export default function Servers() {
   };
 
   const sendCommand = async () => {
-    if (!server || !command.trim()) return;
+    const text = command.trim();
+    if (!server || !text) return;
     try {
-      await api.serverSendCommand(server.id, command.trim());
+      await api.serverSendCommand(server.id, text);
+      setCmdHistory(prev => [...prev.filter(c => c !== text), text].slice(-50));
+      setHistoryIndex(null);
       setCommand('');
     } catch (e) { toast.toast(e instanceof Error ? e.message : String(e), 'error'); }
   };
@@ -418,13 +423,26 @@ export default function Servers() {
                   placeholder={server.status === 'running' ? '输入服务器命令，如 list / op 玩家名 / stop' : '服务器未运行，无法发送命令'}
                   value={command}
                   disabled={server.status !== 'running'}
-                  onChange={e => setCommand(e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && sendCommand()}
+                  onChange={e => { setCommand(e.target.value); setHistoryIndex(null); }}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') { e.preventDefault(); void sendCommand(); return; }
+                    if (e.key === 'ArrowUp' && cmdHistory.length > 0) {
+                      e.preventDefault();
+                      const next = historyIndex === null ? cmdHistory.length - 1 : Math.max(0, historyIndex - 1);
+                      setHistoryIndex(next);
+                      setCommand(cmdHistory[next]);
+                    } else if (e.key === 'ArrowDown' && historyIndex !== null) {
+                      e.preventDefault();
+                      const next = historyIndex + 1;
+                      if (next >= cmdHistory.length) { setHistoryIndex(null); setCommand(''); }
+                      else { setHistoryIndex(next); setCommand(cmdHistory[next]); }
+                    }
+                  }}
                 />
                 <button className="btn primary" disabled={server.status !== 'running' || !command.trim()} onClick={sendCommand}>发送</button>
                 <button className="btn" onClick={() => setLogs([])}>清空显示</button>
               </div>
-              <p className="faint mt">停止服务器请优先用「停止服务器」或 stop 命令，让世界正常保存。强制结束可能丢失最近几秒的进度。</p>
+              <p className="faint mt">↑ / ↓ 可复用历史命令。停止服务器请优先用「停止服务器」或 stop 命令，让世界正常保存；强制结束可能丢失最近几秒的进度。</p>
             </div>
           )}
 

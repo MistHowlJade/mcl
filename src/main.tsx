@@ -4,7 +4,7 @@ import App from './App';
 import { applyPrefs } from './lib/theme';
 import './global.css';
 
-// 首次渲染前套用外观偏好，避免深色闪一下再变浅色
+// 首次渲染前套用导航偏好，避免顶部/侧栏样式闪一下
 applyPrefs();
 
 ReactDOM.createRoot(document.getElementById('root')!).render(

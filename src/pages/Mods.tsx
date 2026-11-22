@@ -91,6 +91,7 @@ export default function Mods() {
 function InstalledTab({ instance }: { instance: InstanceInfo }) {
   const [mods, setMods] = useState<InstalledMod[]>([]);
   const [checking, setChecking] = useState(false);
+  const [updatingAll, setUpdatingAll] = useState(false);
   const [pending, setPending] = useState<string | null>(null);
   const [healthReport, setHealthReport] = useState<{ scanned: number; issues: ModHealthIssue[] } | null>(null);
   const toast = useToast();
@@ -112,6 +113,7 @@ function InstalledTab({ instance }: { instance: InstanceInfo }) {
     setHealthReport(null);
     // 上一个实例的“检查更新/更新中”状态不能带到新实例，否则按钮会一直禁用
     setChecking(false);
+    setUpdatingAll(false);
     setPending(null);
     void reload();
     /* eslint-disable-next-line */
@@ -173,6 +175,26 @@ function InstalledTab({ instance }: { instance: InstanceInfo }) {
     finally { if (instanceRef.current === id) setPending(null); }
   };
 
+  const updateAll = async () => {
+    if (updatingAll) return;
+    const id = instance.id;
+    const targets = mods.filter(m => m.updateAvailable);
+    if (targets.length === 0) return;
+    setUpdatingAll(true);
+    setPending('batch');
+    let ok = 0;
+    let fail = 0;
+    for (const mod of targets) {
+      if (instanceRef.current !== id) break;
+      try { await api.modrinthUpdateMod(id, mod.fileName); ok++; }
+      catch { fail++; }
+    }
+    if (instanceRef.current === id) await reload();
+    setUpdatingAll(false);
+    setPending(null);
+    toast.toast(`批量更新完成：成功 ${ok} 个${fail ? `，失败 ${fail} 个` : ''}`, fail ? 'error' : 'ok');
+  };
+
   const toggleMod = async (mod: InstalledMod) => {
     if (pending) return;
     const id = instance.id;
@@ -193,6 +215,9 @@ function InstalledTab({ instance }: { instance: InstanceInfo }) {
           <button className="btn small" onClick={checkHealth}><Icon name="health" size={12} /> 体检</button>
           <Tip text="检查 Modrinth 上是否有可更新版本。开启了「禁止 Mod 自动更新」的实例不会联网查询，并会清除旧的更新提示" />
           <button className="btn small" onClick={checkUpdates} disabled={checking}>{checking ? '检查中…' : '🔄 检查更新'}</button>
+          <button className="btn small primary" onClick={() => void updateAll()} disabled={updatingAll || !!pending || !mods.some(m => m.updateAvailable)}>
+            {updatingAll ? '更新中…' : '更新全部'}
+          </button>
           <button className="btn small" onClick={() => api.modsOpenFolder(instance.id).catch(e => toast.toast(String(e), 'error'))}><Icon name="folder" size={12} /> 打开目录</button>
         </div>
       </div>

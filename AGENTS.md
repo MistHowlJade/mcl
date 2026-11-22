@@ -123,5 +123,5 @@ git add -A && git commit -m "feat: ..."   # 或 fix: / docs: / refactor:
 - 离线皮肤：仅启动器界面可见，其他玩家看不到（离线模式设计）；披风没有公开上传 API，MCL 只做本地预览。微软账号皮肤上传走官方 Mojang API。
 - Forge 系客户端启动未统一进共享库布局（安装到实例 `game/libraries` 后按 `versions/` 读取）；服务端 Forge 系使用官方 `run.sh/run.bat` 参数文件方式启动。
 - 云同步：WebDAV 兼容性取决于服务商（坚果云/Nextcloud 已按标准实现，未实测）；Gist 只同步配置，不传存档与模组。
-- 无代码签名、Windows 优先；`npm run package` 生成免安装目录 + 便携 ZIP（复用已安装 Electron 运行时，零新增依赖），不生成 NSIS/MSI 安装器。
+- 无代码签名、Windows 优先；`npm run package` 用 electron-builder 生成**单文件便携 exe**（`release/single/MCL-<版本>-portable-x64.exe`），对标 PCL2 单 exe 体验；`npm run package:dir` 仍是零依赖的免安装目录 + 便携 ZIP 备选。electron-builder 仅作打包 devDependency，不进运行时，主进程零第三方运行依赖的约束不变。打包源已固化 npmmirror 镜像（`electronDownload.mirror` + `ELECTRON_BUILDER_BINARIES_MIRROR`）；Linux 交叉打包需 `win.signAndEditExecutable: false` 以避开 wine。
 - `npm run dev` 依赖手动修好的 electron 二进制（见 §3.1）。

@@ -114,7 +114,7 @@ export const api = {
     invoke<ModSearchResult[]>('modrinth:search', query, opts),
   modrinthSearchContent: (query: string, opts: { projectType: ContentProjectType; loader?: string; gameVersion?: string; limit?: number; index?: 'relevance' | 'downloads' | 'follows' | 'updated' }) =>
     invoke<ModSearchResult[]>('modrinth:searchContent', query, opts),
-  modrinthInstallContent: (instanceId: string, projectId: string, versionId: string | null, kind: 'resourcepacks' | 'shaderpacks' | 'worlds', opts: { gameVersion?: string; loader?: string } = {}) =>
+  modrinthInstallContent: (instanceId: string, projectId: string, versionId: string | null, kind: 'modpack' | 'resourcepacks' | 'shaderpacks' | 'worlds', opts: { gameVersion?: string; loader?: string; name?: string } = {}) =>
     invoke<ContentInstallResult>('modrinth:installContent', instanceId, projectId, versionId, kind, opts),
   modrinthInstalled: (instanceId: string) => invoke<InstalledMod[]>('modrinth:installed', instanceId),
   modrinthInstall: (instanceId: string, projectId: string, versionId: string | null, opts: { loader?: string; gameVersion?: string }) =>

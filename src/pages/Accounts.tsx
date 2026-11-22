@@ -96,7 +96,7 @@ export default function Accounts() {
         }>
           <p className="muted">1. 在浏览器打开 <strong>{msSession.verificationUri}</strong>（点右下角按钮可直接打开）<br />2. 输入下面的代码并确认登录</p>
           <div style={{ textAlign: 'center', margin: '18px 0' }}>
-            <div className="mono" style={{ fontSize: 34, letterSpacing: 8, fontWeight: 800, color: 'var(--accent)', background: '#0b0e14', borderRadius: 12, padding: '16px 10px', userSelect: 'text' }}>{msSession.userCode}</div>
+            <div className="mono" style={{ fontSize: 34, letterSpacing: 8, fontWeight: 800, color: 'var(--accent)', background: 'var(--panel-2)', borderRadius: 12, padding: '16px 10px', userSelect: 'text' }}>{msSession.userCode}</div>
           </div>
           <p className="faint">代码 15 分钟内有效。登录成功后本窗口会自动关闭；关闭窗口会取消本次登录。<br />Xbox Live 授权失败时，最常见的原因是：系统时间不对（差 5 分钟就会被微软拒绝）——MCL 会在报错里直接告诉你。</p>
           <div className="row mt" style={{ justifyContent: 'center' }}><div className="progress" style={{ width: 200 }}><div style={{ width: '100%', animation: 'pulse 1.6s infinite' }} /></div></div>
