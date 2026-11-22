@@ -6,4 +6,5 @@ release/
 .DS_Store
 Thumbs.db
 .mcl-data/
+.build-cache/
 .vite/

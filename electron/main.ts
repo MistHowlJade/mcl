@@ -9,7 +9,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
 import { registerIpcHandlers, bindServiceEvents } from './services/ipc';
-import { dataRoot, ensureLayout } from './services/paths';
+import { dataRoot, ensureLayout, redirectElectronPaths } from './services/paths';
 import { getSettings } from './services/settings';
 import { killResidualProcesses } from './services/minecraft';
 import { killAllServersSync, listServers, stopServer } from './services/server';
@@ -60,6 +60,9 @@ function registerMediaProtocol(): void {
     }
   });
 }
+
+// 把所有 MCL 相关目录（含 Electron 自身缓存）收敛到数据根，必须在 ready / 单实例锁之前
+redirectElectronPaths();
 
 // 单实例锁：防止同时开两个窗口导致数据目录竞争
 const gotLock = app.requestSingleInstanceLock();

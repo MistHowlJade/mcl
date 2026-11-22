@@ -12,7 +12,7 @@
     "typecheck": "tsc -p tsconfig.electron.json --noEmit && tsc -p tsconfig.json --noEmit",
     "verify": "npm run typecheck && npm run build && node scripts/smoke-check.js",
     "start": "electron .",
-    "package": "npm run build && cross-env ELECTRON_BUILDER_BINARIES_MIRROR=https://npmmirror.com/mirrors/electron-builder-binaries/ electron-builder --win portable --config electron-builder.yml",
+    "package": "npm run build && cross-env ELECTRON_CACHE=.build-cache/electron ELECTRON_BUILDER_CACHE=.build-cache/electron-builder ELECTRON_BUILDER_BINARIES_MIRROR=https://npmmirror.com/mirrors/electron-builder-binaries/ electron-builder --win portable --config electron-builder.yml",
     "package:dir": "npm run build && node scripts/package.js"
   },
   "engines": {

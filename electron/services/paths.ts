@@ -17,6 +17,13 @@
  *   <root>/cache/                                 ← 下载临时文件（.part）
  *   <root>/backups/<instanceId>/<name>.zip
  *   <root>/logs/mcl.log
+ *   <root>/electron-user-data/          ← Electron 自身的 userData（Local Storage / Preferences…）
+ *   <root>/electron-cache/              ← Electron / Chromium 缓存（Code Cache / GPUCache…）
+ *   <root>/electron-logs/               ← Electron 日志
+ *   <root>/electron-crash-dumps/        ← Electron 崩溃转储
+ *
+ * 所有 MCL 相关目录（游戏资源 + Electron 自身缓存）都在同一个 mcl-data 文件夹里，
+ * 拷走该文件夹即带走全部数据，不在 %APPDATA% 留下散落目录。
  */
 import { app } from 'electron';
 import * as fs from 'fs';
@@ -97,6 +104,22 @@ export function serversDir(): string { return path.join(dataRoot(), 'servers'); 
 export function serverDir(id: string): string { return path.join(serversDir(), id); }
 export function serverFile(id: string): string { return path.join(serverDir(id), 'server.json'); }
 export function serverBackupsDir(id: string): string { return path.join(serverDir(id), 'backups'); }
+/** Electron 自身的数据/缓存也放进同一个根目录（在主进程 ready 之前调用） */
+export const electronUserDataDir = (): string => path.join(dataRoot(), 'electron-user-data');
+export const electronCacheDir = (): string => path.join(dataRoot(), 'electron-cache');
+export const electronLogsDir = (): string => path.join(dataRoot(), 'electron-logs');
+export const electronCrashDir = (): string => path.join(dataRoot(), 'electron-crash-dumps');
+
+export function redirectElectronPaths(): void {
+  const dirs = [electronUserDataDir(), electronCacheDir(), electronLogsDir(), electronCrashDir()];
+  for (const dir of dirs) fs.mkdirSync(dir, { recursive: true });
+  // setPath 必须在 app.whenReady() 之前，否则 Chromium 已经创建的缓存不会迁移
+  app.setPath('userData', dirs[0]);
+  app.setPath('cache', dirs[1]);
+  app.setPath('logs', dirs[2]);
+  app.setPath('crashDumps', dirs[3]);
+}
+
 export function configFile(): string { return path.join(dataRoot(), 'config.json'); }
 export function accountsFile(): string { return path.join(dataRoot(), 'accounts.json'); }
 export function instancesIndexFile(): string { return path.join(dataRoot(), 'instances.json'); }
@@ -109,6 +132,7 @@ export function ensureLayout(): void {
     dataRoot(), sharedDir(), assetsDir(), assetsObjectsDir(), assetsIndexDir(),
     librariesDir(), versionsDir(), instancesDir(), javaDir(), cacheDir(),
     backupsDir(), logsDir(), serversDir(),
+    electronUserDataDir(), electronCacheDir(), electronLogsDir(), electronCrashDir(),
   ]) {
     fs.mkdirSync(dir, { recursive: true });
   }
