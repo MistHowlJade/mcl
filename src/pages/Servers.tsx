@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { api, on } from '../lib/api';
 import { useToast } from '../components/Toast';
 import { ConfirmModal, Modal, Tip, Toggle, formatBytes, timeAgo } from '../components/Modal';
+import { VersionList } from '../components/VersionList';
 import type { LanWorld, ServerBackupInfo, ServerConfig, ServerInfo, ServerLoader, ServerProperties, ServerStatus } from '../../electron/shared/types';
 
 type Tab = 'console' | 'settings' | 'properties' | 'backups';
@@ -605,7 +606,7 @@ export default function Servers() {
 }
 
 function CreateServerModal({ onClose, onCreated }: { onClose: () => void; onCreated: (id: string) => void }) {
-  const [versions, setVersions] = useState<Array<{ id: string; type: string }>>([]);
+  const [versions, setVersions] = useState<Array<{ id: string; type: string; releaseTime?: string }>>([]);
   const [search, setSearch] = useState('');
   const [showSnapshots, setShowSnapshots] = useState(false);
   const [mcVersion, setMcVersion] = useState('');
@@ -615,14 +616,33 @@ function CreateServerModal({ onClose, onCreated }: { onClose: () => void; onCrea
   const [port, setPort] = useState(25565);
   const [memoryMB, setMemoryMB] = useState(2048);
   const [creating, setCreating] = useState(false);
+  const [versionsLoading, setVersionsLoading] = useState(true);
+  const [versionsError, setVersionsError] = useState<string | null>(null);
+  const versionsSeq = useRef(0);
   const toast = useToast();
 
-  useEffect(() => {
-    api.versionsList().then(list => {
+  const loadVersions = async () => {
+    const seq = ++versionsSeq.current;
+    setVersionsLoading(true);
+    setVersionsError(null);
+    try {
+      const list = await api.versionsList();
+      if (seq !== versionsSeq.current) return;
       setVersions(list);
       const first = list.find(v => v.type === 'release');
-      if (first) setMcVersion(first.id);
-    }).catch((e: unknown) => toast.toast(`版本清单加载失败：${e instanceof Error ? e.message : String(e)}`, 'error'));
+      if (first) setMcVersion(prev => prev || first.id);
+    } catch (e) {
+      if (seq !== versionsSeq.current) return;
+      const message = e instanceof Error ? e.message : String(e);
+      setVersionsError(message);
+      toast.toast(`版本清单加载失败：${message}`, 'error');
+    } finally {
+      if (seq === versionsSeq.current) setVersionsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void loadVersions();
     /* eslint-disable-next-line */
   }, []);
 
@@ -659,9 +679,9 @@ function CreateServerModal({ onClose, onCreated }: { onClose: () => void; onCrea
   };
 
   return (
-    <Modal title="创建 Minecraft 服务器" onClose={onClose} footer={<>
+    <Modal title="创建 Minecraft 服务器" onClose={onClose} wide footer={<>
       <button className="btn ghost" onClick={onClose}>取消</button>
-      <button className="btn primary" disabled={creating || !mcVersion} onClick={submit}>{creating ? '创建中…' : '创建服务器'}</button>
+      <button className="btn primary" disabled={creating || !mcVersion || versionsLoading || !!versionsError} onClick={submit}>{creating ? '创建中…' : '创建服务器'}</button>
     </>}>
       <div className="setting-row" style={{ paddingTop: 4 }}>
         <div className="label">服务器名称<Tip text="只用于 MCL 界面显示，不影响玩家看到的 MOTD（MOTD 在 server.properties 里改）。" /></div>
@@ -670,13 +690,37 @@ function CreateServerModal({ onClose, onCreated }: { onClose: () => void; onCrea
       <div className="setting-row">
         <div className="label">Minecraft 版本<Tip text="服务端必须与玩家客户端版本一致（或兼容）。原版服务端由 Mojang 官方提供。" /></div>
         <div className="control" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 8 }}>
-          <div className="row">
+          <div className="row" style={{ gap: 10 }}>
             <input className="input" placeholder="搜索版本，如 1.20.1" value={search} onChange={e => setSearch(e.target.value)} />
-            <Toggle checked={showSnapshots} onChange={setShowSnapshots} label="显示快照" />
+            <span className="row" style={{ gap: 7, flexShrink: 0, fontSize: 12.5, color: 'var(--text-dim)' }}>
+              <Toggle checked={showSnapshots} onChange={setShowSnapshots} label="显示快照" />
+              <span onClick={() => setShowSnapshots(v => !v)} style={{ cursor: 'pointer' }}>显示快照</span>
+            </span>
           </div>
-          <select className="input" size={6} value={mcVersion} onChange={e => setMcVersion(e.target.value)}>
-            {filtered.map(v => <option key={v.id} value={v.id}>{v.id}{v.type !== 'release' ? `（${v.type}）` : ''}</option>)}
-          </select>
+          <VersionList
+            options={filtered}
+            selected={mcVersion}
+            onSelect={setMcVersion}
+            loading={versionsLoading}
+            disabled={versionsLoading || !!versionsError}
+            loadingText="正在加载版本清单…"
+            emptyText={versionsError ? '加载失败，请点下方「重试」' : '没有匹配的版本'}
+          />
+          {versionsError ? (
+            <div className="row" style={{ gap: 8, alignItems: 'flex-start', padding: '8px 10px', borderRadius: 8, background: 'var(--red-soft)', border: '1px solid rgba(242,104,104,.4)' }}>
+              <div className="faint" style={{ flex: 1, lineHeight: 1.6 }}>
+                版本清单加载失败：{versionsError}
+                <br />已安装的服务器不受影响，可稍后重试或换个下载源。
+              </div>
+              <button className="btn small" onClick={() => { void loadVersions(); }}>重试</button>
+            </div>
+          ) : (
+            <div className="faint">
+              {versionsLoading
+                ? '正在从 Mojang / 镜像获取版本清单…'
+                : `版本清单共 ${versions.length} 个，当前显示 ${filtered.length} 个 · 已选 ${mcVersion || '未选择'}`}
+            </div>
+          )}
         </div>
       </div>
       <div className="setting-row">
