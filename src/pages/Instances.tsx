@@ -226,6 +226,8 @@ function AdvancedSettingsModal({ inst, onClose, onSaved }: { inst: InstanceInfo;
   const [jvm, setJvm] = useState(inst.jvmArgsExtra ?? '');
   const [width, setWidth] = useState(inst.resolution?.width ? String(inst.resolution.width) : '');
   const [height, setHeight] = useState(inst.resolution?.height ? String(inst.resolution.height) : '');
+  const [heapInitial, setHeapInitial] = useState(inst.heapInitialMB ? String(inst.heapInitialMB) : '');
+  const [heapMax, setHeapMax] = useState(inst.heapMaxMB ? String(inst.heapMaxMB) : '');
   const [saving, setSaving] = useState(false);
   const toast = useToast();
 
@@ -243,12 +245,28 @@ function AdvancedSettingsModal({ inst, onClose, onSaved }: { inst: InstanceInfo;
       toast.toast('分辨率需要同时填写，且范围在 640×360 到 7680×4320 之间', 'error');
       return;
     }
+    const hi = heapInitial.trim() ? parseInt(heapInitial, 10) : null;
+    const hm = heapMax.trim() ? parseInt(heapMax, 10) : null;
+    if (Boolean(heapInitial.trim()) !== Boolean(heapMax.trim())) {
+      toast.toast('初始堆和最大堆要同时填写；想用预设请都留空', 'error');
+      return;
+    }
+    if (hi !== null && (hi < 256 || hm! < 256 || hi > 65536 || hm! > 65536)) {
+      toast.toast('堆大小需要在 256～65536 MB 之间', 'error');
+      return;
+    }
+    if (hi !== null && hi! > hm!) {
+      toast.toast('初始堆不能大于最大堆', 'error');
+      return;
+    }
     setSaving(true);
     try {
       await api.instanceUpdate(inst.id, {
         javaPath: javaPath.trim() || null,
         jvmArgsExtra: jvm,
         resolution: width && height ? { width: w, height: h } : null,
+        heapInitialMB: hi,
+        heapMaxMB: hm,
       });
       toast.toast('实例高级设置已保存');
       onSaved();
@@ -281,7 +299,15 @@ function AdvancedSettingsModal({ inst, onClose, onSaved }: { inst: InstanceInfo;
           <input className="input" style={{ width: 90 }} type="number" placeholder="高" value={height} onChange={e => setHeight(e.target.value)} />
         </div>
       </div>
-      <p className="faint mt">内存仍由「内存预设」管理；想精细控制请用 JVM 参数（不推荐新手改，容易 OutOfMemory 或频繁 GC）。</p>
+      <div className="setting-row">
+        <div className="label">堆内存（MB）<Tip text="PCL CE 式精细控制：分别设置初始堆（-Xms）与最大堆（-Xmx）。两个都留空 = 用上面的内存预设；填写时必须同时填且初始不大于最大，范围 256～65536。" /></div>
+        <div className="control">
+          <input className="input" style={{ width: 100 }} type="number" placeholder="初始，如 2048" value={heapInitial} onChange={e => setHeapInitial(e.target.value)} />
+          <span className="faint">→</span>
+          <input className="input" style={{ width: 100 }} type="number" placeholder="最大，如 8192" value={heapMax} onChange={e => setHeapMax(e.target.value)} />
+        </div>
+      </div>
+      <p className="faint mt">留空则由「内存预设」管理；自定义堆会覆盖预设的 -Xms/-Xmx，但 GC 参数仍按预设选择。</p>
     </Modal>
   );
 }

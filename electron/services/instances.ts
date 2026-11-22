@@ -79,6 +79,8 @@ const LOADER_TYPES: LoaderType[] = ['vanilla', 'fabric', 'quilt', 'forge', 'neof
 const MEMORY_PRESETS: MemoryPreset[] = ['low', 'standard', 'heavy'];
 const isLoaderType = (v: unknown): v is LoaderType => LOADER_TYPES.includes(v as LoaderType);
 const isMemoryPreset = (v: unknown): v is MemoryPreset => MEMORY_PRESETS.includes(v as MemoryPreset);
+/** 堆内存（MB）：128MB 以下会被 JVM 拒绝，64GB 以上基本都是误填 */
+const isHeapMB = (v: unknown): v is number => Number.isInteger(v) && (v as number) >= 256 && (v as number) <= 65536;
 /** 版本号会进入 URL/目录名：拒绝路径分隔符、. / ..、以及只有点的名字 */
 const isMcVersion = (v: unknown): v is string => typeof v === 'string'
   && v.length > 0 && v.length <= 128
@@ -87,6 +89,7 @@ const isMcVersion = (v: unknown): v is string => typeof v === 'string'
 export function createInstance(input: {
   name: string; mcVersion: string; loader: LoaderType; loaderVersion?: string | null;
   memoryPreset?: MemoryPreset; javaPath?: string | null;
+  heapInitialMB?: number | null; heapMaxMB?: number | null;
 }): InstanceConfig {
   // IPC 参数只是 TS 类型：运行时也要挡住空值/非法加载器，否则会写出启动不了的实例
   if (!input || typeof input !== 'object') throw new Error('创建实例的参数不完整');
@@ -106,6 +109,9 @@ export function createInstance(input: {
     loaderVersion: loaderVersion || null,
     javaPath: typeof input.javaPath === 'string' && input.javaPath.trim() ? input.javaPath.trim() : null,
     memoryPreset: isMemoryPreset(input.memoryPreset) ? input.memoryPreset : 'standard',
+    ...(isHeapMB(input.heapInitialMB) && isHeapMB(input.heapMaxMB) && input.heapInitialMB <= input.heapMaxMB
+      ? { heapInitialMB: input.heapInitialMB, heapMaxMB: input.heapMaxMB }
+      : {}),
     createdAt: Date.now(),
     lastPlayedAt: null,
     playTimeSeconds: 0,
@@ -138,6 +144,22 @@ export function updateInstance(id: string, patch: Partial<InstanceConfig>): Inst
   }
   if ('javaPath' in p) merged.javaPath = typeof p.javaPath === 'string' && p.javaPath.trim() ? p.javaPath.trim() : null;
   if ('memoryPreset' in p) merged.memoryPreset = isMemoryPreset(p.memoryPreset) ? p.memoryPreset : 'standard';
+  // PCL CE 式：初始堆/最大堆独立设置，必须同时填写且 initial <= max
+  if ('heapInitialMB' in p || 'heapMaxMB' in p) {
+    const hi = p.heapInitialMB;
+    const hm = p.heapMaxMB;
+    if (hi == null && hm == null) {
+      merged.heapInitialMB = null;
+      merged.heapMaxMB = null;
+    } else if (!isHeapMB(hi) || !isHeapMB(hm)) {
+      throw new Error('初始堆与最大堆需同时填写，且为 256～65536 MB 的整数');
+    } else if (hi > hm) {
+      throw new Error('初始堆不能大于最大堆');
+    } else {
+      merged.heapInitialMB = hi;
+      merged.heapMaxMB = hm;
+    }
+  }
   if (typeof p.jvmArgsExtra === 'string') merged.jvmArgsExtra = p.jvmArgsExtra;
   if (typeof p.noModUpdate === 'boolean') merged.noModUpdate = p.noModUpdate;
   if (p.resolution === null || (p.resolution && Number.isInteger(p.resolution.width) && Number.isInteger(p.resolution.height)

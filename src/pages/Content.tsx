@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { api, dropPaths, mediaUrl } from '../lib/api';
 import { useToast } from '../components/Toast';
 import { ConfirmModal, Modal, formatBytes, timeAgo } from '../components/Modal';
+import { FavoriteButton, useFavorites } from '../components/FavoriteButton';
 import type { ContentItem, ContentKind, ContentList, InstanceInfo, ModSearchResult } from '../../electron/shared/types';
 
 const TABS: Array<{ id: ContentKind; label: string; icon: string; empty: string; tip: string }> = [
@@ -320,6 +321,8 @@ function OnlineContentModal({ instance, kind, onClose, onInstalled }: {
   const [results, setResults] = useState<ModSearchResult[]>([]);
   const [searching, setSearching] = useState(false);
   const [installingId, setInstallingId] = useState<string | null>(null);
+  const [onlyFavorites, setOnlyFavorites] = useState(false);
+  const { ids: favoriteIds } = useFavorites();
   const [error, setError] = useState<string | null>(null);
   const toast = useToast();
   const searchSeq = useRef(0);
@@ -376,6 +379,7 @@ function OnlineContentModal({ instance, kind, onClose, onInstalled }: {
         />
         <input className="input" style={{ width: 120 }} placeholder="游戏版本" value={gameVersion} onChange={e => setGameVersion(e.target.value)} />
         <button className="btn primary" onClick={() => void search(query, gameVersion)} disabled={searching}>{searching ? '搜索中…' : '搜索'}</button>
+        <button className={`btn small ${onlyFavorites ? 'primary' : ''}`} onClick={() => setOnlyFavorites(v => !v)} title="只看收藏的资源（PCL CE 式资源收藏夹）">★ 只看收藏</button>
       </div>
       <div className="faint mt">目标实例：{instance.name} · {instance.mcVersion} · {instance.loader}</div>
 
@@ -383,7 +387,7 @@ function OnlineContentModal({ instance, kind, onClose, onInstalled }: {
       {!searching && error && <div className="empty" style={{ padding: 26 }}>{error}</div>}
       {!searching && !error && (
         <div className="list mt" style={{ maxHeight: 430, overflowY: 'auto' }}>
-          {results.map(item => (
+          {(onlyFavorites ? results.filter(item => favoriteIds.includes(item.projectId)) : results).map(item => (
             <div key={item.projectId} className="list-row" style={{ alignItems: 'flex-start' }}>
               <div style={{ width: 42, height: 42, borderRadius: 9, background: 'var(--panel-3)', overflow: 'hidden', display: 'grid', placeItems: 'center', flexShrink: 0 }}>
                 {item.iconUrl ? <img src={item.iconUrl} alt="" style={{ width: 42, height: 42, objectFit: 'cover' }} /> : '📦'}
@@ -401,6 +405,7 @@ function OnlineContentModal({ instance, kind, onClose, onInstalled }: {
                 </div>
               </div>
               <div className="row" style={{ gap: 6, flexShrink: 0 }}>
+                <FavoriteButton id={item.projectId} />
                 <button className="btn small" onClick={() => api.openExternal(`https://modrinth.com/project/${item.slug}`).catch(e => toast.toast(String(e), 'error'))}>详情 ↗</button>
                 <button className="btn small primary" onClick={() => install(item)} disabled={installingId !== null}>
                   {installingId === item.projectId ? '安装中…' : '安装'}

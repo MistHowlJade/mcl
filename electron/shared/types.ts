@@ -15,6 +15,9 @@ export interface InstanceConfig {
   javaPath?: string | null;
   /** 内存预设：低配 / 标准 / 大型整合包·光影 */
   memoryPreset?: MemoryPreset | null;
+  /** 自定义初始堆 / 最大堆（MB）：留空则按内存预设；两者同时填写且初始 ≤ 最大才生效（PCL CE 式） */
+  heapInitialMB?: number | null;
+  heapMaxMB?: number | null;
   /** 自定义 JVM 附加参数（空格分隔或每行一条） */
   jvmArgsExtra?: string;
   /** 该实例禁止自动更新 Mod（整合包玩家保护） */
