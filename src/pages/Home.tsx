@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { api, on } from '../lib/api';
 import { useToast } from '../components/Toast';
 import { ConfirmModal, formatBytes, timeAgo } from '../components/Modal';
+import { Icon } from '../components/Icon';
 import type { AppSettings, CrashDiagnosis, InstanceInfo, LaunchState } from '../../electron/shared/types';
 
 type Page = 'home' | 'instances' | 'servers' | 'mods' | 'content' | 'backups' | 'crash' | 'migrate' | 'accounts' | 'cloud' | 'logs' | 'settings';
@@ -121,7 +122,7 @@ export default function Home({ onNavigate, onLaunchFail }: { onNavigate: (p: Pag
 
   const quickActions: Array<{ icon: string; title: string; hint: string; onClick: () => void }> = [
     {
-      icon: '💾', title: '备份存档', hint: '打包全部世界',
+      icon: 'save', title: '备份存档', hint: '打包全部世界',
       onClick: () => {
         if (!selected) { toast.toast('还没有可备份的实例', 'info'); return; }
         api.backupCreate(selected.id, '手动快速备份')
@@ -129,18 +130,18 @@ export default function Home({ onNavigate, onLaunchFail }: { onNavigate: (p: Pag
           .catch(e => toast.toast(String(e), 'error'));
       },
     },
-    { icon: '🧩', title: '模组体检', hint: '冲突与缺失依赖', onClick: () => onNavigate('mods') },
-    { icon: '🎨', title: '内容管理', hint: '资源包 / 光影 / 世界', onClick: () => onNavigate('content') },
-    { icon: '🖥️', title: '开服务器', hint: '一键安装与启停', onClick: () => onNavigate('servers') },
-    { icon: '☁️', title: '云同步', hint: 'WebDAV / Gist', onClick: () => onNavigate('cloud') },
-    { icon: '🩺', title: '崩溃分析', hint: '人话解释与修复', onClick: () => onNavigate('crash') },
-    { icon: '🚚', title: '迁移中心', hint: '从其它启动器导入', onClick: () => onNavigate('migrate') },
+    { icon: 'puzzle', title: '模组体检', hint: '冲突与缺失依赖', onClick: () => onNavigate('mods') },
+    { icon: 'palette', title: '内容管理', hint: '资源包 / 光影 / 世界', onClick: () => onNavigate('content') },
+    { icon: 'server', title: '开服务器', hint: '一键安装与启停', onClick: () => onNavigate('servers') },
+    { icon: 'cloud', title: '云同步', hint: 'WebDAV / Gist', onClick: () => onNavigate('cloud') },
+    { icon: 'health', title: '崩溃分析', hint: '人话解释与修复', onClick: () => onNavigate('crash') },
+    { icon: 'migrate', title: '迁移中心', hint: '从其它启动器导入', onClick: () => onNavigate('migrate') },
     {
-      icon: '📂', title: '打开游戏目录', hint: '存档 / 模组 / 配置',
+      icon: 'folder', title: '打开游戏目录', hint: '存档 / 模组 / 配置',
       onClick: () => { if (selected) api.instanceOpenGameDir(selected.id).catch(e => toast.toast(String(e), 'error')); },
     },
     {
-      icon: '🧹', title: '清理残余进程', hint: '解决重复启动占用',
+      icon: 'broom', title: '清理残余进程', hint: '解决重复启动占用',
       onClick: () => { api.launchKillResidual().then(r => toast.toast(`已清理 ${r.killed.length} 个残余进程`, 'info')).catch(e => toast.toast(String(e), 'error')); },
     },
   ];
@@ -168,7 +169,7 @@ export default function Home({ onNavigate, onLaunchFail }: { onNavigate: (p: Pag
         </div>
         <div className="hero-actions">
           <button className="launch-btn" onClick={doLaunch} disabled={busy || !selected} aria-busy={busy}>
-            {busy ? <span className="btn-spinner" aria-hidden="true" /> : <span className="launch-icon">▶</span>}
+            {busy ? <span className="btn-spinner" aria-hidden="true" /> : <span className="launch-icon"><Icon name="play" size={10} /></span>}
             {busy ? (launchState.status === 'running' ? '游戏运行中' : '准备中…') : '启 动'}
           </button>
           {busy && launchState.status === 'downloading' && (
@@ -189,17 +190,17 @@ export default function Home({ onNavigate, onLaunchFail }: { onNavigate: (p: Pag
       {crash && (
         <div className="panel diagnosis high mt-lg">
           <div className="row spread" style={{ alignItems: 'flex-start' }}>
-            <div><strong>⚡ {crash.title}</strong><div className="faint" style={{ marginTop: 3 }}>{crash.summary}</div></div>
+            <div><strong><Icon name="bolt" size={14} /> {crash.title}</strong><div className="faint" style={{ marginTop: 3 }}>{crash.summary}</div></div>
             <button className="btn small" onClick={() => onNavigate('crash')}>查看并修复 →</button>
           </div>
         </div>
       )}
 
       <div className="home-stats">
-        <div className="stat-card"><div className="stat-icon">📦</div><div><div className="k">实例</div><div className="v">{instances.length}</div><div className="d">版本隔离</div></div></div>
-        <div className="stat-card"><div className="stat-icon">💾</div><div><div className="k">存档</div><div className="v">{totalSaves}</div><div className="d">自动备份</div></div></div>
-        <div className="stat-card"><div className="stat-icon">🧩</div><div><div className="k">模组</div><div className="v">{totalMods}</div><div className="d">体检与更新</div></div></div>
-        <div className="stat-card"><div className="stat-icon">⏱️</div><div><div className="k">游玩</div><div className="v">{Math.floor(totalPlaySeconds / 3600)}<small> 小时</small></div><div className="d">仅存本机</div></div></div>
+        <div className="stat-card"><div className="stat-icon"><Icon name="box" size={16} /></div><div><div className="k">实例</div><div className="v">{instances.length}</div><div className="d">版本隔离</div></div></div>
+        <div className="stat-card"><div className="stat-icon"><Icon name="save" size={16} /></div><div><div className="k">存档</div><div className="v">{totalSaves}</div><div className="d">自动备份</div></div></div>
+        <div className="stat-card"><div className="stat-icon"><Icon name="puzzle" size={16} /></div><div><div className="k">模组</div><div className="v">{totalMods}</div><div className="d">体检与更新</div></div></div>
+        <div className="stat-card"><div className="stat-icon"><Icon name="clock" size={16} /></div><div><div className="k">游玩</div><div className="v">{Math.floor(totalPlaySeconds / 3600)}<small> 小时</small></div><div className="d">仅存本机</div></div></div>
       </div>
 
       <section className="home-section">
@@ -209,7 +210,7 @@ export default function Home({ onNavigate, onLaunchFail }: { onNavigate: (p: Pag
         </div>
         {instances.length === 0 ? (
           <div className="drop-hint">
-            <div style={{ fontSize: 28, marginBottom: 8 }}>📦</div>
+            <div className="big"><Icon name="box" size={30} /></div>
             <div style={{ fontWeight: 700 }}>还没有任何实例</div>
             <div className="faint mt">创建第一个实例，或从 HMCL / PCL2 / Prism 迁移过来</div>
             <div className="row mt-lg" style={{ justifyContent: 'center' }}>
@@ -237,9 +238,9 @@ export default function Home({ onNavigate, onLaunchFail }: { onNavigate: (p: Pag
                     <div className="n" title={inst.name}>{inst.name}</div>
                     <div className="d">{inst.loaderVersion ? `${LOADER_LABEL[key]} ${inst.loaderVersion}` : LOADER_LABEL[key]} · {PRESET_LABEL[inst.memoryPreset ?? 'standard']}内存 · {timeAgo(inst.lastPlayedAt)}</div>
                   </div>
-                  <div className="row-meta"><span>🧩 {inst.modsCount}</span><span>🌍 {inst.savesCount}</span></div>
+                  <div className="row-meta"><span><Icon name="puzzle" size={11} /> {inst.modsCount}</span><span><Icon name="globe" size={11} /> {inst.savesCount}</span></div>
                   <div className="row-actions">
-                    <button className="btn small primary" title="启动" onClick={e => { e.stopPropagation(); launchInstance(inst); }}>▶</button>
+                    <button className="btn small primary" title="启动" onClick={e => { e.stopPropagation(); launchInstance(inst); }}><Icon name="play" size={11} /></button>
                   </div>
                 </div>
               );
@@ -253,7 +254,7 @@ export default function Home({ onNavigate, onLaunchFail }: { onNavigate: (p: Pag
         <div className="quick-grid">
           {quickActions.map(action => (
             <button key={action.title} type="button" className="quick-card" onClick={action.onClick}>
-              <span className="quick-icon">{action.icon}</span>
+              <span className="quick-icon"><Icon name={action.icon} size={16} /></span>
               <span><b>{action.title}</b><small>{action.hint}</small></span>
             </button>
           ))}

@@ -70,6 +70,14 @@
 - **其它页面**：仍用 `.panel`/`.panel-title`/`.stat-card` 结构，但配色与形状完全升级到新的 Aurora Glass；未做结构改动。
 - **视觉标准公告**：颜色系统与第一轮保持一致（`--n-*` 幕后，`--a-*` 品牌色）；快捷操作九格、统计四件套、实例横行都使用悬停提升 1–2px；令牌语义不变，页面互不变。
 
+## 第十一轮：统一 SVG 线性图标
+
+把所有 emoji 图标换成一套统一的 24×24 线性 SVG（`src/components/Icon.tsx`，1.7px 描边、`currentColor`）：
+
+- 涵盖 box/save/puzzle/palette/shader/camera/globe/server/cloud/health/migrate/folder/broom/clock/search/disk/copy/trash/play/bolt/check/warn/info/star 等；
+- 首页快捷操作、统计卡、实例行元数据、启动按钮，实例页菜单，内容管理标签页，模组/备份/云同步/迁移/服务器/崩溃页的图标与空状态全部替换；
+- Toast 与收藏按钮也换成 SVG，避免不同系统字体下 emoji 渲染大小/颜色不一致，这是「质感」差异最大的一块。
+
 ## 第十轮：高级感与质感（表面 / 材质 / 动效）
 
 针对「要高级感和质感」这一诉求，做的是视觉层统一，不改布局与功能：

@@ -3,6 +3,7 @@ import { api, on } from '../lib/api';
 import { useToast } from '../components/Toast';
 import { ConfirmModal, Modal, Tip, Toggle, formatBytes, timeAgo } from '../components/Modal';
 import { VersionList } from '../components/VersionList';
+import { Icon } from '../components/Icon';
 import type { LanWorld, ServerBackupInfo, ServerConfig, ServerInfo, ServerLoader, ServerProperties, ServerStatus } from '../../electron/shared/types';
 
 type Tab = 'console' | 'settings' | 'properties' | 'backups';
@@ -302,7 +303,7 @@ export default function Servers() {
         <div className="row spread" style={{ flexWrap: 'wrap', gap: 10 }}>
           <div>
             <div className="row" style={{ gap: 8 }}>
-              <strong>🔍 局域网联机</strong>
+              <strong><Icon name="search" size={14} /> 局域网联机</strong>
               <span className="tag">224.0.2.60:4445</span>
             </div>
             <div className="faint mt">扫描同一网络里「对局域网开放」的世界。MCL 不需要你手动问房主 IP；发现后复制地址，在游戏「多人游戏 → 直接连接」里粘贴即可。</div>
@@ -330,7 +331,7 @@ export default function Servers() {
 
       {servers.length === 0 ? (
         <div className="empty">
-          <div className="big">🖥️</div>
+          <div className="big"><Icon name="server" size={30} /></div>
           <div style={{ fontWeight: 700 }}>还没有服务器</div>
           <div className="faint mt">MCL 会自动下载服务端与 Java，装好后点启动即可。支持联机给朋友玩，也可以只开在局域网。</div>
           <div className="row mt" style={{ justifyContent: 'center' }}>
@@ -498,7 +499,7 @@ export default function Servers() {
                 <button className="btn primary" disabled={busyNow || worldLocked} title={worldLocked ? '请先停止服务器' : undefined} onClick={() => run('backup', () => api.serverBackup(server.id), '世界备份已创建')}>＋ 备份世界</button>
               </div>
               {backups.length === 0 ? (
-                <div className="empty"><div className="big">💾</div>还没有备份</div>
+                <div className="empty"><div className="big"><Icon name="save" size={28} /></div>还没有备份</div>
               ) : (
                 <div className="list mt">
                   {backups.map(b => (

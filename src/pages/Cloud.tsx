@@ -3,6 +3,7 @@ import { api } from '../lib/api';
 import type { CloudApplyResult } from '../lib/api';
 import { useToast } from '../components/Toast';
 import { ConfirmModal, Tip, Toggle, formatBytes, timeAgo } from '../components/Modal';
+import { Icon } from '../components/Icon';
 import type { AppSettings, CloudProvider, CloudSettings, CloudSnapshotInfo } from '../../electron/shared/types';
 
 const PROVIDERS: Array<{ id: CloudProvider; label: string; hint: string }> = [
@@ -112,7 +113,7 @@ export default function Cloud() {
     finally { setBusy(null); }
   };
 
-  if (!draft || !settings) return <div className="empty"><div className="big">☁️</div>正在加载云同步设置…</div>;
+  if (!draft || !settings) return <div className="empty"><div className="big"><Icon name="cloud" size={30} /></div>正在加载云同步设置…</div>;
 
   const provider = PROVIDERS.find(p => p.id === draft.provider) ?? PROVIDERS[0];
   const configured = draft.provider !== 'off';
@@ -183,7 +184,7 @@ export default function Cloud() {
         </div>
         {testResult && (
           <div className="mt" style={{ padding: '10px 14px', borderRadius: 9, background: testResult.ok ? 'var(--accent-soft)' : 'var(--red-soft)', border: `1px solid ${testResult.ok ? 'rgba(93,211,158,.35)' : 'rgba(242,104,104,.4)'}` }}>
-            {testResult.ok ? '✓ ' : '✗ '}{testResult.message}
+            <Icon name={testResult.ok ? 'check' : 'warn'} size={13} /> {testResult.message}
           </div>
         )}
       </div>
@@ -214,7 +215,7 @@ export default function Cloud() {
         <div className="panel">
           <div className="panel-title">上次下载结果</div>
           <div className="muted">
-            已应用：设置 {downloadResult.settings ? '✓' : '—'} · 实例 {downloadResult.instances} 个 · 服务器 {downloadResult.servers} 个 · 存档 {downloadResult.saves} 个
+            已应用：设置 {downloadResult.settings ? <Icon name="check" size={12} /> : '—'} · 实例 {downloadResult.instances} 个 · 服务器 {downloadResult.servers} 个 · 存档 {downloadResult.saves} 个
           </div>
           {downloadResult.warnings.length > 0 && (
             <ul className="faint" style={{ paddingLeft: 18, marginTop: 8 }}>

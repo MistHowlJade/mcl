@@ -1,4 +1,5 @@
 import React, { createContext, useCallback, useContext, useState } from 'react';
+import { Icon } from './Icon';
 
 export type ToastKind = 'ok' | 'error' | 'info';
 interface ToastItem { id: number; kind: ToastKind; message: string }
@@ -21,7 +22,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
       <div className="toast-stack">
         {items.map(t => (
           <div key={t.id} className={`toast ${t.kind === 'ok' ? '' : t.kind}`} role="status">
-            <span className="toast-icon" aria-hidden="true">{t.kind === 'ok' ? '✓' : t.kind === 'error' ? '⚠' : 'ℹ'}</span>
+            <span className="toast-icon" aria-hidden="true"><Icon name={t.kind === 'ok' ? 'check' : t.kind === 'error' ? 'warn' : 'info'} size={15} /></span>
             <span className="toast-text">{t.message}</span>
             <button className="toast-close" onClick={() => dismiss(t.id)} aria-label="关闭提示">✕</button>
           </div>

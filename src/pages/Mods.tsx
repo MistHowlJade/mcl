@@ -3,6 +3,7 @@ import { api, on } from '../lib/api';
 import { useToast } from '../components/Toast';
 import { Modal, Tip, formatBytes, timeAgo } from '../components/Modal';
 import { FavoriteButton, useFavorites } from '../components/FavoriteButton';
+import { Icon } from '../components/Icon';
 import type { InstanceInfo, InstalledMod, ModHealthIssue, ModSearchResult } from '../../electron/shared/types';
 
 type Tab = 'installed' | 'search' | 'import';
@@ -54,7 +55,7 @@ export default function Mods() {
     return (
       <div>
         <div className="page-header"><div><h1>模组中心</h1><div className="sub">需要先有一个实例</div></div></div>
-        <div className="empty"><div className="big">🧩</div>还没有实例。先在「实例」页创建一个，再来装模组。</div>
+        <div className="empty"><div className="big"><Icon name="puzzle" size={30} /></div>还没有实例。先在「实例」页创建一个，再来装模组。</div>
       </div>
     );
   }
@@ -189,14 +190,14 @@ function InstalledTab({ instance }: { instance: InstanceInfo }) {
         <div className="panel-title" style={{ marginBottom: 0 }}>已安装 {mods.length} 个模组<span className="spacer" /></div>
         <div className="row" style={{ gap: 8 }}>
           <Tip text="体检会直接解析 mods 目录里 jar 的模组元数据（fabric.mod.json / mods.toml），检测重复、异加载器、零字节损坏文件" />
-          <button className="btn small" onClick={checkHealth}>🩺 体检</button>
+          <button className="btn small" onClick={checkHealth}><Icon name="health" size={12} /> 体检</button>
           <Tip text="检查 Modrinth 上是否有可更新版本。开启了「禁止 Mod 自动更新」的实例不会联网查询，并会清除旧的更新提示" />
           <button className="btn small" onClick={checkUpdates} disabled={checking}>{checking ? '检查中…' : '🔄 检查更新'}</button>
-          <button className="btn small" onClick={() => api.modsOpenFolder(instance.id).catch(e => toast.toast(String(e), 'error'))}>📂 打开目录</button>
+          <button className="btn small" onClick={() => api.modsOpenFolder(instance.id).catch(e => toast.toast(String(e), 'error'))}><Icon name="folder" size={12} /> 打开目录</button>
         </div>
       </div>
       {mods.length === 0 ? (
-        <div className="empty"><div className="big">🧩</div>还没有模组，去「搜索 Modrinth」装几个吧</div>
+        <div className="empty"><div className="big"><Icon name="puzzle" size={30} /></div>还没有模组，去「搜索 Modrinth」装几个吧</div>
       ) : (
         <div className="list">
           {mods.map(mod => (
@@ -299,13 +300,13 @@ function SearchTab({ instance }: { instance: InstanceInfo }) {
           <option value="updated">最近更新</option>
         </select>
         <button className="btn primary" onClick={search} disabled={searching}>{searching ? '搜索中…' : '搜索'}</button>
-        <button className={`btn small ${onlyFavorites ? 'primary' : ''}`} onClick={() => setOnlyFavorites(v => !v)} title="只看收藏的资源（PCL CE 式资源收藏夹）">★ 只看收藏</button>
+        <button className={`btn small ${onlyFavorites ? 'primary' : ''}`} onClick={() => setOnlyFavorites(v => !v)} title="只看收藏的资源（PCL CE 式资源收藏夹）"><Icon name="star" size={12} /> 只看收藏</button>
       </div>
       <div className="faint mt">数据源：Modrinth（中文搜索已按相关度优化，受影响较小）。{loader ? `安装的模组都按 ${loader} 过滤。` : '原版实例无法安装模组，请先创建 Fabric/Forge 实例。'}</div>
       <div className="list mt">
         {(onlyFavorites ? results.filter(r => favoriteIds.includes(r.projectId)) : results).map(r => (
           <div key={r.projectId} className="list-row">
-            {r.iconUrl ? <img src={r.iconUrl} alt="" width={48} height={48} style={{ borderRadius: 10, objectFit: 'cover' }} loading="lazy" /> : <div style={{ width: 48, height: 48, borderRadius: 10, background: 'var(--panel-3)', display: 'grid', placeItems: 'center' }}>🧩</div>}
+            {r.iconUrl ? <img src={r.iconUrl} alt="" width={48} height={48} style={{ borderRadius: 10, objectFit: 'cover' }} loading="lazy" /> : <div style={{ width: 48, height: 48, borderRadius: 10, background: 'var(--panel-3)', display: 'grid', placeItems: 'center' }}><Icon name="puzzle" size={20} /></div>}
             <div style={{ flex: 1, minWidth: 0 }}>
               <div className="row" style={{ gap: 8 }}><strong style={{ fontSize: 13.5 }}>{r.title}</strong><span className="faint">by {r.author}</span></div>
               <div className="faint" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.description}</div>
