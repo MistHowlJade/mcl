@@ -223,7 +223,7 @@ export default function Content() {
           {items.map(item => (
             <div key={item.fileName} className="panel" style={{ padding: 10 }}>
               <div
-                style={{ borderRadius: 8, overflow: 'hidden', background: '#0b0e14', aspectRatio: '16 / 9', display: 'grid', placeItems: 'center', cursor: 'pointer' }}
+                style={{ borderRadius: 8, overflow: 'hidden', background: 'var(--panel-3)', aspectRatio: '16 / 9', display: 'grid', placeItems: 'center', cursor: 'pointer' }}
                 onClick={() => api.contentOpenItem(item.path).catch(e => toast.toast(String(e), 'error'))}
                 title="点击用系统看图工具打开"
               >

@@ -244,7 +244,7 @@ export function registerIpcHandlers(): void {
     modrinth.searchMods(query, opts));
   ipcMain.handle('modrinth:searchContent', (_e, query: string, opts: { projectType: any; loader?: string; gameVersion?: string; limit?: number; index?: 'relevance' | 'downloads' | 'follows' | 'updated' }) =>
     modrinth.searchContent(query, opts));
-  ipcMain.handle('modrinth:installContent', (_e, instanceId: string, projectId: string, versionId: string | null, kind: 'resourcepacks' | 'shaderpacks' | 'worlds', opts: { gameVersion?: string; loader?: string }) =>
+  ipcMain.handle('modrinth:installContent', (_e, instanceId: string, projectId: string, versionId: string | null, kind: 'modpack' | 'resourcepacks' | 'shaderpacks' | 'worlds', opts: { gameVersion?: string; loader?: string; name?: string }) =>
     modrinth.installContent(instanceId, projectId, versionId, kind, opts));
   ipcMain.handle('modrinth:installed', (_e, instanceId: string) => {
     const tracked = modrinth.readInstalledMods(instanceId);

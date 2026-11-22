@@ -39,7 +39,7 @@ export default function Settings({ onNavigate }: { onNavigate?: (page: 'cloud') 
   const [cacheClearing, setCacheClearing] = useState(false);
   const [confirmClearCache, setConfirmClearCache] = useState(false);
   const toast = useToast();
-  const { theme, nav, setTheme, setNav } = usePrefs();
+  const { nav, setNav } = usePrefs();
 
   useEffect(() => {
     api.settingsGet().then(setSettings).catch(e => toast.toast(String(e), 'error'));
@@ -107,7 +107,11 @@ export default function Settings({ onNavigate }: { onNavigate?: (page: 'cloud') 
       setDownloadedUpdate(result);
       toast.toast(`更新包已下载：${result.fileName}（${formatBytes(result.sizeBytes)}）`, 'ok');
     } catch (e) { toast.toast(e instanceof Error ? e.message : String(e), 'error'); }
-    finally { setUpdateDownloading(false); setUpdateProgress(null); }
+    finally {
+      setUpdateDownloading(false);
+      setUpdateProgress(null);
+      window.dispatchEvent(new Event('mcl:updateDone'));
+    }
   };
 
   const exportDiagnostic = async () => {
@@ -140,15 +144,6 @@ export default function Settings({ onNavigate }: { onNavigate?: (page: 'cloud') 
       {/* ========== 常规 ========== */}
       <div className="panel">
         <div className="panel-title">常规</div>
-        <div className="setting-row">
-          <div className="label">外观主题<Tip text="极光深色：低饱和暗色 + 青绿强调，沉稳护眼；PCL 浅色：蓝白圆角卡片 + 明亮启动按钮，接近 PCL2 的经典观感。只影响启动器界面，不影响游戏。" /></div>
-          <div className="control">
-            <div className="segmented">
-              <button className={`btn small ${theme === 'aurora' ? 'primary' : ''}`} onClick={() => setTheme('aurora')}>极光深色</button>
-              <button className={`btn small ${theme === 'pcl' ? 'primary' : ''}`} onClick={() => setTheme('pcl')}>PCL 浅色</button>
-            </div>
-          </div>
-        </div>
         <div className="setting-row">
           <div className="label">导航样式<Tip text="侧边栏：左侧分组导航，空间利用率高；顶部标签：PCL2 那种标题栏下的横向标签页，切换更直观。只影响启动器界面。" /></div>
           <div className="control">

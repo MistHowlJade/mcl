@@ -3,9 +3,12 @@
  * 零依赖打包脚本：把已构建的 dist/ 与 electron-dist/ 塞进 Electron 运行时，生成免安装目录 + ZIP。
  *
  * 用法：
- *   npm run package            # 构建后执行（package 脚本会先跑 build）
+ *   npm run package:dir        # 构建后执行（package:dir 脚本会先跑 build）
  *   node scripts/package.js    # 直接使用现有构建产物
  *   node scripts/package.js --no-zip   # 只生成目录，不压 ZIP
+ *
+ * 注意：默认的 npm run package 现在走 electron-builder 生成单文件便携 exe；
+ * 本脚本保留为零依赖、可审计的目录/ZIP 打包备选。
  *
  * 产物：
  *   release/MCL-<版本>-win32-x64/      免安装目录（双击 MCL.exe 启动）

@@ -101,7 +101,7 @@ export default function Crash() {
           <details style={{ marginTop: 6 }}>
             <summary className="faint" style={{ cursor: 'pointer' }}>技术细节（给熟悉 Mod 的朋友看）</summary>
             <p className="faint" style={{ marginTop: 6, lineHeight: 1.7 }}>{diagnosis.detail}</p>
-            <div className="mono" style={{ marginTop: 8, background: '#0b0e14', borderRadius: 8, padding: 10, maxHeight: 180, overflow: 'auto', whiteSpace: 'pre-wrap' }}>{diagnosis.excerpt}</div>
+            <div className="mono" style={{ marginTop: 8, background: 'var(--panel-2)', borderRadius: 8, padding: 10, maxHeight: 180, overflow: 'auto', whiteSpace: 'pre-wrap' }}>{diagnosis.excerpt}</div>
             <div className="faint mt">来源：{diagnosis.sourceFile}</div>
           </details>
           {diagnosis.sourceFile === '(粘贴的文本)' && (

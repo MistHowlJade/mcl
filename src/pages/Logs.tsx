@@ -2,48 +2,27 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../lib/api';
 import { useToast } from '../components/Toast';
 import { formatBytes, timeAgo } from '../components/Modal';
-import type { InstanceInfo } from '../../electron/shared/types';
+import { useAsyncList, useInstanceSelection } from '../lib/hooks';
 
 interface LogEntry { name: string; sizeBytes: number; mtime: number; kind: string }
 
 export default function Logs() {
-  const [instances, setInstances] = useState<InstanceInfo[]>([]);
-  const [instanceId, setInstanceId] = useState<string | null>(() => localStorage.getItem('mcl:selectedInstance'));
-  const [logs, setLogs] = useState<LogEntry[]>([]);
+  const { instances, instanceId, setInstanceId } = useInstanceSelection();
+  const { items: logs } = useAsyncList<LogEntry>(
+    () => api.logsList(instanceId ?? undefined),
+    [instanceId],
+  );
   const [selected, setSelected] = useState<string | null>(null);
   const [content, setContent] = useState('');
   const [query, setQuery] = useState('');
   const [maxBytes, setMaxBytes] = useState(1024 * 1024);
   const toast = useToast();
-  const listSeq = useRef(0);
   const readSeq = useRef(0);
 
+  // 切换实例后旧选中项可能不存在：自动落到第一条，避免右侧一直显示上一个实例的日志
   useEffect(() => {
-    api.instancesList().then(list => {
-      setInstances(list);
-      // localStorage 里的实例可能已被删除：失效时自动落到第一台
-      setInstanceId(prev => (prev && list.some(i => i.id === prev)) ? prev : (list[0]?.id ?? null));
-    }).catch(e => toast.toast(String(e), 'error'));
-    /* eslint-disable-next-line */
-  }, []);
-
-  // 与首页/内容页共用同一个实例选择：切到别的页面后不应跳回旧实例
-  useEffect(() => {
-    if (instanceId) localStorage.setItem('mcl:selectedInstance', instanceId);
-  }, [instanceId]);
-
-  useEffect(() => {
-    const seq = ++listSeq.current;
-    api.logsList(instanceId ?? undefined).then(list => {
-      if (seq !== listSeq.current) return;
-      setLogs(list);
-      // 切换实例后旧选中项可能不存在：自动落到第一条，避免右侧一直显示上一个实例的日志
-      setSelected(prev => (prev && list.some(l => l.name === prev)) ? prev : (list[0]?.name ?? null));
-    }).catch(() => {
-      if (seq === listSeq.current) { setLogs([]); setSelected(null); setContent(''); }
-    });
-    /* eslint-disable-next-line */
-  }, [instanceId]);
+    setSelected(prev => (prev && logs.some(l => l.name === prev)) ? prev : (logs[0]?.name ?? null));
+  }, [logs]);
 
   useEffect(() => {
     const seq = ++readSeq.current;
@@ -110,9 +89,9 @@ export default function Logs() {
             <button className="btn small" onClick={() => setMaxBytes(b => Math.min(64 * 1024 * 1024, b * 4))} title="显示更早的日志内容（最多 64 MB）">显示更早</button>
             <span className="faint">已读取 {formatBytes(maxBytes)} · {filtered.length} 行{query ? '匹配' : ''}</span>
           </div>
-          <div className="mono" style={{ background: '#0b0e14', borderRadius: 8, padding: 12, height: '62vh', overflow: 'auto', fontSize: 11.5, lineHeight: 1.6 }}>
+          <div className="mono" style={{ background: 'var(--panel-2)', borderRadius: 8, padding: 12, height: '62vh', overflow: 'auto', fontSize: 11.5, lineHeight: 1.6 }}>
             {filtered.map((line, i) => {
-              const cls = /error|exception|fail/i.test(line) ? 'var(--red)' : /warn/i.test(line) ? 'var(--amber)' : /\[mcl\]/.test(line) ? 'var(--accent)' : '#a9b4c8';
+              const cls = /error|exception|fail/i.test(line) ? 'var(--red)' : /warn/i.test(line) ? 'var(--amber)' : /\[mcl\]/.test(line) ? 'var(--accent)' : '#4b617d';
               return <div key={i} style={{ color: cls, whiteSpace: 'pre-wrap' }}>{line}</div>;
             })}
             {filtered.length === 0 && <div className="faint">没有匹配的内容</div>}

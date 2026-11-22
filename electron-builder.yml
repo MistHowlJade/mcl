@@ -1,0 +1,35 @@
+appId: com.misthowljade.mcl
+productName: MCL
+copyright: Copyright © 2026 MCL
+
+# 单文件便携 exe：所有内容打进一个 MCL.exe，运行时解压到临时目录。
+# 只用于打包；运行时仍然零第三方依赖（React 已由 Vite 打进 dist/）。
+directories:
+  output: release/single
+
+files:
+  - dist/**/*
+  - electron-dist/**/*
+  - assets/**/*
+  - package.json
+
+asar: true
+
+# 国内环境 GitHub Release 可能不通，统一走 npmmirror 镜像
+electronDownload:
+  mirror: https://npmmirror.com/mirrors/electron/
+
+win:
+  icon: assets/app.ico
+  # Linux 交叉打包时 rcedit 需要 wine；关掉 exe 元数据/图标写入即可无 wine 构建。
+  # 代价： exe 的版本信息与图标不写入 PE 资源（不影响运行与便携模式）。
+  signAndEditExecutable: false
+  artifactName: MCL-${version}-portable-${arch}.${ext}
+  target:
+    - target: portable
+      arch:
+        - x64
+
+portable:
+  # 临时解压目录名；数据目录仍按 paths.ts 的规则放在 exe 同级 mcl-data/
+  unpackDirName: MCL-${version}

@@ -3,6 +3,7 @@ import { api, on } from '../lib/api';
 import { useToast } from '../components/Toast';
 import { ConfirmModal, formatBytes, timeAgo } from '../components/Modal';
 import { Icon } from '../components/Icon';
+import { PageSkeleton } from '../components/ui';
 import type { AppSettings, CrashDiagnosis, InstanceInfo, LaunchState } from '../../electron/shared/types';
 
 type Page = 'home' | 'instances' | 'servers' | 'mods' | 'content' | 'backups' | 'crash' | 'migrate' | 'accounts' | 'cloud' | 'logs' | 'settings';
@@ -146,9 +147,7 @@ export default function Home({ onNavigate, onLaunchFail }: { onNavigate: (p: Pag
     },
   ];
 
-  if (loading) {
-    return <div className="empty"><div className="big">⏳</div>正在加载…</div>;
-  }
+  if (loading) return <PageSkeleton />;
 
   return (
     <div>

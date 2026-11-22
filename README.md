@@ -123,12 +123,15 @@ npm install        # 安装依赖（需要 Node.js 18+）
 npm run dev        # 开发模式（Vite HMR + Electron）
 npm run typecheck  # 类型检查
 npm run build      # 产物：dist/（渲染进程）+ electron-dist/（主进程）
-npm run verify     # typecheck + build + 逻辑冒烟（38 项，CI 同款）
+npm run verify     # typecheck + build + 逻辑冒烟（39 项，CI 同款）
 npm run start      # 运行构建产物
-npm run package    # 零依赖打包：release/MCL-<版本>-<平台>-<架构>/ + .zip
+npm run package    # 单文件便携 exe：release/single/MCL-<版本>-portable-x64.exe
+npm run package:dir # 零依赖备选：release/MCL-<版本>-<平台>-<架构>/ + .zip
 ```
 
-`npm run package` 直接复用已安装的 Electron 运行时（不新增依赖），生成免安装目录与便携 ZIP。**默认就是 PCL2 / HMCL 式便携布局**：打包态所有数据（`shared/libraries|assets|versions`、`instances/`、`java/`、`cache/` 等）都写在启动器旁边的 `mcl-data/`，拷走整个文件夹即带走全部游戏本体与资源；只有启动器目录不可写（如装在 Program Files）时才退回 `%APPDATA%/mcl`。保留兼容：exe 同级放空的 `portable.txt` 仍会强制使用该目录。已有 `%APPDATA%/mcl` 数据不会自动迁移，需要保留时把该文件夹改名为启动器旁的 `mcl-data`。默认不生成 NSIS/MSI 安装器（避免签名与提权问题），需要安装器可自行接入 electron-builder。
+`npm run package` 使用 **electron-builder** 生成单文件便携 exe（一个 `MCL.exe`，双击即运行，对标 PCL2）。electron-builder 只是打包用 devDependency，运行时仍然零第三方依赖（React 已由 Vite 打进 `dist/`）。打包源已固化 npmmirror 镜像，国内网络可直接构建；Linux 交叉打包通过 `win.signAndEditExecutable: false` 跳过 wine 依赖，代价是 exe 不写入 PE 图标/版本信息，不影响运行。单文件体积较大（内含 Electron 运行时），启动时会解压到临时目录，未签名会触发 Windows SmartScreen 提示。
+
+`npm run package:dir` 是原来的零依赖打包脚本，生成免安装目录与便携 ZIP。**默认就是 PCL2 / HMCL 式便携布局**：打包态所有数据（`shared/libraries|assets|versions`、`instances/`、`java/`、`cache/` 等）都写在启动器旁边的 `mcl-data/`，拷走整个文件夹即带走全部游戏本体与资源；只有启动器目录不可写（如装在 Program Files）时才退回 `%APPDATA%/mcl`。单文件 exe 的 `mcl-data/` 会创建在 exe 同级目录。保留兼容：exe 同级放空的 `portable.txt` 仍会强制使用该目录。已有 `%APPDATA%/mcl` 数据不会自动迁移，需要保留时把该文件夹改名为启动器旁的 `mcl-data`。
 
 > 仓库约定：`master` 已开启分支保护，**禁止任何直接 push**（管理员也一样）。所有更改需先推到临时分支、提 PR 并合并；不要绕过该流程覆盖远程历史。
 
@@ -182,7 +185,7 @@ src/                 React 渲染进程（启动台/实例/服务器/模组/内�
 - ✅ HTTP/HTTPS 代理（下载 / API / 微软登录 / 云同步 + 游戏 JVM 参数）
 - ✅ Modrinth 在线下载资源包 / 光影 / 世界；世界 ZIP 导入导出；实例复制
 - ✅ 局域网世界扫描（224.0.2.60:4445）与一键复制连接地址
-- ✅ 零依赖便携打包 `npm run package`（免安装目录 + ZIP）
+- ✅ 单文件便携 exe `npm run package`（PCL2 式一个 exe）；零依赖目录/ZIP 备选 `npm run package:dir`
 - ⬜ 离线模式下经材质包注入他人可见的皮肤（社区方案，存在兼容性风险）
 - ⬜ macOS / Linux 体验打磨（开发环境即 Windows，当前优先 Windows）
 - ⬜ 代码签名（需要证书，当前开发版未签名，Defender 可能提示，请核对签名与源码一致）
