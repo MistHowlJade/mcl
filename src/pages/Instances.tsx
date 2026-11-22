@@ -189,7 +189,7 @@ export function InstanceCard({ inst, onReload, onDiskUsage, onDelete, onExport }
           <button className="btn small" onClick={() => setAdvanced(true)}>高级设置</button>
           <button className="btn small" onClick={() => onExport(inst)}>导出…</button>
           <details className="more-menu">
-            <summary className="btn small ghost">更多 ▾</summary>
+            <summary><span>更多 ▾</span></summary>
             <div className="menu-pop">
               <button className="btn small" onClick={() => api.instanceOpenGameDir(inst.id).catch(e => toast.toast(String(e), 'error'))}>📂 打开游戏目录</button>
               <button className="btn small" onClick={() => api.instanceOpenDir(inst.id).catch(e => toast.toast(String(e), 'error'))}>🗂 实例文件夹</button>
