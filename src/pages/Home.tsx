@@ -8,7 +8,6 @@ type Page = 'home' | 'instances' | 'servers' | 'mods' | 'content' | 'backups' | 
 
 const LOADER_LABEL: Record<string, string> = { vanilla: '原版', fabric: 'Fabric', forge: 'Forge', neoforge: 'NeoForge', quilt: 'Quilt' };
 const PRESET_LABEL: Record<string, string> = { low: '低配', standard: '标准', heavy: '大型整合包' };
-const PRESET_BADGE: Record<string, string> = { low: '2G', standard: '4G', heavy: '8G' };
 
 function loaderKey(loader: string | null | undefined): string {
   const l = (loader ?? '').toLowerCase();
@@ -40,9 +39,6 @@ export default function Home({ onNavigate, onLaunchFail }: { onNavigate: (p: Pag
       const [list, account] = await Promise.all([api.instancesList(), api.accountsActive()]);
       setInstances(list);
       setAccountName(account?.name ?? null);
-      // 用函数式更新读取最新选中项：退出/崩溃事件里调用的是挂载时的旧闭包，
-      // 直接读 selectedId 会把用户后来切换的实例重置成列表第一个；
-      // localStorage 里的实例被删除时也要回退，否则界面显示第一个但选中 ID 已失效
       setSelectedId(prev => (prev && list.some(i => i.id === prev)) ? prev : (list[0]?.id ?? null));
     } catch (e) {
       toast.toast(e instanceof Error ? e.message : String(e), 'error');
@@ -52,7 +48,6 @@ export default function Home({ onNavigate, onLaunchFail }: { onNavigate: (p: Pag
   };
 
   useEffect(() => {
-    // 挂载时恢复主进程里的启动状态（切走再切回来也能看到"游戏运行中"）
     api.launchState().then(s => { if (s) setLaunchState(s); }).catch(() => undefined);
     api.settingsGet().then(s => { setSettings(s); settingsRef.current = s; }).catch(() => undefined);
     void reload();
@@ -71,14 +66,12 @@ export default function Home({ onNavigate, onLaunchFail }: { onNavigate: (p: Pag
       setCrash(d);
       setProgress(null);
       onLaunchFail(`游戏崩溃：${d.title}`);
-      // 崩溃时按设置自动跳到崩溃分析页（日志、人话解释、一键修复都在那里）
       if (settingsRef.current?.launch.showLogOnCrash !== false) onNavigate('crash');
       void reload();
     });
     const offExit = on('launch:exit', (e: { instanceId: string }) => {
       setProgress(null);
       void reload();
-      // 只处理当前实例的退出事件，避免旧进程的延迟事件把新启动状态改成 exited
       if (e?.instanceId) {
         setLaunchState(prev => (prev.instanceId === e.instanceId ? { ...prev, status: 'exited', pid: null, progress: null } : prev));
       }
@@ -87,8 +80,6 @@ export default function Home({ onNavigate, onLaunchFail }: { onNavigate: (p: Pag
       onLaunchFail(e.error);
       setProgress(null);
       setLogs(prev => [...prev, `[mcl] 启动失败：${e.error}`]);
-      // 状态由主进程的 launch:status 事件决定：真正失败会推 idle，
-      // 「已有实例在运行」被拒绝时保持 running，不能在这里强行覆盖
     });
     return () => { [offStatus, offProgress, offLog, offCrash, offExit, offFail].forEach(f => f()); };
   }, []);
@@ -98,7 +89,6 @@ export default function Home({ onNavigate, onLaunchFail }: { onNavigate: (p: Pag
   }, [logs]);
 
   const selected = useMemo(() => instances.find(i => i.id === selectedId) ?? instances[0] ?? null, [instances, selectedId]);
-
   const totalSaves = instances.reduce((a, i) => a + i.savesCount, 0);
   const totalMods = instances.reduce((a, i) => a + i.modsCount, 0);
   const totalPlaySeconds = instances.reduce((a, i) => a + (i.playTimeSeconds ?? 0), 0);
@@ -107,7 +97,6 @@ export default function Home({ onNavigate, onLaunchFail }: { onNavigate: (p: Pag
     setCrash(null);
     setLogs([]);
     setProgress(null);
-    // 状态完全由主进程的 launch:status 事件驱动，避免"已有实例在运行"被拒绝后界面卡在准备中
     try {
       await api.launchStart(instance.id);
     } catch (e) {
@@ -117,7 +106,7 @@ export default function Home({ onNavigate, onLaunchFail }: { onNavigate: (p: Pag
     }
   };
 
-  // 单击选中、双击直接启动（PCL/HMCL 的实例卡交互），键盘 Enter 仍可选中
+  // 单击选中、双击直接启动（PCL/HMCL 的实例行交互）
   const launchInstance = (instance: InstanceInfo) => {
     setSelectedId(instance.id);
     if (settings?.general.confirmBeforeLaunch) {
@@ -128,7 +117,6 @@ export default function Home({ onNavigate, onLaunchFail }: { onNavigate: (p: Pag
   };
 
   const doLaunch = () => { if (selected) launchInstance(selected); };
-
   const busy = launchState.status === 'preparing' || launchState.status === 'downloading' || launchState.status === 'launching' || launchState.status === 'running';
 
   const quickActions: Array<{ icon: string; title: string; hint: string; onClick: () => void }> = [
@@ -161,124 +149,67 @@ export default function Home({ onNavigate, onLaunchFail }: { onNavigate: (p: Pag
     return <div className="empty"><div className="big">⏳</div>正在加载…</div>;
   }
 
-  const loader = selected ? loaderKey(selected.loader) : 'vanilla';
-  const preset = selected?.memoryPreset ?? 'standard';
-
   return (
     <div>
       <section className="home-hero">
         <div className="home-hero-content">
-          <span className="eyebrow"><span className="status-dot" />MCL · 本地隔离运行</span>
-          <h1>欢迎回来，{accountName ?? '旅人'}</h1>
-          <p className="tagline">隔离你的每个世界，自动适配 Java，多线程满速下载，崩溃能看懂——这就是新一代启动器该有的样子。</p>
-          <div className="hero-actions">
-            <button className="launch-btn" onClick={doLaunch} disabled={busy || !selected} aria-busy={busy}>
-              {busy ? <span className="btn-spinner" aria-hidden="true" /> : <span className="launch-icon">▶</span>}
-              {busy ? (launchState.status === 'running' ? '游戏运行中' : '准备中…') : '启 动'}
-            </button>
-            {busy && launchState.status === 'downloading' && (
-              <button
-                className="btn"
-                onClick={() => api.launchCancelDownload()
-                  .then(ok => toast.toast(ok ? '已发送取消下载请求' : '当前没有可取消的下载', ok ? 'info' : 'error'))
-                  .catch(e => toast.toast(String(e), 'error'))}
-              >取消下载</button>
-            )}
-            {busy && launchState.message && <div className="muted" style={{ maxWidth: 300 }}>{launchState.message}</div>}
-          </div>
-          {progress && (
-            <div className="hero-progress">
-              <div className="progress"><div style={{ width: `${Math.min(100, (progress.done / Math.max(1, progress.total)) * 100)}%` }} /></div>
-              <div className="faint mt">已下载 {formatBytes(progress.done)} / {formatBytes(progress.total)}</div>
+          <div className="hero-id">
+            <div className="hero-logo">M</div>
+            <div>
+              <span className="eyebrow"><span className="status-dot" />启动台</span>
+              <h2>欢迎回来，{accountName ?? '旅人'}</h2>
+              <div className="hero-hint">
+                {selected
+                  ? <>当前：<b>{selected.name}</b> · {selected.mcVersion} · {LOADER_LABEL[loaderKey(selected.loader)]} · 上次游玩 {timeAgo(selected.lastPlayedAt)}</>
+                  : '还没有实例。创建或迁移一个后即可从这里启动。'}
+              </div>
             </div>
-          )}
-          <div className="launch-hint">
-            {selected
-              ? <>当前实例 <b>{selected.name}</b> · 上次游玩 {timeAgo(selected.lastPlayedAt)} · 双击下方卡片可直接启动</>
-              : '还没有实例。创建第一个实例后就能从这里启动。'}
           </div>
         </div>
-
-        <div className="hero-card">
-          {selected ? (
-            <>
-              <div className={`cover cover-hero loader-${loader}`}>
-                <div className="cover-topline">
-                  <span className="cover-pill">{LOADER_LABEL[loader]}</span>
-                  <span className="cover-pill">{PRESET_BADGE[preset]} 内存</span>
-                </div>
-                <div>
-                  <div className="cover-version">{selected.mcVersion === 'unknown' ? '版本未识别' : selected.mcVersion}</div>
-                  <div className="cover-name" title={selected.name}>{selected.name}</div>
-                </div>
-              </div>
-              <div className="hero-card-meta">
-                <div><span>模组</span><b>{selected.modsCount}</b></div>
-                <div><span>存档</span><b>{selected.savesCount}</b></div>
-                <div><span>内存</span><b>{PRESET_LABEL[preset]}</b></div>
-              </div>
-              <div className="row spread">
-                <span className="faint">{selected.loaderVersion ? `${LOADER_LABEL[loader]} ${selected.loaderVersion}` : LOADER_LABEL[loader]}</span>
-                <button className="btn small ghost" onClick={() => onNavigate('instances')}>管理实例 →</button>
-              </div>
-            </>
-          ) : (
-            <>
-              <div className="cover cover-hero loader-vanilla">
-                <div className="cover-topline"><span className="cover-pill">等待第一个世界</span></div>
-                <div>
-                  <div className="cover-version">?</div>
-                  <div className="cover-name">创建实例后，这里会显示当前版本与加载器</div>
-                </div>
-              </div>
-              <button className="btn primary" onClick={() => onNavigate('instances')}>＋ 创建实例</button>
-            </>
+        <div className="hero-actions">
+          <button className="launch-btn" onClick={doLaunch} disabled={busy || !selected} aria-busy={busy}>
+            {busy ? <span className="btn-spinner" aria-hidden="true" /> : <span className="launch-icon">▶</span>}
+            {busy ? (launchState.status === 'running' ? '游戏运行中' : '准备中…') : '启 动'}
+          </button>
+          {busy && launchState.status === 'downloading' && (
+            <button className="btn" onClick={() => api.launchCancelDownload()
+              .then(ok => toast.toast(ok ? '已发送取消下载请求' : '当前没有可取消的下载', ok ? 'info' : 'error'))
+              .catch(e => toast.toast(String(e), 'error'))}>取消下载</button>
           )}
+          {busy && launchState.message && <div className="muted" style={{ maxWidth: 220, fontSize: 11 }}>{launchState.message}</div>}
         </div>
+        {progress && (
+          <div className="hero-progress">
+            <div className="progress"><div style={{ width: `${Math.min(100, (progress.done / Math.max(1, progress.total)) * 100)}%` }} /></div>
+            <div className="faint">已下载 {formatBytes(progress.done)} / {formatBytes(progress.total)}</div>
+          </div>
+        )}
       </section>
 
       {crash && (
         <div className="panel diagnosis high mt-lg">
           <div className="row spread" style={{ alignItems: 'flex-start' }}>
-            <div>
-              <strong>⚡ {crash.title}</strong>
-              <div className="faint" style={{ marginTop: 3 }}>{crash.summary}</div>
-            </div>
+            <div><strong>⚡ {crash.title}</strong><div className="faint" style={{ marginTop: 3 }}>{crash.summary}</div></div>
             <button className="btn small" onClick={() => onNavigate('crash')}>查看并修复 →</button>
           </div>
         </div>
       )}
 
       <div className="home-stats">
-        <div className="stat-card">
-          <div className="stat-icon">📦</div>
-          <div><div className="k">实例</div><div className="v">{instances.length}</div><div className="d">版本隔离，互不干扰</div></div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-icon">💾</div>
-          <div><div className="k">存档</div><div className="v">{totalSaves}</div><div className="d">支持启动前自动备份</div></div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-icon">🧩</div>
-          <div><div className="k">已安装模组</div><div className="v">{totalMods}</div><div className="d">含体检与更新检查</div></div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-icon">⏱️</div>
-          <div><div className="k">累计游玩</div><div className="v">{Math.floor(totalPlaySeconds / 3600)}<small> 小时</small></div><div className="d">时长统计仅保存在本机</div></div>
-        </div>
+        <div className="stat-card"><div className="stat-icon">📦</div><div><div className="k">实例</div><div className="v">{instances.length}</div><div className="d">版本隔离</div></div></div>
+        <div className="stat-card"><div className="stat-icon">💾</div><div><div className="k">存档</div><div className="v">{totalSaves}</div><div className="d">自动备份</div></div></div>
+        <div className="stat-card"><div className="stat-icon">🧩</div><div><div className="k">模组</div><div className="v">{totalMods}</div><div className="d">体检与更新</div></div></div>
+        <div className="stat-card"><div className="stat-icon">⏱️</div><div><div className="k">游玩</div><div className="v">{Math.floor(totalPlaySeconds / 3600)}<small> 小时</small></div><div className="d">仅存本机</div></div></div>
       </div>
 
       <section className="home-section">
         <div className="section-head">
-          <div>
-            <h2>我的实例</h2>
-            <p>单击选择，双击直接启动</p>
-          </div>
-          <button className="btn small ghost" onClick={() => onNavigate('instances')}>全部实例 →</button>
+          <div><h2>我的实例</h2><p>单击选择，双击启动</p></div>
+          <button className="btn small ghost" onClick={() => onNavigate('instances')}>管理全部 →</button>
         </div>
         {instances.length === 0 ? (
           <div className="drop-hint">
-            <div style={{ fontSize: 30, marginBottom: 8 }}>📦</div>
+            <div style={{ fontSize: 28, marginBottom: 8 }}>📦</div>
             <div style={{ fontWeight: 700 }}>还没有任何实例</div>
             <div className="faint mt">创建第一个实例，或从 HMCL / PCL2 / Prism 迁移过来</div>
             <div className="row mt-lg" style={{ justifyContent: 'center' }}>
@@ -287,30 +218,30 @@ export default function Home({ onNavigate, onLaunchFail }: { onNavigate: (p: Pag
             </div>
           </div>
         ) : (
-          <div className="home-instance-strip">
+          <div className="instance-rows">
             {instances.map(inst => {
               const key = loaderKey(inst.loader);
               return (
-                <button
+                <div
                   key={inst.id}
-                  type="button"
-                  className={`home-instance ${selected?.id === inst.id ? 'selected' : ''}`}
+                  className={`instance-row ${selected?.id === inst.id ? 'selected' : ''}`}
                   onClick={() => setSelectedId(inst.id)}
                   onDoubleClick={() => launchInstance(inst)}
                   title="单击选择，双击启动"
                 >
-                  <div className={`cover cover-sm loader-${key}`}>
-                    <div className="cover-topline">
-                      <span className="cover-pill">{LOADER_LABEL[key]}</span>
-                      {selected?.id === inst.id && <span className="cover-pill">当前</span>}
-                    </div>
-                    <div className="cover-version">{inst.mcVersion === 'unknown' ? '?' : inst.mcVersion}</div>
+                  <div className={`row-cover loader-${key}`}>
+                    <span className="cover-pill">{LOADER_LABEL[key]}</span>
+                    <b>{inst.mcVersion === 'unknown' ? '?' : inst.mcVersion}</b>
                   </div>
-                  <div className="home-instance-info">
-                    <span className="n" title={inst.name}>{inst.name}</span>
-                    <span className="d">{inst.modsCount} 模组 · {inst.savesCount} 存档</span>
+                  <div className="row-info">
+                    <div className="n" title={inst.name}>{inst.name}</div>
+                    <div className="d">{inst.loaderVersion ? `${LOADER_LABEL[key]} ${inst.loaderVersion}` : LOADER_LABEL[key]} · {PRESET_LABEL[inst.memoryPreset ?? 'standard']}内存 · {timeAgo(inst.lastPlayedAt)}</div>
                   </div>
-                </button>
+                  <div className="row-meta"><span>🧩 {inst.modsCount}</span><span>🌍 {inst.savesCount}</span></div>
+                  <div className="row-actions">
+                    <button className="btn small primary" title="启动" onClick={e => { e.stopPropagation(); launchInstance(inst); }}>▶</button>
+                  </div>
+                </div>
               );
             })}
           </div>
@@ -318,12 +249,7 @@ export default function Home({ onNavigate, onLaunchFail }: { onNavigate: (p: Pag
       </section>
 
       <section className="home-section">
-        <div className="section-head">
-          <div>
-            <h2>快捷操作</h2>
-            <p>常用入口，一步到位</p>
-          </div>
-        </div>
+        <div className="section-head"><div><h2>快捷操作</h2><p>常用入口，一步到位</p></div></div>
         <div className="quick-grid">
           {quickActions.map(action => (
             <button key={action.title} type="button" className="quick-card" onClick={action.onClick}>
