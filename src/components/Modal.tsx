@@ -1,34 +1,72 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useId, useRef } from 'react';
+import { createPortal } from 'react-dom';
 
-export function Modal({ title, onClose, children, footer }: {
+export function Modal({ title, onClose, children, footer, wide }: {
   title: string;
   onClose: () => void;
   children: React.ReactNode;
   footer?: React.ReactNode;
+  /** 表单型弹窗（创建实例/服务器、高级设置）用更宽的版式，避免标签与控件挤在一起 */
+  wide?: boolean;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const closeRef = useRef(onClose);
   closeRef.current = onClose;
+  const titleId = useId();
+
   // PCL2/Modrinth 共有的基础交互：Esc 与遮罩都能关闭，打开时把焦点放到安全/默认动作上。
   // 用 ref 保存回调，避免父组件重渲染时反复重置焦点（弹窗里输入到一半丢焦点很糟）。
+  // 弹窗必须挂到 document.body：页面切换动画会给祖先留下 transform，
+  // position: fixed 会被祖先“捕获”，导致弹窗被裁切/遮罩盖不到侧边栏（真机截图复现过）。
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.stopPropagation(); closeRef.current(); } };
+    const previous = document.activeElement as HTMLElement | null;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') { e.stopPropagation(); closeRef.current(); return; }
+      // 简易焦点陷阱：Tab 在弹窗内循环，避免键盘焦点跑到被遮住的页面上
+      if (e.key !== 'Tab' || !ref.current) return;
+      const focusables = Array.from(ref.current.querySelectorAll<HTMLElement>(
+        'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      )).filter(el => el.offsetParent !== null);
+      if (focusables.length === 0) { e.preventDefault(); ref.current.focus(); return; }
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      const active = document.activeElement;
+      if (e.shiftKey && (active === first || active === ref.current)) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && active === last) { e.preventDefault(); first.focus(); }
+    };
     window.addEventListener('keydown', onKey, true);
     const target = ref.current?.querySelector<HTMLElement>('[data-autofocus]') ?? ref.current;
     target?.focus();
-    return () => window.removeEventListener('keydown', onKey, true);
+    return () => {
+      window.removeEventListener('keydown', onKey, true);
+      // 关闭后把焦点还给打开它的按钮，键盘用户不会“迷路”
+      if (previous && document.contains(previous)) previous.focus();
+    };
   }, []);
-  return (
-    <div className="modal-mask" onClick={onClose}>
-      <div className="modal" ref={ref} role="dialog" aria-modal="true" aria-label={title} tabIndex={-1} onClick={e => e.stopPropagation()}>
-        <div className="row spread" style={{ marginBottom: 10 }}>
-          <h2>{title}</h2>
+
+  return createPortal(
+    <div
+      className="modal-mask"
+      onMouseDown={e => { if (e.target === e.currentTarget) closeRef.current(); }}
+    >
+      <div
+        className={`modal ${wide ? 'wide' : ''}`}
+        ref={ref}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        tabIndex={-1}
+        onMouseDown={e => e.stopPropagation()}
+      >
+        <div className="modal-head">
+          <h2 id={titleId}>{title}</h2>
           <button className="winbtn" onClick={onClose} aria-label="关闭">✕</button>
         </div>
-        <div>{children}</div>
-        {footer && <div className="row modal-footer" style={{ justifyContent: 'flex-end', marginTop: 16 }}>{footer}</div>}
+        <div className="modal-body">{children}</div>
+        {footer && <div className="modal-footer">{footer}</div>}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 

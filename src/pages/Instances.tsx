@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../lib/api';
 import { useToast } from '../components/Toast';
 import { Modal, Tip, Toggle, ConfirmModal, formatBytes, timeAgo } from '../components/Modal';
+import { VersionList } from '../components/VersionList';
 import type { ExportFormat, InstanceConfig, InstanceInfo, LoaderType, MemoryPreset } from '../../electron/shared/types';
 
 const PRESET_INFO: Record<MemoryPreset, { label: string; hint: string; badge: string }> = {
@@ -218,7 +219,7 @@ function AdvancedSettingsModal({ inst, onClose, onSaved }: { inst: InstanceInfo;
   };
 
   return (
-    <Modal title={`高级设置 · ${inst.name}`} onClose={onClose} footer={<>
+    <Modal title={`高级设置 · ${inst.name}`} onClose={onClose} wide footer={<>
       <button className="btn ghost" onClick={onClose}>取消</button>
       <button className="btn primary" onClick={save} disabled={saving}>{saving ? '保存中…' : '保存'}</button>
     </>}>
@@ -391,7 +392,7 @@ function CreateInstanceModal({ onClose, onCreated }: { onClose: () => void; onCr
   };
 
   return (
-    <Modal title="创建实例" onClose={onClose} footer={<>
+    <Modal title="创建实例" onClose={onClose} wide footer={<>
       <button className="btn ghost" onClick={onClose}>取消</button>
       <button className="btn primary" onClick={submit} disabled={creating || !mcVersion || versionsLoading || !!versionsError}>{creating ? '创建中…' : '创建'}</button>
     </>}>
@@ -403,16 +404,22 @@ function CreateInstanceModal({ onClose, onCreated }: { onClose: () => void; onCr
       <div className="setting-row">
         <div className="label">Minecraft 版本<Tip text="正式版（release）默认显示；勾选左侧「显示快照」可看到 snapshots。版本清单来自 Mojang 官方。" /></div>
         <div className="control" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 8 }}>
-          <div className="row">
+          <div className="row" style={{ gap: 10 }}>
             <input className="input" value={search} placeholder="搜索版本号，如 1.20 / 1.7.10…" onChange={e => setSearch(e.target.value)} />
-            <Toggle checked={showSnapshots} onChange={setShowSnapshots} label="显示快照版本" />
+            <span className="row" style={{ gap: 7, flexShrink: 0, fontSize: 12.5, color: 'var(--text-dim)' }}>
+              <Toggle checked={showSnapshots} onChange={setShowSnapshots} label="显示快照版本" />
+              <span onClick={() => setShowSnapshots(v => !v)} style={{ cursor: 'pointer' }}>显示快照</span>
+            </span>
           </div>
-          <select className="input" size={7} value={mcVersion} disabled={versionsLoading || !!versionsError || versions.length === 0} onChange={e => setMcVersion(e.target.value)}>
-            {versionsLoading && <option value="">正在加载版本清单…</option>}
-            {!versionsLoading && versionsError && <option value="">加载失败，请点下方「重试」</option>}
-            {!versionsLoading && !versionsError && filtered.length === 0 && <option value="">没有匹配的版本</option>}
-            {filtered.map(v => <option key={v.id} value={v.id}>{v.id}{v.type !== 'release' ? `（${v.type}）` : ''}</option>)}
-          </select>
+          <VersionList
+            options={filtered}
+            selected={mcVersion}
+            onSelect={setMcVersion}
+            loading={versionsLoading}
+            disabled={versionsLoading || !!versionsError}
+            loadingText="正在加载版本清单…"
+            emptyText={versionsError ? '加载失败，请点下方「重试」' : '没有匹配的版本'}
+          />
           {versionsError ? (
             <div className="row" style={{ gap: 8, alignItems: 'flex-start', padding: '8px 10px', borderRadius: 8, background: 'var(--red-soft)', border: '1px solid rgba(242,104,104,.4)' }}>
               <div className="faint" style={{ flex: 1, lineHeight: 1.6 }}>
