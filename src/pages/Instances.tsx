@@ -24,6 +24,7 @@ function loaderKey(loader: string | null | undefined): string {
 
 export default function Instances() {
   const [instances, setInstances] = useState<InstanceInfo[]>([]);
+  const [search, setSearch] = useState('');
   const [creating, setCreating] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<InstanceInfo | null>(null);
   const [exportTarget, setExportTarget] = useState<InstanceInfo | null>(null);
@@ -31,6 +32,9 @@ export default function Instances() {
 
   const reload = () => api.instancesList().then(setInstances).catch(e => toast.toast(String(e), 'error'));
   useEffect(() => { void reload(); /* eslint-disable-next-line */ }, []);
+
+  const list = useMemo(() => (search ? instances.filter(i => i.name.includes(search)) : instances), [instances, search]);
+  const launch = (inst: InstanceInfo) => api.launchStart(inst.id).catch(e => toast.toast(String(e), 'error'));
 
   const diskUsage = async (id: string) => {
     try {
@@ -52,11 +56,17 @@ export default function Instances() {
         </div>
       </div>
 
-      {instances.length === 0 && <div className="empty"><div className="big">📦</div>还没有实例，点右上角创建第一个</div>}
+      <div className="search-box" style={{ maxWidth: 380, marginBottom: 12 }}>
+        <input className="input" placeholder="搜索实例…" value={search} onChange={e => setSearch(e.target.value)} />
+      </div>
+
+      {list.length === 0 && (search
+        ? <div className="empty"><div className="big">🔍</div>没有符合「{search}」的实例</div>
+        : <div className="empty"><div className="big">📦</div>还没有实例，点上方创建第一个</div>)}
 
       <div className="instance-grid">
-        {instances.map(inst => (
-          <InstanceCard key={inst.id} inst={inst} onReload={reload} onDiskUsage={diskUsage} onDelete={setDeleteTarget} onExport={setExportTarget} />
+        {list.map(inst => (
+          <InstanceCard key={inst.id} inst={inst} onReload={reload} onDiskUsage={diskUsage} onDelete={setDeleteTarget} onExport={setExportTarget} onLaunch={launch} />
         ))}
       </div>
 
@@ -84,7 +94,7 @@ export default function Instances() {
   );
 }
 
-export function InstanceCard({ inst, onReload, onDiskUsage, onDelete, onExport }: { inst: InstanceInfo; onReload: () => void; onDiskUsage: (id: string) => void; onDelete: (inst: InstanceInfo) => void; onExport: (inst: InstanceInfo) => void }) {
+export function InstanceCard({ inst, onReload, onDiskUsage, onDelete, onExport, onLaunch }: { inst: InstanceInfo; onReload: () => void; onDiskUsage: (id: string) => void; onDelete: (inst: InstanceInfo) => void; onExport: (inst: InstanceInfo) => void; onLaunch: (inst: InstanceInfo) => void }) {
   const [editing, setEditing] = useState(false);
   const [advanced, setAdvanced] = useState(false);
   const [duplicating, setDuplicating] = useState(false);
@@ -132,7 +142,7 @@ export function InstanceCard({ inst, onReload, onDiskUsage, onDelete, onExport }
   const preset = inst.memoryPreset ?? 'standard';
 
   return (
-    <div className="instance-tile">
+    <div className="instance-tile" onDoubleClick={() => onLaunch(inst)} title="双击直接启动">
       <div className={`cover cover-tile loader-${key}`}>
         <div className="cover-topline">
           <span className="cover-pill">{LOADER_LABEL[key]}{inst.loaderVersion ? ` ${inst.loaderVersion}` : ''}</span>
@@ -184,7 +194,10 @@ export function InstanceCard({ inst, onReload, onDiskUsage, onDelete, onExport }
               <button className="btn small ghost" onClick={() => { setEditing(false); setName(inst.name); setMcVersion(inst.mcVersion === 'unknown' ? '' : inst.mcVersion); }}>取消</button>
             </>
           ) : (
-            <button className="btn small" onClick={() => setEditing(true)}>重命名</button>
+            <>
+              <button className="btn small primary" onClick={() => onLaunch(inst)}>▶ 启动</button>
+              <button className="btn small" onClick={() => setEditing(true)}>重命名</button>
+            </>
           )}
           <button className="btn small" onClick={() => setAdvanced(true)}>高级设置</button>
           <button className="btn small" onClick={() => onExport(inst)}>导出…</button>

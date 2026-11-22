@@ -326,7 +326,7 @@ textarea.input { height: auto; padding: 9px 11px; resize: vertical; min-height: 
 }
 .status-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--a-4); box-shadow: 0 0 8px var(--a-4); }
 .home-hero h1 {
-  font-size: clamp(30px, 3.1vw, 42px); font-weight: 800; letter-spacing: -1.2px; line-height: 1.12;
+  font-size: clamp(30px, 3vw, 38px); font-weight: 800; letter-spacing: -1.2px; line-height: 1.12;
   margin-top: 16px;
   background: linear-gradient(100deg, #ffffff 0%, #d9f8ec 58%, #8ee7c3 100%);
   -webkit-background-clip: text; background-clip: text; color: transparent;
@@ -375,7 +375,8 @@ textarea.input { height: auto; padding: 9px 11px; resize: vertical; min-height: 
 .cover.loader-forge { background: linear-gradient(145deg, #5a331b 0%, #9d5f2e 52%, #e9b072 100%); }
 .cover.loader-neoforge { background: linear-gradient(145deg, #4a2140 0%, #9c3b76 52%, #f08ac2 100%); }
 .cover.loader-quilt { background: linear-gradient(145deg, #2b2a63 0%, #5552b0 52%, #a9a6ff 100%); }
-.cover-hero { min-height: 222px; padding: 16px; display: flex; flex-direction: column; justify-content: space-between; }
+.cover-hero { min-height: 236px; padding: 16px; display: flex; flex-direction: column; justify-content: space-between; }
+.cover-hero .cover-version { font-size: 38px; }
 .cover-topline { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .cover-pill {
   font-size: 10.5px; font-weight: 650; color: rgba(255, 255, 255, 0.92);
@@ -484,7 +485,7 @@ textarea.input { height: auto; padding: 9px 11px; resize: vertical; min-height: 
 .instance-tile:hover .cover { filter: brightness(1.08); }
 .instance-tile-body { padding: 12px 14px 14px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 .instance-tile-title { display: flex; align-items: center; gap: 8px; min-width: 0; }
-.instance-tile-title h3 { font-size: 13.5px; font-weight: 750; letter-spacing: -.1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.instance-tile-title h3 { font-size: 14px; font-weight: 750; letter-spacing: -.1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .instance-tile-meta { display: flex; align-items: center; gap: 12px; color: var(--text-faint); font-size: 10.5px; flex-wrap: wrap; }
 .instance-tile-meta b { color: var(--text-dim); font-weight: 650; }
 .instance-tile-actions { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; margin-top: 2px; }
