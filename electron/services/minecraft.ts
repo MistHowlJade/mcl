@@ -50,6 +50,11 @@ export function cancelLaunchDownload(): boolean {
   return true;
 }
 
+/** 与 instances.ts 保持一致：256MB～64GB 的整数才作为合法堆大小 */
+function isHeapMB(v: unknown): v is number {
+  return Number.isInteger(v) && (v as number) >= 256 && (v as number) <= 65536;
+}
+
 const MEMORY_PRESETS: Record<MemoryPreset, { initial: string; max: string; gc: string[]; label: string }> = {
   low: { initial: '1G', max: '2G', gc: [], label: '低配机器' },
   standard: { initial: '2G', max: '4G', gc: [], label: '标准（大部分整合包）' },
@@ -668,7 +673,11 @@ export async function launchInstance(instanceId: string, options: LaunchOptions 
   };
 
   const preset = MEMORY_PRESETS[instance.memoryPreset ?? 'standard'];
-  const jvmArgs: string[] = [`-Xms${preset.initial}`, `-Xmx${preset.max}`, ...preset.gc];
+  // PCL CE 式的初始/最大堆分开设置：只有两个值都有效且 initial <= max 时才覆盖预设
+  const customHeap = isHeapMB(instance.heapInitialMB) && isHeapMB(instance.heapMaxMB) && instance.heapInitialMB <= instance.heapMaxMB
+    ? { initial: `${instance.heapInitialMB}M`, max: `${instance.heapMaxMB}M` }
+    : preset;
+  const jvmArgs: string[] = [`-Xms${customHeap.initial}`, `-Xmx${customHeap.max}`, ...preset.gc];
   if (settings.launch.utf8Encoding) {
     jvmArgs.push('-Dfile.encoding=UTF-8', '-Dsun.jnu.encoding=UTF-8');
   }

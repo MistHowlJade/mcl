@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { api, on } from '../lib/api';
 import { useToast } from '../components/Toast';
 import { Modal, Tip, formatBytes, timeAgo } from '../components/Modal';
+import { FavoriteButton, useFavorites } from '../components/FavoriteButton';
 import type { InstanceInfo, InstalledMod, ModHealthIssue, ModSearchResult } from '../../electron/shared/types';
 
 type Tab = 'installed' | 'search' | 'import';
@@ -246,6 +247,8 @@ function SearchTab({ instance }: { instance: InstanceInfo }) {
   const [results, setResults] = useState<ModSearchResult[]>([]);
   const [searching, setSearching] = useState(false);
   const [installing, setInstalling] = useState<string | null>(null);
+  const [onlyFavorites, setOnlyFavorites] = useState(false);
+  const { ids: favoriteIds } = useFavorites();
   const toast = useToast();
   const searchSeq = useRef(0);
   const loader = instance.loader === 'vanilla' ? undefined : instance.loader;
@@ -296,10 +299,11 @@ function SearchTab({ instance }: { instance: InstanceInfo }) {
           <option value="updated">最近更新</option>
         </select>
         <button className="btn primary" onClick={search} disabled={searching}>{searching ? '搜索中…' : '搜索'}</button>
+        <button className={`btn small ${onlyFavorites ? 'primary' : ''}`} onClick={() => setOnlyFavorites(v => !v)} title="只看收藏的资源（PCL CE 式资源收藏夹）">★ 只看收藏</button>
       </div>
       <div className="faint mt">数据源：Modrinth（中文搜索已按相关度优化，受影响较小）。{loader ? `安装的模组都按 ${loader} 过滤。` : '原版实例无法安装模组，请先创建 Fabric/Forge 实例。'}</div>
       <div className="list mt">
-        {results.map(r => (
+        {(onlyFavorites ? results.filter(r => favoriteIds.includes(r.projectId)) : results).map(r => (
           <div key={r.projectId} className="list-row">
             {r.iconUrl ? <img src={r.iconUrl} alt="" width={48} height={48} style={{ borderRadius: 10, objectFit: 'cover' }} loading="lazy" /> : <div style={{ width: 48, height: 48, borderRadius: 10, background: 'var(--panel-3)', display: 'grid', placeItems: 'center' }}>🧩</div>}
             <div style={{ flex: 1, minWidth: 0 }}>
@@ -307,6 +311,7 @@ function SearchTab({ instance }: { instance: InstanceInfo }) {
               <div className="faint" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.description}</div>
               <div className="faint" style={{ marginTop: 2 }} title={r.gameVersions.length > 0 ? `支持的游戏版本：${r.gameVersions.join(' / ')}` : undefined}>⬇ {r.downloads.toLocaleString()} · ❤ {r.follows.toLocaleString()} · {versionSupportLabel(r.gameVersions, instance.mcVersion)}</div>
             </div>
+            <FavoriteButton id={r.projectId} />
             <button className="btn small primary" onClick={() => install(r)} disabled={!loader || !!installing}>{installing === r.projectId ? '安装中…' : '安装'}</button>
           </div>
         ))}
