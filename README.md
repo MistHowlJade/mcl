@@ -166,6 +166,8 @@ electron/
 src/                 React 渲染进程（启动台/实例/服务器/模组/内容/备份/崩溃/迁移/账号/云同步/日志/设置）
 ```
 
+**所有数据收敛到一个文件夹**：打包态以启动器旁边的 `mcl-data/` 为唯一数据根，里面既有游戏本体/共享库/资源/实例/存档/模组/Java/下载缓存，也有 Electron 自身的 `electron-user-data/`、`electron-cache/`、`electron-logs/`、`electron-crash-dumps/`。`app.setPath()` 在 `app.whenReady()` 之前完成，不会在 `%APPDATA%` 留下散落目录；拷走整个 `mcl-data/` 即带走全部数据。打包期间的 Electron / electron-builder 缓存也统一放在项目根目录 `.build-cache/`（已在 `.gitignore`）。
+
 ## 四、安全与信任（为什么 MCL 不骗你装 Java）
 
 1. **开源**（MIT），每一行可审计。

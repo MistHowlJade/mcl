@@ -61,6 +61,12 @@
 - [ ] 导航样式切到「顶部标签」后，侧边栏变成标题栏下方的横向标签页，账户 chip 缩在右上角
 - [ ] 重启启动器后主题与导航样式保持不变（不闪深色）
 
+## 13. 单一数据文件夹
+
+- [ ] 启动器同级 `mcl-data/` 下除 shared/instances/java/cache 外，还有 `electron-user-data/`、`electron-cache/`、`electron-logs/`、`electron-crash-dumps/`
+- [ ] 使用浏览器开发者工具/日志产生的 Chromium 缓存都落在 `mcl-data/electron-cache`，不在 `%APPDATA%/mcl` 留下新目录
+- [ ] 打包期缓存统一在项目根目录 `.build-cache/`（electron + electron-builder），不写入 `%APPDATA%`
+
 ## 2. Java 与启动
 
 - [ ] 未装 Java 时自动下载 Adoptium JRE 并推荐正确主版本（1.20.1→17，26.x→25）
