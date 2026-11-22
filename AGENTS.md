@@ -66,7 +66,7 @@ src/                      渲染进程（React 18 + Vite）
   pages/                  12 页：Home Instances Servers Mods Content Backups Crash Migrate Accounts Cloud Logs Settings
 ```
 
-**数据目录布局**（`.mcl-data/` 开发态 / `%APPDATA%/mcl` 打包态）：
+**数据目录布局**（`.mcl-data/` 开发态 / 打包态 `<启动器目录>/mcl-data`，PCL2/HMCL 式默认便携；目录不可写时回退 `%APPDATA%/mcl`）：
 `shared/libraries|assets|versions` 全实例共享零拷贝；`instances/<id>/game/` 每实例完全隔离（saves/mods/config）；`servers/<id>/` 每个服务端独立（世界/模组/backups）；`java/` 自管 JRE；`cache/` 下载 .part；`backups/` 存档；`logs/` 日志。
 
 ## 5. 架构约束（不许破坏）

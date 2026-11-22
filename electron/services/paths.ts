@@ -1,9 +1,11 @@
 /**
- * MCL 数据目录布局
+ * MCL 数据目录布局（PCL2 / HMCL 式：数据默认跟着启动器走）
  *
- * 便携模式：exe 同级目录存在 portable.txt → 数据放 <exeDir>/mcl-data
+ * 打包态默认：<启动器目录>/mcl-data（免安装 ZIP 解压后可写，拷走整个文件夹即带走全部游戏资源）
+ * 兼容：exe 同级仍有 portable.txt 时同样使用 <该目录>/mcl-data
+ * 回退：若启动器目录不可写（如装在 Program Files），退回 %APPDATA%/mcl
  * 开发模式：项目根目录/.mcl-data
- * 默认：   %APPDATA%/mcl
+ * 环境变量 MCL_HOME 优先级最高（用于隔离测试）
  *
  * 布局：
  *   <root>/shared/assets/objects/<hash2>/<hash>
@@ -22,6 +24,25 @@ import * as path from 'path';
 
 let cachedRoot: string | null = null;
 
+/** 能否在该目录创建数据目录（用于决定是否真的可以“跟着本体走”） */
+function canWriteDataDir(dir: string): boolean {
+  try {
+    fs.mkdirSync(dir, { recursive: true });
+    const probe = path.join(dir, `.mcl-write-${process.pid}`);
+    fs.writeFileSync(probe, '');
+    fs.unlinkSync(probe);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** 启动器所在目录；macOS 的可执行体在 Electron.app 内部，数据放 .app 旁边 */
+function launcherDir(): string {
+  const exeDir = path.dirname(process.execPath);
+  return process.platform === 'darwin' ? path.resolve(exeDir, '..', '..', '..') : exeDir;
+}
+
 export function dataRoot(): string {
   if (cachedRoot) return cachedRoot;
   const override = process.env.MCL_HOME;
@@ -31,16 +52,24 @@ export function dataRoot(): string {
   }
   if (app.isPackaged) {
     const exeDir = path.dirname(process.execPath);
-    // macOS 的可执行体在 Electron.app/Contents/MacOS 里；用户按直觉把 portable.txt
-    // 放在 .app 旁边时也要认，否则便携模式在 mac 上等于失效。
-    const portableDirs = process.platform === 'darwin'
-      ? [exeDir, path.resolve(exeDir, '..', '..', '..')]
-      : [exeDir];
+    const appDir = launcherDir();
+    // 兼容旧的 portable.txt 约定：有标记时以标记所在目录为准
+    const portableDirs = appDir === exeDir ? [exeDir] : [exeDir, appDir];
     const portableDir = portableDirs.find(d => fs.existsSync(path.join(d, 'portable.txt')));
     if (portableDir) {
-      cachedRoot = path.join(portableDir, 'mcl-data');
+      const root = path.join(portableDir, 'mcl-data');
+      if (canWriteDataDir(root)) {
+        cachedRoot = root;
+        return cachedRoot;
+      }
+    }
+    // PCL2 / HMCL 式：默认就在启动器旁边建 mcl-data，所有游戏资源跟着本体走
+    const beside = path.join(appDir, 'mcl-data');
+    if (canWriteDataDir(beside)) {
+      cachedRoot = beside;
       return cachedRoot;
     }
+    // 启动器装在只读目录（如 Program Files）才退回用户目录
     cachedRoot = app.getPath('userData');
     return cachedRoot;
   }

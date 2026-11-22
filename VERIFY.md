@@ -95,6 +95,15 @@
 - [ ] 设置项均有 Tip 解释
 - [ ] 从旧启动器迁移实例成功，库文件仍是共享引用不复制
 
+## 9. 便携资源目录（PCL2 / HMCL 式）
+
+- [ ] 打包态首次启动后，启动器 exe 同级出现 `mcl-data/`（macOS 在 `Electron.app` 旁边）
+- [ ] `mcl-data/shared/libraries`、`shared/assets`、`shared/versions` 三个共享目录存在，所有实例共用一份游戏本体与资源
+- [ ] 创建一个实例并下载版本后，`mcl-data/shared/versions/<id>/` 出现 jar/json，实例 `game/` 内没有重复库
+- [ ] 把整个启动器文件夹拷到另一路径再启动，版本与实例仍在（不需要 portable.txt）
+- [ ] 设置 `MCL_HOME` 时数据写到指定目录（用于隔离测试）
+- [ ] 启动器放在只读目录（如 Program Files）时回退 `%APPDATA%/mcl`，不崩溃
+
 ## 已知未在真机验证的范围
 
 - 游戏启动/下载/Forge 在线安装/微软登录/WebDAV/Gist 往返（本清单就是要补的部分）
