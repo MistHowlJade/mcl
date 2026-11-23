@@ -4,10 +4,10 @@
 import type {
   Account, AppSettings, BackupInfo, CloudSnapshotInfo, ContentInstallResult, ContentKind, ContentList,
   ContentProjectType,
-  CrashDiagnosis, CrashFix, EnvironmentReport, ExportFormat, ExportResult, InstanceConfig,
-  InstanceInfo, InstalledMod, JavaInfo, LanWorld, LaunchState, MigrationCandidate, MigrationPreview,
-  MigrationResult, ModHealthIssue, ModSearchResult, ServerBackupInfo, ServerConfig, ServerInfo,
-  ServerLoader, ServerProperties, UpdateInfo, VersionManifestEntry,
+  CrashDiagnosis, CrashFix, DownloadTaskInfo, EnvironmentReport, ExportFormat, ExportResult, GameOptions,
+  InstanceConfig, InstanceInfo, InstalledMod, JavaInfo, LanWorld, LaunchState, MigrationCandidate,
+  MigrationPreview, MigrationResult, ModHealthIssue, ModSearchResult, PlayStats, ServerBackupInfo,
+  ServerConfig, ServerInfo, ServerLoader, ServerProperties, UpdateInfo, VersionManifestEntry,
 } from '../../electron/shared/types';
 
 declare global {
@@ -192,6 +192,19 @@ export const api = {
 
   /* ---------- 局域网世界 ---------- */
   lanScan: (timeoutMs?: number) => invoke<LanWorld[]>('lan:scan', timeoutMs),
+
+  /* ---------- 下载任务中心 ---------- */
+  tasksList: () => invoke<DownloadTaskInfo[]>('tasks:list'),
+  tasksClearFinished: () => invoke<boolean>('tasks:clearFinished'),
+  tasksRemove: (id: string) => invoke<boolean>('tasks:remove', id),
+  tasksCancel: (id: string) => invoke<boolean>('tasks:cancel', id),
+
+  /* ---------- 游玩统计 ---------- */
+  statsPlay: () => invoke<PlayStats>('stats:play'),
+
+  /* ---------- 游戏设置可视化 ---------- */
+  gameOptionsRead: (instanceId: string) => invoke<GameOptions>('content:optionsRead', instanceId),
+  gameOptionsSave: (instanceId: string, patch: GameOptions) => invoke<GameOptions>('content:optionsSave', instanceId, patch),
 };
 
 /* 事件订阅（返回取消函数） */

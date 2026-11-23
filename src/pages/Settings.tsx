@@ -24,6 +24,8 @@ export default function Settings({ onNavigate }: { onNavigate?: (page: 'cloud') 
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [javas, setJavas] = useState<JavaInfo[]>([]);
   const [javaScanning, setJavaScanning] = useState(false);
+  const [javaInstalling, setJavaInstalling] = useState<number | null>(null);
+  const [javaProgress, setJavaProgress] = useState<{ stage: string; received?: number; total?: number } | null>(null);
   const [mirrorLatency, setMirrorLatency] = useState<Array<{ source: string; latencyMs: number; ok: boolean }> | null>(null);
   const [recommendedSource, setRecommendedSource] = useState<'official' | 'bmclapi' | 'custom' | null>(null);
   const [mirrorTesting, setMirrorTesting] = useState(false);
@@ -46,8 +48,9 @@ export default function Settings({ onNavigate }: { onNavigate?: (page: 'cloud') 
     api.appInfo().then(info => { setAppVersion(info.version); setDataDir(info.dataDir); }).catch(() => undefined);
     api.appCacheInfo().then(setCacheInfo).catch(() => undefined);
     scanJava();
-    const off = on('app:updateProgress', (p: { done: number; total: number }) => setUpdateProgress(p));
-    return off;
+    const offUpdate = on('app:updateProgress', (p: { done: number; total: number }) => setUpdateProgress(p));
+    const offJava = on('java:progress', (p: { stage: string; received?: number; total?: number }) => setJavaProgress(p));
+    return () => { offUpdate(); offJava(); };
     /* eslint-disable-next-line */
   }, []);
 
@@ -71,6 +74,22 @@ export default function Settings({ onNavigate }: { onNavigate?: (page: 'cloud') 
         // 回读服务器状态，避免界面停留在未保存的值
         try { setSettings(await api.settingsGet()); } catch { /* ignore */ }
       }
+    }
+  };
+
+  const installJava = async (major: number) => {
+    setJavaInstalling(major);
+    setJavaProgress(null);
+    try {
+      const exe = await api.javaInstall(major);
+      await patch({ java: { defaultPath: exe } });
+      toast.toast(`Java ${major} 已安装，并设为全局默认。可以在「下载任务」里查看详情。`, 'ok');
+      await scanJava();
+    } catch (e) {
+      toast.toast(e instanceof Error ? e.message : String(e), 'error');
+    } finally {
+      setJavaInstalling(null);
+      setJavaProgress(null);
     }
   };
 
@@ -324,6 +343,30 @@ export default function Settings({ onNavigate }: { onNavigate?: (page: 'cloud') 
             <input className="input" style={{ maxWidth: 360 }} placeholder="留空 = 自动管理（推荐）" value={settings.java.defaultPath} onChange={e => patch({ java: { defaultPath: e.target.value } })} />
           </div>
         </div>
+        <div className="setting-row">
+          <div className="label">一键安装 Java<Tip text="从 Adoptium 下载 Temurin JRE 并放到 MCL 自管目录，自动设为全局默认。Java 8 给 1.16.5 及以下的整合包，Java 17 给 1.17～1.20.4，Java 21 给 1.20.5+。已经装过的版本重复安装只会覆盖 MCL 自己那份，不会动系统里的 Java。" /></div>
+          <div className="control">
+            <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+              {[8, 17, 21].map(major => (
+                <button key={major} className="btn small" disabled={javaInstalling !== null} onClick={() => void installJava(major)}
+                  title={javas.some(j => j.major === major) ? '已检测到该版本，点击可安装/更新 MCL 自管的最新补丁版' : '下载并安装 MCL 自管的版本'}>
+                  {javaInstalling === major ? '安装中…' : `安装 Java ${major}`}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+        {javaInstalling !== null && (
+          <div className="java-progress">
+            <div className="progress"><div style={{ width: javaProgress && javaProgress.total ? `${Math.min(100, Math.round(((javaProgress.received ?? 0) / javaProgress.total) * 100))}%` : '35%' }} /></div>
+            <div className="faint" style={{ fontSize: 11 }}>
+              {javaProgress?.stage === 'downloading' && javaProgress.total
+                ? `下载中 ${formatBytes(javaProgress.received ?? 0)} / ${formatBytes(javaProgress.total)}`
+                : javaProgress?.stage === 'extracting' ? '正在解压安装…'
+                  : javaProgress?.stage === 'fetch' ? '正在获取下载信息…' : '准备中…'}
+            </div>
+          </div>
+        )}
         {javas.length === 0 ? (
           <div className="faint">未检测到任何 Java。没关系——首次启动游戏时 MCL 会自动下载合适的版本。</div>
         ) : (

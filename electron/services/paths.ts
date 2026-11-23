@@ -124,6 +124,10 @@ export function configFile(): string { return path.join(dataRoot(), 'config.json
 export function accountsFile(): string { return path.join(dataRoot(), 'accounts.json'); }
 export function instancesIndexFile(): string { return path.join(dataRoot(), 'instances.json'); }
 export function residualPidsFile(): string { return path.join(dataRoot(), 'residual-pids.json'); }
+/** 下载任务中心的最近任务记录（只保留元数据，不含游戏本体） */
+export function tasksFile(): string { return path.join(dataRoot(), 'tasks.json'); }
+/** 游玩统计日志：按日期累计秒数与启动次数 */
+export function playLogFile(): string { return path.join(dataRoot(), 'playlog.json'); }
 export function installedModsFile(id: string): string { return path.join(instanceDir(id), 'installed-mods.json'); }
 export function instanceFile(id: string): string { return path.join(instanceDir(id), 'instance.json'); }
 

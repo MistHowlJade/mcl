@@ -4,9 +4,9 @@ import { useToast } from '../components/Toast';
 import { ConfirmModal, formatBytes, timeAgo } from '../components/Modal';
 import { Icon } from '../components/Icon';
 import { PageSkeleton } from '../components/ui';
-import type { AppSettings, CrashDiagnosis, InstanceInfo, LaunchState } from '../../electron/shared/types';
+import type { AppSettings, CrashDiagnosis, InstanceInfo, LaunchState, PlayStats } from '../../electron/shared/types';
 
-type Page = 'home' | 'instances' | 'servers' | 'mods' | 'content' | 'backups' | 'crash' | 'migrate' | 'accounts' | 'cloud' | 'logs' | 'settings';
+type Page = 'home' | 'instances' | 'servers' | 'mods' | 'download' | 'tasks' | 'content' | 'backups' | 'crash' | 'migrate' | 'accounts' | 'cloud' | 'logs' | 'settings';
 
 const LOADER_LABEL: Record<string, string> = { vanilla: '原版', fabric: 'Fabric', forge: 'Forge', neoforge: 'NeoForge', quilt: 'Quilt' };
 const PRESET_LABEL: Record<string, string> = { low: '低配', standard: '标准', heavy: '大型整合包' };
@@ -32,14 +32,16 @@ export default function Home({ onNavigate, onLaunchFail }: { onNavigate: (p: Pag
   const [showFullLog, setShowFullLog] = useState(false);
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [confirmLaunch, setConfirmLaunch] = useState<InstanceInfo | null>(null);
+  const [stats, setStats] = useState<PlayStats | null>(null);
   const settingsRef = useRef<AppSettings | null>(null);
   const logRef = useRef<HTMLDivElement>(null);
   const toast = useToast();
 
   const reload = async () => {
     try {
-      const [list, account] = await Promise.all([api.instancesList(), api.accountsActive()]);
+      const [list, account, playStats] = await Promise.all([api.instancesList(), api.accountsActive(), api.statsPlay()]);
       setInstances(list);
+      setStats(playStats);
       setAccountName(account?.name ?? null);
       setSelectedId(prev => (prev && list.some(i => i.id === prev)) ? prev : (list[0]?.id ?? null));
     } catch (e) {
@@ -90,6 +92,10 @@ export default function Home({ onNavigate, onLaunchFail }: { onNavigate: (p: Pag
     if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight;
   }, [logs]);
 
+  const sortedInstances = useMemo(() => [...instances].sort((a, b) => {
+    if (!!a.favorite !== !!b.favorite) return a.favorite ? -1 : 1;
+    return (b.lastPlayedAt ?? b.createdAt) - (a.lastPlayedAt ?? a.createdAt);
+  }), [instances]);
   const selected = useMemo(() => instances.find(i => i.id === selectedId) ?? instances[0] ?? null, [instances, selectedId]);
   const totalSaves = instances.reduce((a, i) => a + i.savesCount, 0);
   const totalMods = instances.reduce((a, i) => a + i.modsCount, 0);
@@ -131,6 +137,7 @@ export default function Home({ onNavigate, onLaunchFail }: { onNavigate: (p: Pag
           .catch(e => toast.toast(String(e), 'error'));
       },
     },
+    { icon: 'download', title: '下载任务', hint: '进度 / 速度 / 重试', onClick: () => onNavigate('tasks') },
     { icon: 'puzzle', title: '模组体检', hint: '冲突与缺失依赖', onClick: () => onNavigate('mods') },
     { icon: 'palette', title: '内容管理', hint: '资源包 / 光影 / 世界', onClick: () => onNavigate('content') },
     { icon: 'server', title: '开服务器', hint: '一键安装与启停', onClick: () => onNavigate('servers') },
@@ -202,9 +209,46 @@ export default function Home({ onNavigate, onLaunchFail }: { onNavigate: (p: Pag
         <div className="stat-card"><div className="stat-icon"><Icon name="clock" size={16} /></div><div><div className="k">游玩</div><div className="v">{Math.floor(totalPlaySeconds / 3600)}<small> 小时</small></div><div className="d">仅存本机</div></div></div>
       </div>
 
+      {stats && (
+        <section className="home-section">
+          <div className="section-head">
+            <div><h2>游玩统计</h2><p>最近 7 天 · 只记录在本机，不上传</p></div>
+            <span className="tag">{stats.sessions} 次启动 · 累计 {Math.floor(totalPlaySeconds / 3600)} 小时</span>
+          </div>
+          <div className="panel stats-panel">
+            {stats.daily.some(d => d.seconds > 0) ? (
+              <div className="trend-bars">
+                {stats.daily.map(d => {
+                  const max = Math.max(1, ...stats.daily.map(x => x.seconds));
+                  const height = Math.max(4, Math.round((d.seconds / max) * 100));
+                  return (
+                    <div key={d.date} className="trend-col" title={`${d.date}：${Math.floor(d.seconds / 60)} 分钟`}>
+                      <div className="trend-bar-wrap"><div className={`trend-bar ${d.seconds > 0 ? 'has' : ''}`} style={{ height: `${height}%` }} /></div>
+                      <span className="faint">{d.date.slice(5).replace('-', '/')}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="faint" style={{ padding: '18px 4px' }}>还没有每日记录。下一次游戏正常退出后，这里会显示最近 7 天的游玩趋势。</div>
+            )}
+            {stats.perInstance.length > 0 && (
+              <div className="stats-ranking">
+                <div className="faint" style={{ fontSize: 11 }}>累计游玩最久</div>
+                {stats.perInstance.slice(0, 3).map(x => (
+                  <div key={x.instanceId} className="stats-rank-row">
+                    <span title={x.name}>{x.name}</span><span className="tag">{(x.seconds / 3600).toFixed(1)} 小时</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </section>
+      )}
+
       <section className="home-section">
         <div className="section-head">
-          <div><h2>我的实例</h2><p>单击选择，双击启动</p></div>
+          <div><h2>我的实例</h2><p>单击选择，双击启动 · 收藏与标签会在实例页置顶</p></div>
           <button className="btn small ghost" onClick={() => onNavigate('instances')}>管理全部 →</button>
         </div>
         {instances.length === 0 ? (
@@ -219,7 +263,7 @@ export default function Home({ onNavigate, onLaunchFail }: { onNavigate: (p: Pag
           </div>
         ) : (
           <div className="instance-rows">
-            {instances.map(inst => {
+            {sortedInstances.map(inst => {
               const key = loaderKey(inst.loader);
               return (
                 <div
@@ -234,8 +278,8 @@ export default function Home({ onNavigate, onLaunchFail }: { onNavigate: (p: Pag
                     <b>{inst.mcVersion === 'unknown' ? '?' : inst.mcVersion}</b>
                   </div>
                   <div className="row-info">
-                    <div className="n" title={inst.name}>{inst.name}</div>
-                    <div className="d">{inst.loaderVersion ? `${LOADER_LABEL[key]} ${inst.loaderVersion}` : LOADER_LABEL[key]} · {PRESET_LABEL[inst.memoryPreset ?? 'standard']}内存 · {timeAgo(inst.lastPlayedAt)}</div>
+                    <div className="n" title={inst.name}>{inst.favorite && <Icon name="star" size={11} className="fav-inline" />}{inst.name}</div>
+                    <div className="d">{inst.loaderVersion ? `${LOADER_LABEL[key]} ${inst.loaderVersion}` : LOADER_LABEL[key]} · {PRESET_LABEL[inst.memoryPreset ?? 'standard']}内存 · {timeAgo(inst.lastPlayedAt)}{(inst.tags?.length ?? 0) > 0 ? ` · ${(inst.tags ?? []).join('/')}` : ''}</div>
                   </div>
                   <div className="row-meta"><span><Icon name="puzzle" size={11} /> {inst.modsCount}</span><span><Icon name="globe" size={11} /> {inst.savesCount}</span></div>
                   <div className="row-actions">
