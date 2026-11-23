@@ -71,7 +71,7 @@ export default function Migrate() {
           <h1>迁移中心</h1>
           <div className="sub">从 HMCL / PCL2 / Prism / MultiMC / .minecraft 一键搬家——存档、模组、配置全带走</div>
         </div>
-        <button className="btn" onClick={pickFolder} disabled={busy}>📁 手动选择目录…</button>
+        <button className="btn" onClick={pickFolder} disabled={busy}><Icon name="folder" size={14} /> 手动选择目录…</button>
       </div>
 
       <div className="panel">
@@ -87,7 +87,7 @@ export default function Migrate() {
         </div>
       </div>
 
-      {busy && <div className="empty"><div className="big">🔄</div>扫描 / 导入中…</div>}
+      {busy && <div className="empty"><div className="big"><Icon name="refresh" size={34} /></div>扫描 / 导入中…</div>}
 
       {preview && !busy && (
         <div className="panel">

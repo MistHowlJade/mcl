@@ -35,6 +35,10 @@ const PATHS: Record<string, React.ReactNode> = {
   download: <><path d="M12 3v12" /><path d="m7 11 5 5 5-5" /><path d="M4 20h16" /></>,
   refresh: <><path d="M20 7v5h-5" /><path d="M4 17v-5h5" /><path d="M5.7 9A7.5 7.5 0 0 1 18.6 7L20 12M4 12l1.4 5A7.5 7.5 0 0 0 18.3 15" /></>,
   pause: <><path d="M9 5v14M15 5v14" /></>,
+  close: <><path d="M6 6l12 12M18 6 6 18" /></>,
+  dice: <><rect x="3" y="3" width="18" height="18" rx="4" /><circle cx="8.5" cy="8.5" r="1" fill="currentColor" stroke="none" /><circle cx="15.5" cy="8.5" r="1" fill="currentColor" stroke="none" /><circle cx="12" cy="12" r="1" fill="currentColor" stroke="none" /><circle cx="8.5" cy="15.5" r="1" fill="currentColor" stroke="none" /><circle cx="15.5" cy="15.5" r="1" fill="currentColor" stroke="none" /></>,
+  heart: <path d="M20.5 8.5c0 4.2-8.5 10-8.5 10S3.5 12.7 3.5 8.5a4.5 4.5 0 0 1 8.5-2 4.5 4.5 0 0 1 8.5 2Z" />,
+  link: <><path d="M10 13.5a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1.5 1.5" /><path d="M14 10.5a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1.5-1.5" /></>,
 };
 
 export function Icon({ name, size = 16, className = '' }: { name: string; size?: number; className?: string }) {

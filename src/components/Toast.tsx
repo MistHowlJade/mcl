@@ -24,7 +24,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
           <div key={t.id} className={`toast ${t.kind === 'ok' ? '' : t.kind}`} role="status">
             <span className="toast-icon" aria-hidden="true"><Icon name={t.kind === 'ok' ? 'check' : t.kind === 'error' ? 'warn' : 'info'} size={15} /></span>
             <span className="toast-text">{t.message}</span>
-            <button className="toast-close" onClick={() => dismiss(t.id)} aria-label="关闭提示">✕</button>
+            <button className="toast-close" onClick={() => dismiss(t.id)} aria-label="关闭提示"><Icon name="close" size={13} /></button>
           </div>
         ))}
       </div>

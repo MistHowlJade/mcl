@@ -214,7 +214,7 @@ function InstalledTab({ instance }: { instance: InstanceInfo }) {
           <Tip text="体检会直接解析 mods 目录里 jar 的模组元数据（fabric.mod.json / mods.toml），检测重复、异加载器、零字节损坏文件" />
           <button className="btn small" onClick={checkHealth}><Icon name="health" size={12} /> 体检</button>
           <Tip text="检查 Modrinth 上是否有可更新版本。开启了「禁止 Mod 自动更新」的实例不会联网查询，并会清除旧的更新提示" />
-          <button className="btn small" onClick={checkUpdates} disabled={checking}>{checking ? '检查中…' : '🔄 检查更新'}</button>
+          <button className="btn small" onClick={checkUpdates} disabled={checking}>{checking ? '检查中…' : <><Icon name="refresh" size={12} /> 检查更新</>}</button>
           <button className="btn small primary" onClick={() => void updateAll()} disabled={updatingAll || !!pending || !mods.some(m => m.updateAvailable)}>
             {updatingAll ? '更新中…' : '更新全部'}
           </button>
@@ -335,7 +335,7 @@ function SearchTab({ instance }: { instance: InstanceInfo }) {
             <div style={{ flex: 1, minWidth: 0 }}>
               <div className="row" style={{ gap: 8 }}><strong style={{ fontSize: 13.5 }}>{r.title}</strong><span className="faint">by {r.author}</span></div>
               <div className="faint" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.description}</div>
-              <div className="faint" style={{ marginTop: 2 }} title={r.gameVersions.length > 0 ? `支持的游戏版本：${r.gameVersions.join(' / ')}` : undefined}>⬇ {r.downloads.toLocaleString()} · ❤ {r.follows.toLocaleString()} · {versionSupportLabel(r.gameVersions, instance.mcVersion)}</div>
+              <div className="faint row" style={{ marginTop: 2, gap: 6 }} title={r.gameVersions.length > 0 ? `支持的游戏版本：${r.gameVersions.join(' / ')}` : undefined}><Icon name="download" size={12} /> {r.downloads.toLocaleString()}<span>·</span><Icon name="heart" size={12} /> {r.follows.toLocaleString()}<span>·</span>{versionSupportLabel(r.gameVersions, instance.mcVersion)}</div>
             </div>
             <FavoriteButton id={r.projectId} />
             <button className="btn small primary" onClick={() => install(r)} disabled={!loader || !!installing}>{installing === r.projectId ? '安装中…' : '安装'}</button>
@@ -386,7 +386,7 @@ function ImportTab({ onImported }: { onImported?: (instanceId: string) => void }
             <div className="mt">
               <div className="faint">需要手动下载的模组：</div>
               {result.manualDownloads.map((d: { name: string; url: string }, i: number) => (
-                <button key={i} className="btn small ghost" style={{ display: 'block', marginTop: 6 }} onClick={() => api.openExternal(d.url).catch(e => toast.toast(String(e), 'error'))}>🔗 {d.name}</button>
+                <button key={i} className="btn small ghost" style={{ display: 'block', marginTop: 6 }} onClick={() => api.openExternal(d.url).catch(e => toast.toast(String(e), 'error'))}><Icon name="link" size={12} /> {d.name}</button>
               ))}
             </div>
           )}
