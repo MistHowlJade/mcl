@@ -145,7 +145,7 @@ export default function Settings({ onNavigate }: { onNavigate?: (page: 'cloud') 
       <div className="panel">
         <div className="panel-title">常规</div>
         <div className="setting-row">
-          <div className="label">导航样式<Tip text="侧边栏：左侧分组导航，空间利用率高；顶部标签：PCL2 那种标题栏下的横向标签页，切换更直观。只影响启动器界面。" /></div>
+          <div className="label">导航样式<Tip text="侧边栏：左侧分组导航，空间利用率高；顶部标签：标题栏下方的横向标签页，切换更直观。只影响启动器界面。" /></div>
           <div className="control">
             <div className="segmented">
               <button className={`btn small ${nav === 'side' ? 'primary' : ''}`} onClick={() => setNav('side')}>侧边栏</button>
