@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { api, on } from '../lib/api';
 import { useToast } from '../components/Toast';
 import { ConfirmModal, Tip, Toggle, formatBytes } from '../components/Modal';
+import { Icon } from '../components/Icon';
 import { usePrefs } from '../lib/theme';
 import type { AppSettings, JavaInfo, UpdateInfo } from '../../electron/shared/types';
 
@@ -93,7 +94,7 @@ export default function Settings({ onNavigate }: { onNavigate?: (page: 'cloud') 
     }
   };
 
-  if (!settings) return <div className="empty"><div className="big">⚙️</div>正在加载设置…</div>;
+  if (!settings) return <div className="empty"><div className="big"><Icon name="cog" size={34} /></div>正在加载设置…</div>;
 
   const testMirror = async () => {
     setMirrorTesting(true);

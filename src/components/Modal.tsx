@@ -1,5 +1,6 @@
 import React, { useEffect, useId, useRef } from 'react';
 import { createPortal } from 'react-dom';
+import { Icon } from './Icon';
 
 export function Modal({ title, onClose, children, footer, wide }: {
   title: string;
@@ -60,7 +61,7 @@ export function Modal({ title, onClose, children, footer, wide }: {
       >
         <div className="modal-head">
           <h2 id={titleId}>{title}</h2>
-          <button className="winbtn" onClick={onClose} aria-label="关闭">✕</button>
+          <button className="winbtn" onClick={onClose} aria-label="关闭"><Icon name="close" size={13} /></button>
         </div>
         <div className="modal-body">{children}</div>
         {footer && <div className="modal-footer">{footer}</div>}

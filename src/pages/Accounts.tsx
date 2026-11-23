@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { api, on } from '../lib/api';
 import { useToast } from '../components/Toast';
 import { Modal, Tip, timeAgo } from '../components/Modal';
+import { Icon } from '../components/Icon';
 import type { Account } from '../../electron/shared/types';
 
 export default function Accounts() {
@@ -31,7 +32,7 @@ export default function Accounts() {
     msCodeRef.current = null;
     setMsWaiting(false);
     if (payload.ok) {
-      toast.toast(`登录成功：${payload.account?.name}${payload.warn ? `\n⚠ ${payload.warn}` : ''}`, 'ok');
+      toast.toast(`登录成功：${payload.account?.name}${payload.warn ? `\n注意：${payload.warn}` : ''}`, 'ok');
       setMsSession(null);
       void reload();
     } else {
@@ -142,7 +143,7 @@ export default function Accounts() {
         <div className="panel-title">创建离线账号<Tip text="离线模式不能进正版验证服务器，皮肤只有自己可见。仅限局域网、单机与测试用途。" /></div>
         <div className="row">
           <input className="input" style={{ maxWidth: 280 }} placeholder="玩家名（英文字母/数字/下划线）" value={offlineName} onChange={e => setOfflineName(e.target.value)} onKeyDown={e => e.key === 'Enter' && createOffline()} maxLength={16} />
-          <button className="btn" onClick={randomName}>🎲 随机</button>
+          <button className="btn" onClick={randomName}><Icon name="dice" size={14} /> 随机</button>
           <button className="btn primary" onClick={createOffline}>创建</button>
         </div>
         <p className="faint mt">为什么离线皮肤别人看不见？离线模式下客户端不会向验证服务器上报皮肤，其他玩家只能看到默认皮肤或通过材质包看到你。这不是 MCL 的限制，是离线模式的设计。</p>
@@ -267,8 +268,9 @@ function SkinModal({ account, onClose, onChanged }: { account: Account; onClose:
             <button className="btn" disabled={!!busy} onClick={() => apply('cape', () => api.accountLocalCape(account.id))}>导入披风预览</button>
             {account.capeUrl && <button className="btn ghost" disabled={!!busy} onClick={() => apply('capeClear', () => api.accountClearLocalCape(account.id))}>清除披风预览</button>}
           </div>
-          <div className="mt" style={{ padding: '10px 14px', borderRadius: 9, background: 'var(--amber-soft)', border: '1px solid rgba(240,180,91,.3)', fontSize: 13 }}>
-            ⚠ 离线皮肤只保存在本机 <span className="mono">accounts.json</span>，仅 MCL 界面可见。离线模式不会向服务器上报皮肤，其他玩家看到的是默认皮肤——这是 Minecraft 离线模式的设计，不是 MCL 的限制。
+          <div className="mt row" style={{ padding: '10px 14px', borderRadius: 9, background: 'var(--amber-soft)', border: '1px solid rgba(240,180,91,.3)', fontSize: 13, gap: 8, alignItems: 'flex-start' }}>
+            <Icon name="warn" size={15} />
+            <span>离线皮肤只保存在本机 <span className="mono">accounts.json</span>，仅 MCL 界面可见。离线模式不会向服务器上报皮肤，其他玩家看到的是默认皮肤——这是 Minecraft 离线模式的设计，不是 MCL 的限制。</span>
           </div>
         </>
       )}

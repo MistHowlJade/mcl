@@ -204,7 +204,10 @@ function Shell() {
   return (
     <>
       <div className="titlebar">
-        <div className="brand"><div className="logo">M</div>MCL<small>新一代我的世界启动器</small></div>
+        <div className="brand">
+          <div className="logo"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 18V6l8 8 8-8v12" /></svg></div>
+          MCL<small>新一代我的世界启动器</small>
+        </div>
         <div className="spacer" />
         <button className="winbtn" onClick={() => api.windowMinimize().catch(() => undefined)} title="最小化" aria-label="最小化">
           <svg viewBox="0 0 24 24"><path d="M5 12h14" /></svg>

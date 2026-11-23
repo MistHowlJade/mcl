@@ -161,14 +161,20 @@ export default function Home({ onNavigate, onLaunchFail }: { onNavigate: (p: Pag
       <section className="home-hero">
         <div className="home-hero-content">
           <div className="hero-id">
-            <div className="hero-logo">M</div>
+            <div className="hero-logo"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 18V6l8 8 8-8v12" /></svg></div>
             <div>
               <span className="eyebrow"><span className="status-dot" />启动台</span>
               <h2>欢迎回来，{accountName ?? '旅人'}</h2>
               <div className="hero-hint">
-                {selected
-                  ? <>当前：<b>{selected.name}</b> · {selected.mcVersion} · {LOADER_LABEL[loaderKey(selected.loader)]} · 上次游玩 {timeAgo(selected.lastPlayedAt)}</>
-                  : '先创建一个实例，或从别的启动器迁移过来——剩下的交给 MCL。'}
+                {selected ? (
+                  <>
+                    <span className="hero-chip accent">{selected.name}</span>
+                    <span className="hero-sep" />
+                    <span className="hero-chip">{selected.mcVersion} · {LOADER_LABEL[loaderKey(selected.loader)]}</span>
+                    <span className="hero-sep" />
+                    <span>上次游玩 {timeAgo(selected.lastPlayedAt)}</span>
+                  </>
+                ) : '先创建一个实例，或从别的启动器迁移过来——剩下的交给 MCL。'}
               </div>
             </div>
           </div>
@@ -203,10 +209,10 @@ export default function Home({ onNavigate, onLaunchFail }: { onNavigate: (p: Pag
       )}
 
       <div className="home-stats">
-        <div className="stat-card"><div className="stat-icon"><Icon name="box" size={16} /></div><div><div className="k">实例</div><div className="v">{instances.length}</div><div className="d">版本隔离</div></div></div>
-        <div className="stat-card"><div className="stat-icon"><Icon name="save" size={16} /></div><div><div className="k">存档</div><div className="v">{totalSaves}</div><div className="d">自动备份</div></div></div>
-        <div className="stat-card"><div className="stat-icon"><Icon name="puzzle" size={16} /></div><div><div className="k">模组</div><div className="v">{totalMods}</div><div className="d">体检与更新</div></div></div>
-        <div className="stat-card"><div className="stat-icon"><Icon name="clock" size={16} /></div><div><div className="k">游玩</div><div className="v">{Math.floor(totalPlaySeconds / 3600)}<small> 小时</small></div><div className="d">仅存本机</div></div></div>
+        <div className="stat-card"><div className="stat-icon"><Icon name="box" size={16} /></div><div><div className="k">实例</div><div className="v"><span>{instances.length}</span></div><div className="d">独立目录</div></div></div>
+        <div className="stat-card"><div className="stat-icon"><Icon name="save" size={16} /></div><div><div className="k">存档</div><div className="v"><span>{totalSaves}</span></div><div className="d">自动备份</div></div></div>
+        <div className="stat-card"><div className="stat-icon"><Icon name="puzzle" size={16} /></div><div><div className="k">模组</div><div className="v"><span>{totalMods}</span></div><div className="d">一键体检</div></div></div>
+        <div className="stat-card"><div className="stat-icon"><Icon name="clock" size={16} /></div><div><div className="k">游玩</div><div className="v"><span>{Math.floor(totalPlaySeconds / 3600)}</span><small>小时</small></div><div className="d">仅存本机</div></div></div>
       </div>
 
       {stats && (
@@ -283,7 +289,7 @@ export default function Home({ onNavigate, onLaunchFail }: { onNavigate: (p: Pag
                   </div>
                   <div className="row-meta"><span><Icon name="puzzle" size={11} /> {inst.modsCount}</span><span><Icon name="globe" size={11} /> {inst.savesCount}</span></div>
                   <div className="row-actions">
-                    <button className="btn small primary" title="启动" onClick={e => { e.stopPropagation(); launchInstance(inst); }}><Icon name="play" size={11} /></button>
+                    <button className="btn small row-launch" title="启动" onClick={e => { e.stopPropagation(); launchInstance(inst); }}><Icon name="play" size={11} /></button>
                   </div>
                 </div>
               );

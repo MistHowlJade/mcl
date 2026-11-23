@@ -401,8 +401,10 @@ function OnlineContentModal({ instance, kind, onClose, onInstalled }: {
                   {!!gameVersion.trim() && item.gameVersions.includes(gameVersion.trim()) && <span className="tag green">兼容 {gameVersion.trim()}</span>}
                 </div>
                 <div className="faint" style={{ marginTop: 2 }}>{item.description}</div>
-                <div className="faint" style={{ marginTop: 4 }}>
-                  ⬇ {item.downloads.toLocaleString()} · ❤ {item.follows.toLocaleString()}
+                <div className="faint row" style={{ marginTop: 4, gap: 6 }}>
+                  <Icon name="download" size={12} /> {item.downloads.toLocaleString()}
+                  <span>·</span>
+                  <Icon name="heart" size={12} /> {item.follows.toLocaleString()}
                   {item.gameVersions.length > 0 && ` · 支持 ${item.gameVersions.slice(-4).join(' / ')}`}
                 </div>
               </div>

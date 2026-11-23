@@ -233,7 +233,7 @@ export function InstanceCard({ inst, onReload, onDiskUsage, onDelete, onExport, 
         <div className="instance-tile-meta">
           <span><Icon name="puzzle" size={12} /> <b>{inst.modsCount}</b> 模组</span>
           <span><Icon name="globe" size={12} /> <b>{inst.savesCount}</b> 存档</span>
-          <span>🕐 {timeAgo(inst.lastPlayedAt)}</span>
+          <span><Icon name="clock" size={12} /> {timeAgo(inst.lastPlayedAt)}</span>
         </div>
 
         <div className="memory-line">
@@ -258,7 +258,7 @@ export function InstanceCard({ inst, onReload, onDiskUsage, onDelete, onExport, 
             </>
           ) : (
             <>
-              <button className="btn small primary" onClick={() => onLaunch(inst)}><Icon name="play" size={11} /> 启动</button>
+              <button className="btn small row-launch" onClick={() => onLaunch(inst)}><Icon name="play" size={11} /> 启动</button>
               <button className="btn small" onClick={() => setEditing(true)}>重命名</button>
             </>
           )}
