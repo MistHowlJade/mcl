@@ -209,6 +209,14 @@ function Shell() {
           MCL<small>新一代我的世界启动器</small>
         </div>
         <div className="spacer" />
+        <button className="title-account" onClick={() => setPage('accounts')} title="账号设置">
+          <span className="avatar">
+            {activeAccount?.skinUrl
+              ? <img src={activeAccount.skinUrl} alt="" width={22} height={22} style={{ imageRendering: 'pixelated' }} />
+              : <span>{activeAccount?.name?.[0]?.toUpperCase() ?? '?'}</span>}
+          </span>
+          <span className="name">{activeAccount?.name ?? '未登录'}</span>
+        </button>
         <button className="winbtn" onClick={() => api.windowMinimize().catch(() => undefined)} title="最小化" aria-label="最小化">
           <svg viewBox="0 0 24 24"><path d="M5 12h14" /></svg>
         </button>
@@ -244,19 +252,8 @@ function Shell() {
             </div>
           ))}
           <div className="nav-footer">
-            <button className="account-chip" onClick={() => setPage('accounts')} title="管理账号">
-              <div className="avatar">
-                {activeAccount?.skinUrl
-                  ? <img src={activeAccount.skinUrl} alt="" width={32} height={32} style={{ imageRendering: 'pixelated' }} />
-                  : <div style={{ width: '100%', height: '100%', display: 'grid', placeItems: 'center', background: '#e8e8ec', color: '#6e6e73', fontWeight: 600 }}>{activeAccount?.name?.[0]?.toUpperCase() ?? '?'}</div>}
-              </div>
-              <div className="meta">
-                <div className="n">{activeAccount?.name ?? '未登录'}</div>
-                <div className="t">{activeAccount ? (activeAccount.type === 'microsoft' ? '微软账号' : '离线账号') : '点击登录/创建'}</div>
-              </div>
-            </button>
-            <div className="shortcut-note">Ctrl+Enter 启动 · Ctrl+K 搜索<br />Alt+1~9 快速切页</div>
-            <div className="trust-note">开源 · 零遥测 · 令牌仅存本机<br />游戏本体仅从 Mojang 官方渠道获取</div>
+            <div className="trust-line"><Icon name="shield" size={11} /> 开源 · 零遥测 · 令牌仅存本机</div>
+            <div className="shortcut-line">Ctrl+Enter 启动 · Ctrl+K 搜索 · Alt+1~9 切页</div>
           </div>
         </nav>
         <main className="content" ref={contentRef}>
