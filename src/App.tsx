@@ -136,9 +136,17 @@ function Shell() {
       <div className="titlebar">
         <div className="brand"><div className="logo">M</div>MCL<small>新一代我的世界启动器</small></div>
         <div className="spacer" />
-        <button className="winbtn" onClick={() => api.windowMinimize().catch(() => undefined)} title="最小化">─</button>
-        <button className="winbtn" onClick={() => api.windowToggleMaximize().then(setMaximized).catch(() => undefined)} title="最大化/还原">{maximized ? '❐' : '□'}</button>
-        <button className="winbtn close" onClick={() => api.windowClose().catch(() => undefined)} title="关闭">✕</button>
+        <button className="winbtn" onClick={() => api.windowMinimize().catch(() => undefined)} title="最小化" aria-label="最小化">
+          <svg viewBox="0 0 24 24"><path d="M5 12h14" /></svg>
+        </button>
+        <button className="winbtn" onClick={() => api.windowToggleMaximize().then(setMaximized).catch(() => undefined)} title="最大化/还原" aria-label="最大化或还原">
+          {maximized
+            ? <svg viewBox="0 0 24 24"><rect x="7" y="7" width="12" height="12" rx="1.5" /><path d="M5 17V6a1 1 0 0 1 1-1h11" /></svg>
+            : <svg viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="14" rx="1.5" /></svg>}
+        </button>
+        <button className="winbtn close" onClick={() => api.windowClose().catch(() => undefined)} title="关闭" aria-label="关闭">
+          <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18" /></svg>
+        </button>
       </div>
       <div className="statusbar">
         <span className={`status-item ${status.tone}`}><span className="dot" />{status.label}</span>
@@ -167,7 +175,7 @@ function Shell() {
               <div className="avatar">
                 {activeAccount?.skinUrl
                   ? <img src={activeAccount.skinUrl} alt="" width={32} height={32} style={{ imageRendering: 'pixelated' }} />
-                  : <div style={{ width: '100%', height: '100%', display: 'grid', placeItems: 'center', background: 'linear-gradient(135deg,#3b5a78,#22364e)', color: '#8fd0ff', fontWeight: 800 }}>{activeAccount?.name?.[0]?.toUpperCase() ?? '?'}</div>}
+                  : <div style={{ width: '100%', height: '100%', display: 'grid', placeItems: 'center', background: '#e8e8ec', color: '#6e6e73', fontWeight: 600 }}>{activeAccount?.name?.[0]?.toUpperCase() ?? '?'}</div>}
               </div>
               <div className="meta">
                 <div className="n">{activeAccount?.name ?? '未登录'}</div>

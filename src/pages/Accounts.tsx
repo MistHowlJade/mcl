@@ -201,7 +201,7 @@ function SkinModal({ account, onClose, onChanged }: { account: Account; onClose:
     <Modal title={`皮肤 / 披风 · ${account.name}`} onClose={onClose} footer={<button className="btn" onClick={onClose}>关闭</button>}>
       <div className="row" style={{ gap: 20, alignItems: 'flex-start', flexWrap: 'wrap' }}>
         <div style={{ textAlign: 'center' }}>
-          <div style={{ width: 128, height: 128, borderRadius: 14, background: 'linear-gradient(135deg,#26313f,#141a24)', overflow: 'hidden', display: 'grid', placeItems: 'center' }}>
+          <div style={{ width: 128, height: 128, borderRadius: 16, background: 'var(--panel-3)', border: '1px solid var(--border)', overflow: 'hidden', display: 'grid', placeItems: 'center' }}>
             {headStyle ? <div style={headStyle} /> : <span style={{ fontSize: 42, fontWeight: 800, color: 'var(--text-faint)' }}>{account.name[0]?.toUpperCase()}</span>}
           </div>
           <div className="faint mt">头部预览</div>
