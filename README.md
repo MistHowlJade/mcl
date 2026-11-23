@@ -127,11 +127,15 @@ npm run typecheck  # 类型检查
 npm run build      # 产物：dist/（渲染进程）+ electron-dist/（主进程）
 npm run verify     # typecheck + build + 逻辑冒烟（39 项，CI 同款）
 npm run start      # 运行构建产物
-npm run package    # 单文件便携 exe：release/single/MCL-<版本>-portable-x64.exe
-npm run package:dir # 零依赖备选：release/MCL-<版本>-<平台>-<架构>/ + .zip
+npm run package         # 单文件便携 exe：release/versions/便携版/MCL-<版本>-portable-x64.exe
+npm run package:dir     # 零依赖目录/ZIP：release/versions/稳定版/
+npm run package:dir:dev # 开发版（自动开 DevTools）：release/versions/开发版/
+npm run package:versions # 一条命令产出上面三个版本
 ```
 
-`npm run package` 使用 **electron-builder** 生成单文件便携 exe（一个 `MCL.exe`，双击即运行，对标 PCL2）。electron-builder 只是打包用 devDependency，运行时仍然零第三方依赖（React 已由 Vite 打进 `dist/`）。打包源已固化 npmmirror 镜像，国内网络可直接构建；Linux 交叉打包通过 `win.signAndEditExecutable: false` 跳过 wine 依赖，代价是 exe 不写入 PE 图标/版本信息，不影响运行。单文件体积较大（内含 Electron 运行时），启动时会解压到临时目录，未签名会触发 Windows SmartScreen 提示。
+三条打包命令的产物统一放在 `release/versions/` 下：`稳定版/`（免安装目录 + ZIP，日常使用）、`开发版/`（免安装目录 + ZIP，启动自动开 DevTools、界面显示“开发版”）、`便携版/`（单文件 exe）。`npm run package:versions` 会依次构建三者。
+
+`npm run package` 使用 **electron-builder** 生成单文件便携 exe（一个 `MCL.exe`，双击即运行，对标 PCL2）。electron-builder 只是打包用 devDependency，运行时仍然零第三方依赖（React 已由 Vite 打进 `dist/`）。打包源已固化 npmmirror 镜像，国内网络可直接构建；Linux 交叉打包通过 `win.signAndEditExecutable: false` 跳过 wine 依赖，代价是 exe 不写入 PE 图标/版本信息，不影响运行。单文件体积较大（内含 Electron 运行时），启动时会解压到临时目录，未签名会触发 Windows SmartScreen 提示。NSIS 固定用 3.0.5.0 并解压到系统临时目录（纯 ASCII 路径）——默认的 3.0.4.1 或中文路径都会让大包构建报 `error creating mmap`。
 
 `npm run package:dir` 是原来的零依赖打包脚本，生成免安装目录与便携 ZIP。**默认就是 PCL2 / HMCL 式便携布局**：打包态所有数据（`shared/libraries|assets|versions`、`instances/`、`java/`、`cache/` 等）都写在启动器旁边的 `mcl-data/`，拷走整个文件夹即带走全部游戏本体与资源；只有启动器目录不可写（如装在 Program Files）时才退回 `%APPDATA%/mcl`。单文件 exe 的 `mcl-data/` 会创建在 exe 同级目录。保留兼容：exe 同级放空的 `portable.txt` 仍会强制使用该目录。已有 `%APPDATA%/mcl` 数据不会自动迁移，需要保留时把该文件夹改名为启动器旁的 `mcl-data`。
 

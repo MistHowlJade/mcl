@@ -29,7 +29,8 @@ import * as lanService from './lan';
 import { downloadTasks } from './tasks';
 import { getVersionManifest } from './version';
 import { errorReason } from './net';
-import { CrashFix, LoaderType, MemoryPreset, TaskAction, TaskKind } from '../shared/types';
+import { AppInfo, CrashFix, LoaderType, MemoryPreset, TaskAction, TaskKind } from '../shared/types';
+import { getChannel } from './channel';
 
 const sendToAll = (channel: string, payload: unknown) => {
   for (const win of BrowserWindow.getAllWindows()) {
@@ -113,12 +114,13 @@ const isSafeExternal = (url: string) => /^https?:\/\//i.test(url);
 
 export function registerIpcHandlers(): void {
   /* ---------- 应用元信息 ---------- */
-  ipcMain.handle('app:info', () => ({
+  ipcMain.handle('app:info', (): AppInfo => ({
     name: 'MCL',
     version: app.getVersion(),
     dataDir: paths.dataRoot(),
     platform: process.platform,
     arch: process.arch,
+    channel: getChannel(),
   }));
 
   /* ---------- 窗口控制（无边框窗口） ---------- */

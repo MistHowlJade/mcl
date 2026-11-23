@@ -2,7 +2,7 @@
  * 类型安全的窗口桥（对应 electron/preload.ts 暴露的 window.mcl）
  */
 import type {
-  Account, AppSettings, BackupInfo, CloudSnapshotInfo, ContentInstallResult, ContentKind, ContentList,
+  Account, AppInfo, AppSettings, BackupInfo, CloudSnapshotInfo, ContentInstallResult, ContentKind, ContentList,
   ContentProjectType,
   CrashDiagnosis, CrashFix, DownloadTaskInfo, EnvironmentReport, ExportFormat, ExportResult, GameOptions,
   InstanceConfig, InstanceInfo, InstalledMod, JavaInfo, LanWorld, LaunchState, MigrationCandidate,
@@ -50,7 +50,7 @@ export interface CloudApplyResult {
 }
 
 export const api = {
-  appInfo: () => invoke<{ name: string; version: string; dataDir: string; platform: string; arch: string }>('app:info'),
+  appInfo: () => invoke<AppInfo>('app:info'),
   appUpdateCheck: () => invoke<UpdateInfo>('app:updateCheck'),
   appUpdateDownload: () => invoke<{ filePath: string; fileName: string; sizeBytes: number }>('app:updateDownload'),
   appRevealFile: (filePath: string) => invoke<boolean>('app:revealFile', filePath),

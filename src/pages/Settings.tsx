@@ -32,6 +32,7 @@ export default function Settings({ onNavigate }: { onNavigate?: (page: 'cloud') 
   const [mirrorTesting, setMirrorTesting] = useState(false);
   const [confirmReset, setConfirmReset] = useState(false);
   const [appVersion, setAppVersion] = useState('0.1.0');
+  const [appChannel, setAppChannel] = useState<'stable' | 'dev'>('stable');
   const [dataDir, setDataDir] = useState('');
   const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
   const [updateChecking, setUpdateChecking] = useState(false);
@@ -46,7 +47,7 @@ export default function Settings({ onNavigate }: { onNavigate?: (page: 'cloud') 
 
   useEffect(() => {
     api.settingsGet().then(setSettings).catch(e => toast.toast(String(e), 'error'));
-    api.appInfo().then(info => { setAppVersion(info.version); setDataDir(info.dataDir); }).catch(() => undefined);
+    api.appInfo().then(info => { setAppVersion(info.version); setAppChannel(info.channel); setDataDir(info.dataDir); }).catch(() => undefined);
     api.appCacheInfo().then(setCacheInfo).catch(() => undefined);
     scanJava();
     const offUpdate = on('app:updateProgress', (p: { done: number; total: number }) => setUpdateProgress(p));
@@ -514,6 +515,10 @@ export default function Settings({ onNavigate }: { onNavigate?: (page: 'cloud') 
         <div className="panel-title">关于 MCL</div>
         <div className="row" style={{ gap: 32, flexWrap: 'wrap' }}>
           <div><div className="faint">版本</div><div style={{ fontWeight: 800, fontSize: 18 }}>{appVersion}</div></div>
+          <div>
+            <div className="faint row" style={{ gap: 5 }}>渠道<Tip text="稳定版是日常使用的正式构建；开发版会自动打开 DevTools、便于反馈问题，功能可能仍在调整，不建议长线存档只用开发版。" /></div>
+            <div className={`tag ${appChannel === 'dev' ? 'amber' : 'green'}`}>{appChannel === 'dev' ? '开发版 · DevTools' : '稳定版'}</div>
+          </div>
           <div><div className="faint">协议</div><div style={{ fontWeight: 700 }}>MIT 开源</div></div>
           <div><div className="faint">遥测</div><div style={{ fontWeight: 700, color: 'var(--accent)' }}>无 · 不收集任何数据</div></div>
           <div><div className="faint">游戏本体</div><div style={{ fontWeight: 700 }}>Mojang 官方渠道（可切换镜像）</div></div>
