@@ -591,3 +591,154 @@ textarea.input { height: auto; padding: 9px 11px; resize: vertical; min-height: 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
 }
+
+/* ==================================================================
+ * 视觉升级 v2：可读性优先 + 明确层次 + 一点品牌色彩
+ * ------------------------------------------------------------------
+ * 上一版为了"克制"把正文压到 13px、辅助文字压到 10px，在 1360×840 的
+ * 实际窗口里整体发灰发虚、像后台表格。这里统一放大字号、加深卡片浮起
+ * 感，并把蓝色集中用在启动动作与当前位置上，让眼睛有明确落点。
+ * 所有语义色仍满足 WCAG AA（白底对比度 ≥ 4.5:1）。
+ * ================================================================== */
+:root {
+  --bg: #f3f5f9;
+  --sidebar-bg: #fbfcfe;
+  --border: #e2e6ee;
+  --border-strong: #cbd1de;
+  --shadow-1: 0 1px 2px rgba(22, 28, 45, .045), 0 6px 18px rgba(22, 28, 45, .045);
+  --shadow-2: 0 1px 2px rgba(22, 28, 45, .04), 0 12px 30px rgba(22, 28, 45, .07);
+  --gradient-brand: linear-gradient(135deg, #3b4150 0%, #171b23 100%);
+  --gradient-accent: linear-gradient(135deg, #3d73e8 0%, #2155c8 100%);
+  --sidebar-w: 232px;
+}
+
+body { font-size: 14px; line-height: 1.55; }
+
+/* 画布带极淡的冷色光晕，白卡才"浮"得起来 */
+.content {
+  padding: 22px 36px 48px;
+  background: radial-gradient(1100px 340px at 50% -120px, rgba(53, 104, 232, .075), transparent 72%), var(--bg);
+}
+
+/* 标题栏：品牌块用蓝，不用石墨 */
+.titlebar { background: linear-gradient(180deg, #ffffff 0%, #fbfcfe 100%); }
+.titlebar .brand .logo { background: var(--gradient-accent); box-shadow: 0 2px 6px rgba(33, 85, 200, .28); }
+
+/* 侧栏：更宽的点击区、更清楚的分组、选中项用石墨渐变 */
+.sidebar { padding-left: 12px; padding-right: 12px; }
+.side-section { font-size: 11px; letter-spacing: 1.6px; padding-top: 18px; }
+.nav-item { height: 38px; font-size: 13px; }
+.nav-item .icon svg { width: 18px; height: 18px; }
+.nav-item.active { background: var(--gradient-brand); box-shadow: 0 4px 12px rgba(23, 27, 35, .22); }
+.nav-footer .account-chip .meta .n { font-size: 13.5px; }
+.shortcut-note, .trust-note { font-size: 11px; }
+
+/* 通用控件：加大一档，点到即可，不用眯眼 */
+.page-header h1 { font-size: 24px; }
+.page-header .sub { font-size: 12.5px; }
+.panel { padding: 20px 22px; box-shadow: var(--shadow-2); }
+.panel-title { font-size: 14.5px; }
+.btn { height: 38px; padding: 0 16px; font-size: 13px; }
+.btn.small { height: 30px; padding: 0 12px; font-size: 12px; }
+.input, select.input, textarea.input { height: 38px; font-size: 13px; }
+.tag { font-size: 11.5px; padding: 3px 9px; }
+.faint { font-size: 12px; }
+.statusbar { font-size: 12.5px; box-shadow: var(--shadow-1); }
+.setting-row .label { font-size: 13.5px; }
+
+/* 启动台：主角要够大。左侧品牌色竖条 + 右侧淡蓝收尾，中间留白给内容 */
+.home-hero {
+  position: relative; overflow: hidden; min-height: 136px;
+  padding: 24px 26px; box-shadow: var(--shadow-2);
+  background: linear-gradient(115deg, #ffffff 0%, #ffffff 56%, #eef3ff 100%);
+}
+.home-hero::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--gradient-accent); }
+.home-hero .hero-logo { width: 48px; height: 48px; border-radius: 14px; background: var(--gradient-brand); box-shadow: 0 4px 12px rgba(23, 27, 35, .2); }
+.home-hero .hero-logo svg { width: 26px; height: 26px; }
+.eyebrow { font-size: 10.5px; padding: 3px 9px; }
+.home-hero h2 { font-size: 22px; margin-top: 6px; }
+.hero-hint { font-size: 12px; gap: 10px; margin-top: 8px; }
+.hero-chip { font-size: 11.5px; padding: 3px 10px; }
+.launch-btn {
+  height: 48px; padding: 0 30px; font-size: 14px; border-radius: 12px;
+  background: var(--gradient-accent); border-color: transparent;
+  box-shadow: 0 5px 16px rgba(33, 85, 200, .28);
+}
+.launch-btn:hover { background: linear-gradient(135deg, #3569da, #1c4bb8); border-color: transparent; }
+.launch-btn .launch-icon { width: 22px; height: 22px; }
+
+/* 数据卡：图标带上语义色，数字成为真正的视觉锚点 */
+.home-stats { gap: 12px; margin-top: 14px; }
+.stat-card { padding: 14px 16px; box-shadow: var(--shadow-2); }
+.stat-card .stat-icon { width: 36px; height: 36px; }
+.stat-card:nth-child(1) .stat-icon { background: #eaf0fd; color: #2f5fc4; }
+.stat-card:nth-child(2) .stat-icon { background: #e9f5ee; color: #24714b; }
+.stat-card:nth-child(3) .stat-icon { background: #fbf1e2; color: #966213; }
+.stat-card:nth-child(4) .stat-icon { background: #f1eefb; color: #5d4ba0; }
+.stat-card .k { font-size: 11.5px; }
+.stat-card .v { font-size: 22px; }
+.stat-card .v small { font-size: 12px; }
+.stat-card .d { font-size: 11px; }
+.home-section { margin-top: 26px; }
+.section-head h2 { font-size: 17px; }
+.section-head p { font-size: 11.5px; }
+
+/* 实例列表：行更高、封面更大、文字更清楚 */
+.instance-rows { gap: 12px; }
+.instance-row { min-height: 74px; padding: 9px 14px 9px 9px; }
+.row-cover { width: 68px; height: 50px; border-radius: 9px; }
+.row-cover b { font-size: 12.5px; }
+.row-info .n { font-size: 13.5px; }
+.row-info .d { font-size: 11.5px; }
+.row-meta { font-size: 11px; }
+.row-actions .btn { height: 32px; font-size: 12px; }
+
+/* 快捷入口与实例页：卡片同样升级 */
+.quick-card { padding: 13px 14px; }
+.quick-icon { width: 34px; height: 34px; }
+.quick-card b { font-size: 13px; }
+.quick-card small { font-size: 10.5px; }
+.instance-tile { min-height: 92px; }
+.cover-tile { width: 118px; }
+.cover-tile .cover-version { font-size: 21px; }
+.instance-tile-title h3 { font-size: 14.5px; }
+.instance-tile-meta { font-size: 11.5px; }
+.task-name { font-size: 13.5px; }
+.toast { font-size: 13px; }
+.modal-head h2 { font-size: 17px; }
+
+@media (max-width: 1100px) {
+  .content { padding: 20px 22px 36px; }
+  .home-hero h2 { font-size: 19px; }
+  .home-stats { grid-template-columns: repeat(2, 1fr); }
+}
+
+/* ---- 侧栏在 1360×840 的真实窗口里必须完整放得下 ----
+ * 之前 14 个导航项 + 5 个分组 + 账号卡片 + 两行说明 = 929px，
+ * 而侧栏只有 755px：账号、快捷键、信任说明全部被裁掉，"设置"也露出一半。
+ * 现在账号入口移到标题栏，说明压成两行，分组与导航项收紧，整体 ~720px。 */
+.sidebar { overflow-y: auto; overflow-x: hidden; }
+.side-section { padding: 8px 12px 4px; font-size: 10.5px; letter-spacing: 1.3px; }
+.sidebar > div:first-child .side-section { padding-top: 4px; }
+.sidebar > div + div > .side-section { margin-top: 2px; padding-top: 8px; }
+.nav-item { height: 36px; }
+.nav-footer { margin-top: auto; padding: 10px 4px 2px; gap: 4px; border-top: 1px solid var(--border-soft); }
+.trust-line, .shortcut-line { font-size: 10.5px; color: var(--text-faint); line-height: 1.4; padding: 0 8px; }
+.trust-line { display: flex; align-items: center; gap: 5px; color: var(--text-dim); }
+.shortcut-line { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* 标题栏账号入口：不占侧栏高度，点击直达账号页 */
+.title-account {
+  -webkit-app-region: no-drag;
+  display: flex; align-items: center; gap: 7px; height: 28px;
+  padding: 0 10px 0 4px; border: 1px solid var(--border); border-radius: 999px;
+  background: #ffffff; color: var(--text); cursor: pointer; font-family: inherit; font-size: 12px;
+  transition: border-color var(--dur) var(--ease), background var(--dur) var(--ease);
+}
+.title-account:hover { border-color: var(--border-strong); background: var(--panel-2); }
+.title-account .avatar {
+  width: 22px; height: 22px; border-radius: 50%; overflow: hidden; flex-shrink: 0;
+  background: var(--gradient-accent); color: #ffffff; display: grid; place-items: center;
+  font-weight: 650; font-size: 11px; image-rendering: pixelated;
+}
+.title-account .name { max-width: 92px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
