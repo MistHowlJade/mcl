@@ -11,6 +11,7 @@ import { fileURLToPath } from 'url';
 import { registerIpcHandlers, bindServiceEvents } from './services/ipc';
 import { dataRoot, ensureLayout, redirectElectronPaths } from './services/paths';
 import { getSettings } from './services/settings';
+import { getChannel, CHANNEL_LABEL } from './services/channel';
 import { killResidualProcesses } from './services/minecraft';
 import { killAllServersSync, listServers, stopServer } from './services/server';
 
@@ -79,6 +80,7 @@ if (!gotLock) {
 }
 
 const DEV_URL = process.env.VITE_DEV_SERVER_URL;
+const CHANNEL = getChannel();
 
 async function createWindow(): Promise<void> {
   ensureLayout();
@@ -103,6 +105,11 @@ async function createWindow(): Promise<void> {
 
   win.once('ready-to-show', () => {
     win.show();
+    // 开发版：任务栏标题带标识，并自动弹出独立 DevTools，方便直接看控制台与网络
+    if (CHANNEL === 'dev') {
+      win.setTitle(`MCL · ${CHANNEL_LABEL.dev}（DevTools 已开启）`);
+      win.webContents.openDevTools({ mode: 'detach' });
+    }
     // 配置可能被手工改坏或来自旧版云快照：非数字会让 setZoomFactor 抛错，窗口直接起不来
     const rawZoom = Number(settings.general.zoomFactor);
     win.webContents.setZoomFactor(Number.isFinite(rawZoom) ? Math.min(2, Math.max(0.75, rawZoom)) : 1);

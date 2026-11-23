@@ -6,6 +6,7 @@
  *   npm run package:dir        # 构建后执行（package:dir 脚本会先跑 build）
  *   node scripts/package.js    # 直接使用现有构建产物
  *   node scripts/package.js --no-zip   # 只生成目录，不压 ZIP
+ *   MCL_CHANNEL=dev node scripts/package.js  # 开发版（目录名带 -dev，启动自动开 DevTools）
  *
  * 注意：默认的 npm run package 现在走 electron-builder 生成单文件便携 exe；
  * 本脚本保留为零依赖、可审计的目录/ZIP 打包备选。
@@ -25,8 +26,11 @@ const fs = require('fs');
 const path = require('path');
 
 const root = path.resolve(__dirname, '..');
-const releaseRoot = path.join(root, 'release');
 const wantZip = !process.argv.includes('--no-zip');
+// MCL_CHANNEL=dev 生成开发版：目录名带 -dev，并写入 channel.json 让主进程打开 DevTools
+const channel = process.env.MCL_CHANNEL === 'dev' ? 'dev' : 'stable';
+// 三版本统一放在 release/versions/ 下，稳定版与开发版各自一个子目录
+const releaseRoot = path.join(root, 'release', 'versions', channel === 'dev' ? '开发版' : '稳定版');
 
 function fail(message) {
   console.error(`\n[package] 失败：${message}\n`);
@@ -53,7 +57,7 @@ if (!fs.existsSync(electronDist)) {
 
 const platform = process.platform;
 const arch = process.arch;
-const outName = `MCL-${pkg.version}-${platform}-${arch}`;
+const outName = `MCL-${pkg.version}${channel === 'dev' ? '-dev' : ''}-${platform}-${arch}`;
 const outDir = path.join(releaseRoot, outName);
 
 console.log(`[package] Electron ${electronVersion ?? '?'} · ${platform}-${arch}`);
@@ -103,12 +107,14 @@ fs.writeFileSync(path.join(appDir, 'package.json'), JSON.stringify({
   license: pkg.license,
   engines: pkg.engines,
 }, null, 2), 'utf8');
+fs.writeFileSync(path.join(appDir, 'channel.json'), JSON.stringify({ channel }, null, 2), 'utf8');
 
 // 4. 便携说明 + 便携模式开关示例
 fs.writeFileSync(path.join(outDir, '使用说明.txt'), [
   'MCL · 新一代我的世界启动器',
   '',
   `版本：${pkg.version}`,
+  `渠道：${channel === 'dev' ? '开发版（启动时自动打开 DevTools，仅供调试）' : '稳定版'}`,
   `运行时：Electron ${electronVersion ?? '（未知）'} / ${platform}-${arch}`,
   '',
   `启动：${isWin ? '双击 MCL.exe' : isMac ? '双击 Electron.app（这是 MCL 的 macOS 应用包）' : '在终端运行 ./MCL'}`,
@@ -146,4 +152,4 @@ if (wantZip) {
   console.log(`[package] 已生成 ZIP：${zipPath}（${mb} MB）`);
 }
 
-console.log('\n[package] 完成。分发时发送 release/ 下的目录或 ZIP 即可。');
+console.log(`\n[package] 完成。分发时发送 ${path.relative(root, outDir)} 目录或同目录 ZIP 即可。`);

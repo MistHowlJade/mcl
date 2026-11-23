@@ -5,7 +5,8 @@ copyright: Copyright © 2026 MCL
 # 单文件便携 exe：所有内容打进一个 MCL.exe，运行时解压到临时目录。
 # 只用于打包；运行时仍然零第三方依赖（React 已由 Vite 打进 dist/）。
 directories:
-  output: release/single
+  # 先用 ASCII 路径构建（NSIS 在中文路径下会 mmap 失败），完成后由 package-portable.js 改名为「便携版」
+  output: release/versions/portable
 
 files:
   - dist/**/*
@@ -33,3 +34,4 @@ win:
 portable:
   # 临时解压目录名；数据目录仍按 paths.ts 的规则放在 exe 同级 mcl-data/
   unpackDirName: MCL-${version}
+

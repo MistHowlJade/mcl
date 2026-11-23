@@ -4,6 +4,17 @@
 
 export type LoaderType = 'vanilla' | 'fabric' | 'quilt' | 'forge' | 'neoforge';
 export type MemoryPreset = 'low' | 'standard' | 'heavy';
+export type AppChannel = 'stable' | 'dev';
+
+/** 应用元信息：channel 由打包时写入的 channel.json 决定，源码直跑默认稳定版 */
+export interface AppInfo {
+  name: string;
+  version: string;
+  dataDir: string;
+  platform: string;
+  arch: string;
+  channel: AppChannel;
+}
 
 export interface InstanceConfig {
   id: string;
