@@ -161,7 +161,7 @@ export default function Home({ onNavigate, onLaunchFail }: { onNavigate: (p: Pag
       <section className="home-hero">
         <div className="home-hero-content">
           <div className="hero-id">
-            <div className="hero-logo"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 18V6l8 8 8-8v12" /></svg></div>
+            <div className="hero-logo"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.8 20.5 7.5v9L12 21.2 3.5 16.5v-9L12 2.8Z" /><path d="m3.5 7.5 8.5 4.7 8.5-4.7M12 12.2v9" /></svg></div>
             <div>
               <span className="eyebrow"><span className="status-dot" />启动台</span>
               <h2>欢迎回来，{accountName ?? '旅人'}</h2>
@@ -182,7 +182,7 @@ export default function Home({ onNavigate, onLaunchFail }: { onNavigate: (p: Pag
         <div className="hero-actions">
           <button className="launch-btn" onClick={doLaunch} disabled={busy || !selected} aria-busy={busy}>
             {busy ? <span className="btn-spinner" aria-hidden="true" /> : <span className="launch-icon"><Icon name="play" size={10} /></span>}
-            {busy ? (launchState.status === 'running' ? '游戏运行中' : '准备中…') : '启 动'}
+            {busy ? (launchState.status === 'running' ? '游戏运行中' : '准备中…') : '启动游戏'}
           </button>
           {busy && launchState.status === 'downloading' && (
             <button className="btn" onClick={() => api.launchCancelDownload()
@@ -268,28 +268,31 @@ export default function Home({ onNavigate, onLaunchFail }: { onNavigate: (p: Pag
             </div>
           </div>
         ) : (
-          <div className="instance-rows">
+          <div className="home-instance-grid">
             {sortedInstances.map(inst => {
               const key = loaderKey(inst.loader);
               return (
                 <div
                   key={inst.id}
-                  className={`instance-row ${selected?.id === inst.id ? 'selected' : ''}`}
+                  className={`home-instance-card ${selected?.id === inst.id ? 'selected' : ''}`}
                   onClick={() => setSelectedId(inst.id)}
                   onDoubleClick={() => launchInstance(inst)}
                   title="单击选择，双击启动"
                 >
-                  <div className={`row-cover loader-${key}`}>
+                  <div className={`cover loader-${key}`}>
                     <span className="cover-pill">{LOADER_LABEL[key]}</span>
-                    <b>{inst.mcVersion === 'unknown' ? '?' : inst.mcVersion}</b>
+                    <span className="cover-version">{inst.mcVersion === 'unknown' ? '?' : inst.mcVersion}</span>
                   </div>
-                  <div className="row-info">
+                  <div className="home-card-body">
                     <div className="n" title={inst.name}>{inst.favorite && <Icon name="star" size={11} className="fav-inline" />}{inst.name}</div>
-                    <div className="d">{inst.loaderVersion ? `${LOADER_LABEL[key]} ${inst.loaderVersion}` : LOADER_LABEL[key]} · {PRESET_LABEL[inst.memoryPreset ?? 'standard']}内存 · {timeAgo(inst.lastPlayedAt)}{(inst.tags?.length ?? 0) > 0 ? ` · ${(inst.tags ?? []).join('/')}` : ''}</div>
-                  </div>
-                  <div className="row-meta"><span><Icon name="puzzle" size={11} /> {inst.modsCount}</span><span><Icon name="globe" size={11} /> {inst.savesCount}</span></div>
-                  <div className="row-actions">
-                    <button className="btn small row-launch" title="启动" onClick={e => { e.stopPropagation(); launchInstance(inst); }}><Icon name="play" size={11} /></button>
+                    <div className="d">{inst.loaderVersion ? `${LOADER_LABEL[key]} ${inst.loaderVersion}` : LOADER_LABEL[key]} · {PRESET_LABEL[inst.memoryPreset ?? 'standard']} · {timeAgo(inst.lastPlayedAt)}</div>
+                    <div className="home-card-foot">
+                      <span className="tag">{inst.modsCount} 模组</span>
+                      <span className="tag">{inst.savesCount} 存档</span>
+                      <div className="row-actions">
+                        <button className="btn small row-launch" title="启动" onClick={e => { e.stopPropagation(); launchInstance(inst); }}><Icon name="play" size={12} /> 启动</button>
+                      </div>
+                    </div>
                   </div>
                 </div>
               );
