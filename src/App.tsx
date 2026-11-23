@@ -205,7 +205,7 @@ function Shell() {
     <>
       <div className="titlebar">
         <div className="brand">
-          <div className="logo"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 18V6l8 8 8-8v12" /></svg></div>
+          <div className="logo"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.8 20.5 7.5v9L12 21.2 3.5 16.5v-9L12 2.8Z" /><path d="m3.5 7.5 8.5 4.7 8.5-4.7M12 12.2v9" /></svg></div>
           MCL<small>新一代我的世界启动器</small>
         </div>
         <div className="spacer" />
