@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ToastProvider, useToast } from './components/Toast';
-import { api, on } from './lib/api';
+import { api, dropPaths, on } from './lib/api';
 import { Icon } from './components/Icon';
 import { formatBytes } from './components/Modal';
 import type { Account, LaunchState, ServerInfo } from '../electron/shared/types';
@@ -17,12 +17,14 @@ import Accounts from './pages/Accounts';
 import Cloud from './pages/Cloud';
 import Logs from './pages/Logs';
 import Settings from './pages/Settings';
+import Tasks from './pages/Tasks';
 
-type PageId = 'home' | 'instances' | 'servers' | 'mods' | 'download' | 'content' | 'backups' | 'crash' | 'migrate' | 'accounts' | 'cloud' | 'logs' | 'settings';
+type PageId = 'home' | 'instances' | 'servers' | 'mods' | 'download' | 'tasks' | 'content' | 'backups' | 'crash' | 'migrate' | 'accounts' | 'cloud' | 'logs' | 'settings';
 
 const ICONS: Record<PageId, React.ReactNode> = {
   home: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 10.5 12 3l9 7.5" /><path d="M5 9.5V21h14V9.5" /><path d="M9.5 21v-6h5v6" /></svg>,
   download: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3v12" /><path d="m7 11 5 5 5-5" /><path d="M4 20h16" /></svg>,
+  tasks: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M4 6h10M4 12h10M4 18h6" /><path d="m16 15 2 2 3-4" /></svg>,
   instances: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7.5" height="7.5" rx="1.6" /><rect x="13.5" y="3" width="7.5" height="7.5" rx="1.6" /><rect x="3" y="13.5" width="7.5" height="7.5" rx="1.6" /><rect x="13.5" y="13.5" width="7.5" height="7.5" rx="1.6" /></svg>,
   servers: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="6" rx="2" /><rect x="3" y="14" width="18" height="6" rx="2" /><circle cx="7" cy="7" r=".8" fill="currentColor" /><circle cx="7" cy="17" r=".8" fill="currentColor" /><path d="M11 7h6M11 17h6" /></svg>,
   mods: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3 3 8v8l9 5 9-5V8l-9-5Z" /><path d="M12 12 3 8" /><path d="M12 12l9-4" /><path d="M12 12v9" /></svg>,
@@ -42,6 +44,7 @@ const NAV: Array<{ id: PageId; label: string; section: string }> = [
   { id: 'servers', label: '服务器', section: '游戏' },
   { id: 'mods', label: '模组中心', section: '模组与资源' },
   { id: 'download', label: '资源下载', section: '模组与资源' },
+  { id: 'tasks', label: '下载任务', section: '模组与资源' },
   { id: 'content', label: '内容管理', section: '模组与资源' },
   { id: 'backups', label: '存档备份', section: '模组与资源' },
   { id: 'crash', label: '崩溃分析', section: '诊断与工具' },
@@ -62,6 +65,7 @@ function Shell() {
   const [launchProgress, setLaunchProgress] = useState<{ done: number; total: number } | null>(null);
   const [serverInfo, setServerInfo] = useState<ServerInfo | null>(null);
   const [updateProgress, setUpdateProgress] = useState<{ done: number; total: number } | null>(null);
+  const [modpackDrag, setModpackDrag] = useState(false);
 
   useEffect(() => {
     api.accountsActive().then(setActiveAccount).catch(() => setActiveAccount(null));
@@ -92,6 +96,72 @@ function Shell() {
     const timer = window.setInterval(() => { api.accountsActive().then(setActiveAccount).catch(() => undefined); }, 15000);
     return () => window.clearInterval(timer);
   }, []);
+
+  /* 全局快捷键：Ctrl+Enter 启动当前实例、Ctrl+K 聚焦搜索、Alt+1~9 切页 */
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement | null;
+      const typing = !!el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable);
+      const mod = e.ctrlKey || e.metaKey;
+      if (mod && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        const input = document.querySelector<HTMLInputElement>('input[data-mcl-search]');
+        if (input) { input.focus(); input.select(); }
+        return;
+      }
+      if (mod && e.key === 'Enter') {
+        e.preventDefault();
+        const id = localStorage.getItem('mcl:selectedInstance');
+        const start = (target: string) => api.launchStart(target).catch(err => toast.toast(err instanceof Error ? err.message : String(err), 'error'));
+        if (id) void start(id);
+        else void api.instancesList().then(list => { if (list[0]) void start(list[0].id); }).catch(() => undefined);
+        return;
+      }
+      if (!typing && e.altKey && !mod && /^[1-9]$/.test(e.key)) {
+        const target = NAV[Number(e.key) - 1];
+        if (target) { e.preventDefault(); setPage(target.id); }
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [toast]);
+
+  /* 全局拖入整合包：.mrpack / .zip 直接导入成实例。内容管理页有自己的拖放区，跳过它 */
+  useEffect(() => {
+    const hasFiles = (e: DragEvent) => Array.from(e.dataTransfer?.types ?? []).includes('Files');
+    const isLocalDrop = (e: DragEvent) => !!(e.target as HTMLElement | null)?.closest?.('[data-mcl-local-drop]');
+    const onDragEnter = (e: DragEvent) => { if (hasFiles(e) && !isLocalDrop(e)) setModpackDrag(true); };
+    const onDragLeave = (e: DragEvent) => { if (!e.relatedTarget) setModpackDrag(false); };
+    const onDragOver = (e: DragEvent) => { if (hasFiles(e)) e.preventDefault(); };
+    const onDrop = async (e: DragEvent) => {
+      setModpackDrag(false);
+      if (!e.dataTransfer?.files?.length) return;
+      if (hasFiles(e)) e.preventDefault();
+      if (isLocalDrop(e)) return;
+      const filePath = dropPaths(e.dataTransfer.files).find(p => /\.(mrpack|zip)$/i.test(p));
+      if (!filePath) return;
+      e.preventDefault();
+      try {
+        const result = await api.modpackImportFile(filePath);
+        const warnings = Array.isArray(result?.warnings) ? result.warnings.length : 0;
+        toast.toast(result?.instanceId
+          ? (warnings ? `整合包已导入，但有 ${warnings} 条提示，请到「日志」页查看` : '整合包已导入并创建新实例')
+          : '整合包已处理，详情请到「日志」页查看', warnings ? 'info' : 'ok');
+      } catch (err) {
+        toast.toast(err instanceof Error ? err.message : String(err), 'error');
+      }
+    };
+    document.addEventListener('dragenter', onDragEnter);
+    document.addEventListener('dragleave', onDragLeave);
+    document.addEventListener('dragover', onDragOver);
+    document.addEventListener('drop', onDrop);
+    return () => {
+      document.removeEventListener('dragenter', onDragEnter);
+      document.removeEventListener('dragleave', onDragLeave);
+      document.removeEventListener('dragover', onDragOver);
+      document.removeEventListener('drop', onDrop);
+    };
+  }, [toast]);
 
   const sections = useMemo(() => {
     const map = new Map<string, typeof NAV>();
@@ -182,6 +252,7 @@ function Shell() {
                 <div className="t">{activeAccount ? (activeAccount.type === 'microsoft' ? '微软账号' : '离线账号') : '点击登录/创建'}</div>
               </div>
             </button>
+            <div className="shortcut-note">Ctrl+Enter 启动 · Ctrl+K 搜索<br />Alt+1~9 快速切页</div>
             <div className="trust-note">开源 · 零遥测 · 令牌仅存本机<br />游戏本体仅从 Mojang 官方渠道获取</div>
           </div>
         </nav>
@@ -192,6 +263,7 @@ function Shell() {
             {page === 'servers' && <Servers />}
             {page === 'mods' && <Mods />}
             {page === 'download' && <Download />}
+            {page === 'tasks' && <Tasks />}
             {page === 'content' && <Content />}
             {page === 'backups' && <Backups />}
             {page === 'crash' && <Crash />}
@@ -203,6 +275,7 @@ function Shell() {
           </div>
         </main>
       </div>
+      {modpackDrag && <div className="drop-overlay modpack">松开即可导入整合包（.mrpack / .zip）</div>}
     </>
   );
 }

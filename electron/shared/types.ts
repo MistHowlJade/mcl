@@ -22,6 +22,10 @@ export interface InstanceConfig {
   jvmArgsExtra?: string;
   /** 该实例禁止自动更新 Mod（整合包玩家保护） */
   noModUpdate?: boolean;
+  /** 自定义标签（用于实例页筛选，最多 8 个） */
+  tags?: string[];
+  /** 收藏：在首页/实例页置顶显示 */
+  favorite?: boolean;
   resolution?: { width: number; height: number } | null;
   createdAt: number;
   lastPlayedAt?: number | null;
@@ -278,6 +282,51 @@ export interface DownloadEvent {
   kind: 'progress' | 'taskDone' | 'overall' | 'failed';
   overall?: { done: number; total: number; tasksDone: number; tasksTotal: number };
   task?: DownloadProgress;
+}
+
+/* ---------- 下载任务中心 ---------- */
+export type TaskKind = 'launch' | 'mod' | 'resourcepack' | 'shader' | 'world' | 'modpack' | 'java' | 'update' | 'server' | 'other';
+export type TaskStatus = 'running' | 'done' | 'failed' | 'canceled';
+
+/** 任务完成后可执行的后续动作（用于「重试」与「打开目录」），全部指向本机路径/既有能力 */
+export interface TaskAction {
+  /** 重新执行对应的已有 IPC 能力 */
+  retry?: { type: 'update' } | { type: 'java'; major: number } | { type: 'modpack'; filePath: string } | { type: 'launch'; instanceId: string };
+  /** 在数据目录内、可直接用 openPath 打开的文件夹 */
+  openDir?: string;
+  /** 数据目录外的文件，用 appRevealFile 在资源管理器中定位 */
+  revealFile?: string;
+}
+
+export interface DownloadTaskInfo {
+  id: string;
+  name: string;
+  kind: TaskKind;
+  status: TaskStatus;
+  bytesDone: number;
+  bytesTotal: number;
+  /** 瞬时速度（字节/秒），由主进程按相邻两次进度估算 */
+  speed: number;
+  /** 是否有可调用的取消回调（仅进行中的任务有意义，重启后失效） */
+  cancelable?: boolean;
+  startedAt: number;
+  finishedAt?: number;
+  error?: string;
+  action?: TaskAction;
+}
+
+/* ---------- 游戏设置可视化 ---------- */
+/** options.txt 里允许界面编辑的键（主进程有白名单，这里只用于类型提示） */
+export type GameOptions = Record<string, string>;
+
+/* ---------- 游玩统计 ---------- */
+export interface PlayStats {
+  /** 最近 7 天（含今天）的游玩秒数，按日期升序 */
+  daily: Array<{ date: string; seconds: number }>;
+  totalSeconds: number;
+  sessions: number;
+  /** 按实例累计的游玩秒数（降序，已附上实例名） */
+  perInstance: Array<{ instanceId: string; name: string; seconds: number }>;
 }
 
 export interface CrashFix {

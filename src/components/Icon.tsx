@@ -32,6 +32,9 @@ const PATHS: Record<string, React.ReactNode> = {
   warn: <><path d="M12 3 2.5 20h19L12 3Z" /><path d="M12 10v4M12 17h.01" /></>,
   info: <><circle cx="12" cy="12" r="9" /><path d="M12 11v5M12 8h.01" /></>,
   shield: <path d="M12 3 4 6v6c0 5 3.4 8.4 8 9 4.6-.6 8-4 8-9V6l-8-3Z" />,
+  download: <><path d="M12 3v12" /><path d="m7 11 5 5 5-5" /><path d="M4 20h16" /></>,
+  refresh: <><path d="M20 7v5h-5" /><path d="M4 17v-5h5" /><path d="M5.7 9A7.5 7.5 0 0 1 18.6 7L20 12M4 12l1.4 5A7.5 7.5 0 0 0 18.3 15" /></>,
+  pause: <><path d="M9 5v14M15 5v14" /></>,
 };
 
 export function Icon({ name, size = 16, className = '' }: { name: string; size?: number; className?: string }) {

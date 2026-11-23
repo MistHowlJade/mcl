@@ -86,10 +86,24 @@ const isMcVersion = (v: unknown): v is string => typeof v === 'string'
   && v.length > 0 && v.length <= 128
   && /^[0-9A-Za-z_\-[\]]+(\.[0-9A-Za-z_\-[\]]+)*$/.test(v);
 
+/** 标签只用于界面筛选：限制数量与长度，去掉空白/换行，避免写坏 instance.json */
+function normalizeTags(value: unknown): string[] | null {
+  if (!Array.isArray(value)) return null;
+  const seen = new Set<string>();
+  for (const item of value) {
+    if (typeof item !== 'string') continue;
+    const tag = item.trim().replace(/[\r\n]/g, ' ').slice(0, 20);
+    if (tag) seen.add(tag);
+    if (seen.size >= 8) break;
+  }
+  return [...seen];
+}
+
 export function createInstance(input: {
   name: string; mcVersion: string; loader: LoaderType; loaderVersion?: string | null;
   memoryPreset?: MemoryPreset; javaPath?: string | null;
   heapInitialMB?: number | null; heapMaxMB?: number | null;
+  tags?: string[]; favorite?: boolean;
 }): InstanceConfig {
   // IPC 参数只是 TS 类型：运行时也要挡住空值/非法加载器，否则会写出启动不了的实例
   if (!input || typeof input !== 'object') throw new Error('创建实例的参数不完整');
@@ -115,6 +129,8 @@ export function createInstance(input: {
     createdAt: Date.now(),
     lastPlayedAt: null,
     playTimeSeconds: 0,
+    tags: normalizeTags(input.tags) ?? [],
+    favorite: input.favorite === true,
   };
   const game = paths.gameDir(id);
   for (const sub of paths.GAME_SUBDIRS) {
@@ -162,6 +178,8 @@ export function updateInstance(id: string, patch: Partial<InstanceConfig>): Inst
   }
   if (typeof p.jvmArgsExtra === 'string') merged.jvmArgsExtra = p.jvmArgsExtra;
   if (typeof p.noModUpdate === 'boolean') merged.noModUpdate = p.noModUpdate;
+  if ('tags' in p) merged.tags = normalizeTags(p.tags) ?? [];
+  if (typeof p.favorite === 'boolean') merged.favorite = p.favorite;
   if (p.resolution === null || (p.resolution && Number.isInteger(p.resolution.width) && Number.isInteger(p.resolution.height)
     && p.resolution.width > 0 && p.resolution.height > 0)) {
     merged.resolution = p.resolution;
@@ -203,7 +221,61 @@ export function duplicateInstance(id: string): InstanceConfig {
 }
 
 export function touchPlayed(id: string, seconds: number): void {
-  updateInstance(id, { lastPlayedAt: Date.now(), playTimeSeconds: (readJson<InstanceConfig | null>(paths.instanceFile(id), null)?.playTimeSeconds ?? 0) + seconds });
+  const safe = Number.isFinite(seconds) && seconds > 0 ? Math.floor(seconds) : 0;
+  updateInstance(id, { lastPlayedAt: Date.now(), playTimeSeconds: (readJson<InstanceConfig | null>(paths.instanceFile(id), null)?.playTimeSeconds ?? 0) + safe });
+  if (safe > 0) recordPlaySession(safe);
+}
+
+/* ---------- 游玩统计 ---------- */
+interface PlayLog {
+  /** YYYY-MM-DD → 当天游玩秒数（本地时区） */
+  days: Record<string, number>;
+  sessions: number;
+}
+
+function readPlayLog(): PlayLog {
+  const raw = readJson<unknown>(paths.playLogFile(), {});
+  const obj = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw as Record<string, unknown> : {};
+  const days: Record<string, number> = {};
+  const rawDays = obj.days && typeof obj.days === 'object' && !Array.isArray(obj.days) ? obj.days as Record<string, unknown> : {};
+  for (const [date, seconds] of Object.entries(rawDays)) {
+    if (/^\d{4}-\d{2}-\d{2}$/.test(date) && typeof seconds === 'number' && Number.isFinite(seconds) && seconds > 0) {
+      days[date] = seconds;
+    }
+  }
+  const sessions = typeof obj.sessions === 'number' && Number.isFinite(obj.sessions) && obj.sessions >= 0 ? Math.floor(obj.sessions) : 0;
+  return { days, sessions };
+}
+
+/** 每次游戏正常结束由 touchPlayed 调用：同一天的会话累加，不保存具体时间点，保护隐私 */
+function recordPlaySession(seconds: number): void {
+  const log = readPlayLog();
+  const now = new Date();
+  const date = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  log.days[date] = (log.days[date] ?? 0) + seconds;
+  log.sessions += 1;
+  // 只保留最近 180 天，避免文件无限增长
+  const dates = Object.keys(log.days).sort();
+  for (const old of dates.slice(0, Math.max(0, dates.length - 180))) delete log.days[old];
+  writeJson(paths.playLogFile(), log);
+}
+
+/** 首页/统计面板：最近 7 天趋势 + 按实例累计（实例本身已有 playTimeSeconds） */
+export function getPlayStats(): import('../shared/types').PlayStats {
+  const log = readPlayLog();
+  const today = new Date();
+  const daily: Array<{ date: string; seconds: number }> = [];
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(today.getFullYear(), today.getMonth(), today.getDate() - i);
+    const date = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    daily.push({ date, seconds: log.days[date] ?? 0 });
+  }
+  const totalSeconds = Object.values(log.days).reduce((a, b) => a + b, 0);
+  const perInstance = listInstanceFiles()
+    .map(c => ({ instanceId: c.id, name: c.name, seconds: c.playTimeSeconds ?? 0 }))
+    .filter(x => x.seconds > 0)
+    .sort((a, b) => b.seconds - a.seconds);
+  return { daily, totalSeconds, sessions: log.sessions, perInstance };
 }
 
 /** 所有接受实例 ID 的写操作都必须先过这里：path.join 不会拦住 ../../ 路径穿越 */

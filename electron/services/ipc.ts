@@ -26,9 +26,10 @@ import * as contentService from './content';
 import * as exporter from './exporter';
 import * as updateService from './update';
 import * as lanService from './lan';
+import { downloadTasks } from './tasks';
 import { getVersionManifest } from './version';
 import { errorReason } from './net';
-import { CrashFix, LoaderType, MemoryPreset } from '../shared/types';
+import { CrashFix, LoaderType, MemoryPreset, TaskAction, TaskKind } from '../shared/types';
 
 const sendToAll = (channel: string, payload: unknown) => {
   for (const win of BrowserWindow.getAllWindows()) {
@@ -55,8 +56,50 @@ function assertNoGameBusy(action: string): void {
   }
 }
 
+/* ---------- 下载任务中心：与启动流程联动 ---------- */
+let launchDownloadTask: string | null = null;
+function finishLaunchDownloadTask(ok: boolean, error?: string): void {
+  if (!launchDownloadTask) return;
+  const id = launchDownloadTask;
+  launchDownloadTask = null;
+  if (ok) downloadTasks.done(id); else downloadTasks.fail(id, error ?? '下载未完成');
+}
+
+/** 把一次「有明确开始/结束」的业务包成任务，失败时把人话错误带进任务列表 */
+async function withTask<T>(kind: TaskKind, name: string, fn: () => Promise<T>, action?: TaskAction): Promise<T> {
+  const id = downloadTasks.begin(kind, name, action);
+  try {
+    const result = await fn();
+    downloadTasks.done(id, action);
+    return result;
+  } catch (e) {
+    downloadTasks.fail(id, errorReason(e), action);
+    throw e;
+  }
+}
+
 // 服务事件 → 渲染进程
 export function bindServiceEvents(): void {
+  downloadTasks.on('changed', () => sendToAll('tasks:changed', downloadTasks.list()));
+  minecraft.launchEvents.on('status', (s: { status: string; instanceId: string | null }) => {
+    if (s.status === 'downloading' && s.instanceId) {
+      if (!launchDownloadTask) {
+        const inst = instances.getInstance(s.instanceId);
+        launchDownloadTask = downloadTasks.begin('launch', `${inst?.name ?? '游戏'} · 下载游戏文件`,
+          { retry: { type: 'launch', instanceId: s.instanceId } });
+        downloadTasks.setCanceler(launchDownloadTask, () => minecraft.cancelLaunchDownload());
+      }
+    } else if (['launching', 'running'].includes(s.status) && launchDownloadTask) {
+      // 进入启动阶段说明本次下载已完成
+      finishLaunchDownloadTask(true);
+    }
+  });
+  minecraft.launchEvents.on('progress', (p: { done: number; total: number } | null) => {
+    if (launchDownloadTask && p) downloadTasks.progress(launchDownloadTask, p.done, p.total);
+  });
+  minecraft.launchEvents.on('exit', (e: { crashed?: boolean } | null) => {
+    if (e?.crashed) finishLaunchDownloadTask(false, '游戏启动失败');
+  });
   minecraft.launchEvents.on('status', s => sendToAll('launch:status', s));
   minecraft.launchEvents.on('log', line => sendToAll('launch:log', line));
   minecraft.launchEvents.on('progress', p => sendToAll('launch:progress', p));
@@ -140,8 +183,19 @@ export function registerIpcHandlers(): void {
     major: javaService.recommendedJavaMajor(mcVersion),
   }));
   ipcMain.handle('java:install', async (_e, major: number) => {
-    const exe = await javaService.installJava(major, (stage, received, total) => sendToAll('java:progress', { stage, received, total }));
-    return exe;
+    const taskId = downloadTasks.begin('java', `安装 Java ${major}`);
+    const action: TaskAction = { openDir: paths.javaDir(), retry: { type: 'java', major } };
+    try {
+      const exe = await javaService.installJava(major, (stage, received, total) => {
+        if (typeof received === 'number' && typeof total === 'number') downloadTasks.progress(taskId, received, total);
+        sendToAll('java:progress', { stage, received, total });
+      });
+      downloadTasks.done(taskId, { ...action, revealFile: exe });
+      return exe;
+    } catch (e) {
+      downloadTasks.fail(taskId, errorReason(e), action);
+      throw e;
+    }
   });
 
   /* ---------- 实例 ---------- */
@@ -183,6 +237,7 @@ export function registerIpcHandlers(): void {
         minecraft.launchState.progress = null;
         sendToAll('launch:status', { ...minecraft.launchState });
       }
+      finishLaunchDownloadTask(false, message);
       sendToAll('launch:failed', { instanceId, error: message });
     });
     return { started: true };
@@ -244,8 +299,15 @@ export function registerIpcHandlers(): void {
     modrinth.searchMods(query, opts));
   ipcMain.handle('modrinth:searchContent', (_e, query: string, opts: { projectType: any; loader?: string; gameVersion?: string; limit?: number; index?: 'relevance' | 'downloads' | 'follows' | 'updated' }) =>
     modrinth.searchContent(query, opts));
-  ipcMain.handle('modrinth:installContent', (_e, instanceId: string, projectId: string, versionId: string | null, kind: 'modpack' | 'resourcepacks' | 'shaderpacks' | 'worlds', opts: { gameVersion?: string; loader?: string; name?: string }) =>
-    modrinth.installContent(instanceId, projectId, versionId, kind, opts));
+  ipcMain.handle('modrinth:installContent', (_e, instanceId: string, projectId: string, versionId: string | null, kind: 'modpack' | 'resourcepacks' | 'shaderpacks' | 'worlds', opts: { gameVersion?: string; loader?: string; name?: string }) => {
+    const inst = instances.getInstance(instanceId);
+    const sub = kind === 'modpack' ? null : kind === 'worlds' ? 'saves' : kind;
+    const action: TaskAction = { openDir: inst ? (sub ? path.join(inst.gameDir, sub) : paths.instancesDir()) : paths.instancesDir() };
+    const labels = { modpack: '整合包', resourcepacks: '资源包', shaderpacks: '光影包', worlds: '世界' };
+    const taskKinds: Record<typeof kind, TaskKind> = { modpack: 'modpack', resourcepacks: 'resourcepack', shaderpacks: 'shader', worlds: 'world' };
+    return withTask(taskKinds[kind], `下载${labels[kind]}：${opts.name ?? projectId}`,
+      () => modrinth.installContent(instanceId, projectId, versionId, kind, opts), action);
+  });
   ipcMain.handle('modrinth:installed', (_e, instanceId: string) => {
     const tracked = modrinth.readInstalledMods(instanceId);
     const files = modrinth.listModFiles(instanceId);
@@ -267,11 +329,18 @@ export function registerIpcHandlers(): void {
       };
     });
   });
-  ipcMain.handle('modrinth:install', (_e, instanceId: string, projectId: string, versionId: string | null, opts: { loader?: string; gameVersion?: string }) =>
-    modrinth.installMod(instanceId, projectId, versionId ?? undefined, opts));
+  ipcMain.handle('modrinth:install', (_e, instanceId: string, projectId: string, versionId: string | null, opts: { loader?: string; gameVersion?: string }) => {
+    const inst = instances.getInstance(instanceId);
+    return withTask('mod', `安装模组：${projectId}`, () => modrinth.installMod(instanceId, projectId, versionId ?? undefined, opts),
+      inst ? { openDir: path.join(inst.gameDir, 'mods') } : undefined);
+  });
   ipcMain.handle('modrinth:checkUpdates', (_e, instanceId: string, mcVersion: string, loader?: string) =>
     modrinth.checkModUpdates(instanceId, mcVersion, loader));
-  ipcMain.handle('modrinth:updateMod', (_e, instanceId: string, fileName: string) => modrinth.updateMod(instanceId, fileName));
+  ipcMain.handle('modrinth:updateMod', (_e, instanceId: string, fileName: string) => {
+    const inst = instances.getInstance(instanceId);
+    return withTask('mod', `更新模组：${fileName}`, () => modrinth.updateMod(instanceId, fileName),
+      inst ? { openDir: path.join(inst.gameDir, 'mods') } : undefined);
+  });
   ipcMain.handle('modrinth:toggle', (_e, instanceId: string, fileName: string) => modrinth.toggleModDisabled(instanceId, fileName));
 
   /* ---------- 模组体检 ---------- */
@@ -300,10 +369,17 @@ export function registerIpcHandlers(): void {
       filters: [{ name: '整合包', extensions: ['zip'] }],
     });
     if (result.canceled || !result.filePaths[0]) return null;
-    return modpack.importModpack(result.filePaths[0], targetName, line => sendToAll('modpack:log', line));
+    const filePath = result.filePaths[0];
+    return withTask('modpack', `导入整合包：${path.basename(filePath)}`,
+      () => modpack.importModpack(filePath, targetName, line => sendToAll('modpack:log', line)),
+      { openDir: paths.instancesDir(), retry: { type: 'modpack', filePath } });
   });
-  ipcMain.handle('modpack:importFile', (_e, filePath: string, targetName?: string) =>
-    modpack.importModpack(filePath, targetName, line => sendToAll('modpack:log', line)));
+  ipcMain.handle('modpack:importFile', (_e, filePath: string, targetName?: string) => {
+    if (typeof filePath !== 'string' || !filePath) throw new Error('整合包路径无效');
+    return withTask('modpack', `导入整合包：${path.basename(filePath)}`,
+      () => modpack.importModpack(filePath, targetName, line => sendToAll('modpack:log', line)),
+      { openDir: paths.instancesDir(), retry: { type: 'modpack', filePath } });
+  });
 
   /* ---------- 备份 ---------- */
   ipcMain.handle('backup:list', (_e, instanceId: string) => backups.listBackups(instanceId));
@@ -446,7 +522,11 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('server:create', (_e, input: any) => serverService.createServer(input));
   ipcMain.handle('server:update', (_e, id: string, patch: any) => serverService.updateServer(id, patch));
   ipcMain.handle('server:delete', (_e, id: string, backup?: boolean) => serverService.deleteServer(id, backup !== false));
-  ipcMain.handle('server:prepare', (_e, id: string) => serverService.prepareServer(id));
+  ipcMain.handle('server:prepare', (_e, id: string) => {
+    const server = serverService.getServer(id);
+    return withTask('server', `安装服务端：${server?.name ?? id}`,
+      () => serverService.prepareServer(id), { openDir: paths.serverDir(id) });
+  });
   ipcMain.handle('server:start', async (_e, id: string) => {
     if (startingServers.has(id)) throw new Error('服务器正在启动中，请等状态变为「运行中」或报错后再试。');
     startingServers.add(id);
@@ -611,8 +691,18 @@ export function registerIpcHandlers(): void {
   /* ---------- 启动器更新 ---------- */
   ipcMain.handle('app:updateCheck', () => updateService.checkUpdate());
   ipcMain.handle('app:updateDownload', async () => {
-    const result = await updateService.downloadUpdate((done, total) => sendToAll('app:updateProgress', { done, total }));
-    return result;
+    const taskId = downloadTasks.begin('update', '下载启动器更新');
+    try {
+      const result = await updateService.downloadUpdate((done, total) => {
+        downloadTasks.progress(taskId, done, total);
+        sendToAll('app:updateProgress', { done, total });
+      });
+      downloadTasks.done(taskId, { revealFile: result.filePath, retry: { type: 'update' } });
+      return result;
+    } catch (e) {
+      downloadTasks.fail(taskId, errorReason(e), { retry: { type: 'update' } });
+      throw e;
+    }
   });
   ipcMain.handle('app:revealFile', (_e, filePath: string) => {
     if (typeof filePath !== 'string' || !filePath) return false;
@@ -662,5 +752,22 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('mirror:test', async () => {
     const { pickBestSource } = await import('./net');
     return pickBestSource(getSettings().download.customMirror);
+  });
+
+  /* ---------- 下载任务中心 ---------- */
+  ipcMain.handle('tasks:list', () => downloadTasks.list());
+  ipcMain.handle('tasks:clearFinished', () => { downloadTasks.clearFinished(); return true; });
+  ipcMain.handle('tasks:remove', (_e, id: string) => { downloadTasks.remove(String(id ?? '')); return true; });
+  ipcMain.handle('tasks:cancel', (_e, id: string) => { downloadTasks.cancel(String(id ?? '')); return true; });
+
+  /* ---------- 游玩统计 ---------- */
+  ipcMain.handle('stats:play', () => instances.getPlayStats());
+
+  /* ---------- 游戏设置可视化（options.txt 白名单） ---------- */
+  ipcMain.handle('content:optionsRead', (_e, instanceId: string) => contentService.readGameOptions(instanceId));
+  ipcMain.handle('content:optionsSave', (_e, instanceId: string, patch: Record<string, string>) => {
+    // 运行时游戏会重写 options.txt：此时保存会被静默覆盖，直接拒绝更可靠
+    assertInstanceIdle(instanceId, '修改游戏设置');
+    return contentService.saveGameOptions(instanceId, patch);
   });
 }

@@ -4,6 +4,7 @@ import { useToast } from '../components/Toast';
 import { Modal, Tip, Toggle, ConfirmModal, formatBytes, timeAgo } from '../components/Modal';
 import { VersionList } from '../components/VersionList';
 import { Icon } from '../components/Icon';
+import { GameOptionsModal, TagsModal } from '../components/InstanceTools';
 import type { ExportFormat, InstanceConfig, InstanceInfo, LoaderType, MemoryPreset } from '../../electron/shared/types';
 
 const PRESET_INFO: Record<MemoryPreset, { label: string; hint: string; badge: string }> = {
@@ -26,6 +27,8 @@ function loaderKey(loader: string | null | undefined): string {
 export default function Instances() {
   const [instances, setInstances] = useState<InstanceInfo[]>([]);
   const [search, setSearch] = useState('');
+  const [sort, setSort] = useState<'recent' | 'name' | 'created'>('recent');
+  const [tagFilter, setTagFilter] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<InstanceInfo | null>(null);
   const [exportTarget, setExportTarget] = useState<InstanceInfo | null>(null);
@@ -34,8 +37,39 @@ export default function Instances() {
   const reload = () => api.instancesList().then(setInstances).catch(e => toast.toast(String(e), 'error'));
   useEffect(() => { void reload(); /* eslint-disable-next-line */ }, []);
 
-  const list = useMemo(() => (search ? instances.filter(i => i.name.includes(search)) : instances), [instances, search]);
+  const allTags = useMemo(() => {
+    const set = new Set<string>();
+    for (const inst of instances) for (const tag of inst.tags ?? []) set.add(tag);
+    return [...set].sort();
+  }, [instances]);
+
+  const list = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    const filtered = instances.filter(inst => {
+      if (tagFilter && !(inst.tags ?? []).includes(tagFilter)) return false;
+      if (!q) return true;
+      return [inst.name, inst.mcVersion, LOADER_LABEL[inst.loader] ?? '', ...(inst.tags ?? [])]
+        .some(v => String(v).toLowerCase().includes(q));
+    });
+    const sorted = [...filtered].sort((a, b) => {
+      if (!!a.favorite !== !!b.favorite) return a.favorite ? -1 : 1;
+      if (sort === 'name') return a.name.localeCompare(b.name, 'zh-CN');
+      if (sort === 'created') return b.createdAt - a.createdAt;
+      return (b.lastPlayedAt ?? b.createdAt) - (a.lastPlayedAt ?? a.createdAt);
+    });
+    return sorted;
+  }, [instances, search, sort, tagFilter]);
   const launch = (inst: InstanceInfo) => api.launchStart(inst.id).catch(e => toast.toast(String(e), 'error'));
+
+  const importPack = async () => {
+    try {
+      const file = await api.pickFile([{ name: '整合包（Modrinth / CurseForge / MultiMC）', extensions: ['zip', 'mrpack'] }]);
+      if (!file) return;
+      const result = await api.modpackImportFile(file);
+      toast.toast(result?.instanceId ? '整合包已导入并创建新实例' : '整合包已处理，详情请到「日志」页查看', 'ok');
+      void reload();
+    } catch (e) { toast.toast(e instanceof Error ? e.message : String(e), 'error'); }
+  };
 
   const diskUsage = async (id: string) => {
     try {
@@ -53,13 +87,30 @@ export default function Instances() {
         </div>
         <div className="row" style={{ gap: 10 }}>
           {instances.length > 0 && <span className="tag">{instances.length} 个实例</span>}
+          <button className="btn" onClick={() => void importPack()} title="也可以直接把 .mrpack / .zip 拖进启动器窗口">导入整合包</button>
           <button className="btn primary" onClick={() => setCreating(true)}>＋ 创建实例</button>
         </div>
       </div>
 
-      <div className="search-box" style={{ maxWidth: 380, marginBottom: 12 }}>
-        <input className="input" placeholder="搜索实例…" value={search} onChange={e => setSearch(e.target.value)} />
+      <div className="instance-toolbar">
+        <div className="search-box" style={{ maxWidth: 320 }}>
+          <input className="input" data-mcl-search placeholder="搜索名称 / 版本 / 标签（Ctrl+K）" value={search} onChange={e => setSearch(e.target.value)} />
+        </div>
+        <select className="input" style={{ width: 140 }} value={sort} onChange={e => setSort(e.target.value as typeof sort)} title="排序方式">
+          <option value="recent">最近游玩</option>
+          <option value="name">名称</option>
+          <option value="created">创建时间</option>
+        </select>
       </div>
+      {allTags.length > 0 && (
+        <div className="tag-filter-row">
+          <span className="faint">标签筛选</span>
+          <button className={`tag-chip ${tagFilter === null ? 'active' : ''}`} onClick={() => setTagFilter(null)}>全部</button>
+          {allTags.map(tag => (
+            <button key={tag} className={`tag-chip ${tagFilter === tag ? 'active' : ''}`} onClick={() => setTagFilter(tagFilter === tag ? null : tag)}>{tag}</button>
+          ))}
+        </div>
+      )}
 
       {list.length === 0 && (search
         ? <div className="empty"><div className="big"><Icon name="search" size={30} /></div>没有符合「{search}」的实例</div>
@@ -99,6 +150,8 @@ export function InstanceCard({ inst, onReload, onDiskUsage, onDelete, onExport, 
   const [editing, setEditing] = useState(false);
   const [advanced, setAdvanced] = useState(false);
   const [duplicating, setDuplicating] = useState(false);
+  const [tagsEditing, setTagsEditing] = useState(false);
+  const [gameOptionsOpen, setGameOptionsOpen] = useState(false);
   const [name, setName] = useState(inst.name);
   const [mcVersion, setMcVersion] = useState(inst.mcVersion === 'unknown' ? '' : inst.mcVersion);
   const toast = useToast();
@@ -157,8 +210,17 @@ export function InstanceCard({ inst, onReload, onDiskUsage, onDelete, onExport, 
           {editing
             ? <input className="input rename-input" value={name} onChange={e => setName(e.target.value)} autoFocus onKeyDown={e => e.key === 'Enter' && save()} />
             : <h3 title={inst.name}>{inst.name}</h3>}
+          <button className={`fav-btn ${inst.favorite ? 'on' : ''}`} title={inst.favorite ? '取消收藏' : '收藏（置顶显示）'}
+            onClick={e => { e.stopPropagation(); api.instanceUpdate(inst.id, { favorite: !inst.favorite }).then(onReload).catch(err => toast.toast(String(err), 'error')); }}>
+            <Icon name="star" size={14} />
+          </button>
           {inst.mcVersion === 'unknown' && <span className="tag amber">MC 版本未识别</span>}
         </div>
+        {(inst.tags?.length ?? 0) > 0 && (
+          <div className="instance-tag-row">
+            {(inst.tags ?? []).map(tag => <span key={tag} className="tag-chip static">{tag}</span>)}
+          </div>
+        )}
 
         {inst.mcVersion === 'unknown' && (
           <div className="row" style={{ gap: 8 }}>
@@ -200,6 +262,8 @@ export function InstanceCard({ inst, onReload, onDiskUsage, onDelete, onExport, 
               <button className="btn small" onClick={() => setEditing(true)}>重命名</button>
             </>
           )}
+          <button className="btn small" onClick={() => setTagsEditing(true)} title="给实例打标签，方便筛选整理">标签</button>
+          <button className="btn small" onClick={() => setGameOptionsOpen(true)} title="图形化修改 options.txt 的常用项（需先退出游戏）">游戏设置</button>
           <button className="btn small" onClick={() => setAdvanced(true)}>高级设置</button>
           <button className="btn small" onClick={() => onExport(inst)}>导出…</button>
           <details className="more-menu">
@@ -218,6 +282,8 @@ export function InstanceCard({ inst, onReload, onDiskUsage, onDelete, onExport, 
       </div>
 
       {advanced && <AdvancedSettingsModal inst={inst} onClose={() => setAdvanced(false)} onSaved={() => { setAdvanced(false); onReload(); }} />}
+      {tagsEditing && <TagsModal inst={inst} onClose={() => setTagsEditing(false)} onSaved={() => { setTagsEditing(false); onReload(); }} />}
+      {gameOptionsOpen && <GameOptionsModal inst={inst} onClose={() => setGameOptionsOpen(false)} />}
     </div>
   );
 }

@@ -181,6 +181,42 @@ function writeOptionLine(gameDir: string, key: string, value: string): void {
   fs.writeFileSync(file, lines.filter((l, i) => l !== '' || i < lines.length - 1).join('\n') + '\n', 'utf8');
 }
 
+/** 可视化设置只允许写 MC 原生 options.txt 键，避免注入未知配置或破坏文件格式 */
+const EDITABLE_OPTION_KEYS = [
+  'renderDistance', 'simulationDistance', 'graphicsMode', 'fancyGraphics', 'smoothLighting', 'ao',
+  'clouds', 'particles', 'entityShadows', 'guiScale', 'maxFps', 'gamma', 'volume', 'musicVolume',
+  'recordVolume', 'mipmapLevels', 'vsync', 'fullscreen', 'overrideWidth', 'overrideHeight',
+] as const;
+
+/** 读取可被界面编辑的游戏设置（只返回白名单内的键） */
+export function readGameOptions(instanceId: string): Record<string, string> {
+  const instance = getInstance(instanceId);
+  if (!instance) throw new Error('实例不存在');
+  const { map } = readOptions(instance.gameDir);
+  const out: Record<string, string> = {};
+  // 只返回文件里真实存在的键：没写过的项保持游戏默认值，保存时也不会往 options.txt 塞空行
+  for (const key of EDITABLE_OPTION_KEYS) {
+    const value = map.get(key);
+    if (value) out[key] = value;
+  }
+  return out;
+}
+
+/** 保存游戏设置：白名单 + 值校验，防止把 options.txt 写坏 */
+export function saveGameOptions(instanceId: string, patch: Record<string, string>): Record<string, string> {
+  const instance = getInstance(instanceId);
+  if (!instance) throw new Error('实例不存在');
+  if (!patch || typeof patch !== 'object') throw new Error('设置内容不合法');
+  for (const [key, value] of Object.entries(patch)) {
+    if (!(EDITABLE_OPTION_KEYS as readonly string[]).includes(key)) continue;
+    if (typeof value !== 'string' || value.length > 64 || /[\r\n]/.test(value)) {
+      throw new Error(`「${key}」的值不合法`);
+    }
+    writeOptionLine(instance.gameDir, key, value);
+  }
+  return readGameOptions(instanceId);
+}
+
 export function toggleResourcePack(instanceId: string, fileName: string): boolean {
   const instance = getInstance(instanceId);
   if (!instance) throw new Error('实例不存在');

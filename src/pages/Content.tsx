@@ -156,6 +156,7 @@ export default function Content() {
 
   return (
     <div
+      data-mcl-local-drop=""
       onDragOver={e => { if (instanceId) { e.preventDefault(); setDragging(true); } }}
       onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDragging(false); }}
       onDrop={handleDrop}
