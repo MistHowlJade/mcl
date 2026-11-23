@@ -227,7 +227,7 @@ function Shell() {
         {status.page && <button className="status-link" onClick={() => setPage(status.page!)}>查看 →</button>}
       </div>
       <div className="app-shell">
-        <nav className="sidebar">
+        <nav className="sidebar" aria-label="主导航">
           {sections.map(([section, items]) => (
             <div key={section}>
               <div className="side-section">{section}</div>
@@ -248,7 +248,7 @@ function Shell() {
               <div className="avatar">
                 {activeAccount?.skinUrl
                   ? <img src={activeAccount.skinUrl} alt="" width={32} height={32} style={{ imageRendering: 'pixelated' }} />
-                  : <div style={{ width: '100%', height: '100%', display: 'grid', placeItems: 'center', background: '#e8e8ec', color: '#6e6e73', fontWeight: 600 }}>{activeAccount?.name?.[0]?.toUpperCase() ?? '?'}</div>}
+                  : <div className="avatar-fallback">{activeAccount?.name?.[0]?.toUpperCase() ?? '?'}</div>}
               </div>
               <div className="meta">
                 <div className="n">{activeAccount?.name ?? '未登录'}</div>

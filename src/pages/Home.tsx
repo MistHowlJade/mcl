@@ -159,44 +159,54 @@ export default function Home({ onNavigate, onLaunchFail }: { onNavigate: (p: Pag
   return (
     <div>
       <section className="home-hero">
+        <div className={`hero-art loader-${selected ? loaderKey(selected.loader) : 'vanilla'}`}>
+          <div className="hero-art-top">
+            <span className="cover-pill">{selected ? LOADER_LABEL[loaderKey(selected.loader)] : 'MCL'}</span>
+            {selected && <span className="cover-pill">{PRESET_LABEL[selected.memoryPreset ?? 'standard']}内存</span>}
+          </div>
+          <div>
+            <div className="hero-art-version">{selected ? (selected.mcVersion === 'unknown' ? '?' : selected.mcVersion) : '—'}</div>
+            <div className="hero-art-name" title={selected?.name}>{selected?.name ?? '还没有实例'}</div>
+          </div>
+          <div className="hero-art-foot">{selected ? `上次游玩 ${timeAgo(selected.lastPlayedAt)}` : '创建或迁移一个实例开始'}</div>
+        </div>
         <div className="home-hero-content">
-          <div className="hero-id">
-            <div className="hero-logo"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 18V6l8 8 8-8v12" /></svg></div>
-            <div>
-              <span className="eyebrow"><span className="status-dot" />启动台</span>
-              <h2>欢迎回来，{accountName ?? '旅人'}</h2>
-              <div className="hero-hint">
-                {selected ? (
-                  <>
-                    <span className="hero-chip accent">{selected.name}</span>
-                    <span className="hero-sep" />
-                    <span className="hero-chip">{selected.mcVersion} · {LOADER_LABEL[loaderKey(selected.loader)]}</span>
-                    <span className="hero-sep" />
-                    <span>上次游玩 {timeAgo(selected.lastPlayedAt)}</span>
-                  </>
-                ) : '先创建一个实例，或从别的启动器迁移过来——剩下的交给 MCL。'}
-              </div>
+          <span className="eyebrow"><span className="status-dot" />启动台</span>
+          <h2>欢迎回来，{accountName ?? '旅人'}</h2>
+          <div className="hero-hint">
+            {selected ? (
+              <>
+                <span className="hero-chip accent">{selected.name}</span>
+                <span className="hero-sep" />
+                <span>{selected.modsCount} 模组 · {selected.savesCount} 存档</span>
+                <span className="hero-sep" />
+                <span>{PRESET_LABEL[selected.memoryPreset ?? 'standard']}内存</span>
+              </>
+            ) : '先创建一个实例，或从别的启动器迁移过来——剩下的交给 MCL。'}
+          </div>
+          <div className="hero-actions">
+            <button className="launch-btn" onClick={doLaunch} disabled={busy || !selected} aria-busy={busy}>
+              {busy ? <span className="btn-spinner" aria-hidden="true" /> : <span className="launch-icon"><Icon name="play" size={10} /></span>}
+              {busy ? (launchState.status === 'running' ? '游戏运行中' : '准备中…') : '启 动'}
+            </button>
+            <button className="btn" onClick={() => onNavigate('instances')}><Icon name="box" size={13} /> 实例管理</button>
+            {selected && !busy && (
+              <button className="btn" onClick={() => api.instanceOpenGameDir(selected.id).catch(e => toast.toast(String(e), 'error'))}><Icon name="folder" size={13} /> 打开目录</button>
+            )}
+            {busy && launchState.status === 'downloading' && (
+              <button className="btn" onClick={() => api.launchCancelDownload()
+                .then(ok => toast.toast(ok ? '已发送取消下载请求' : '当前没有可取消的下载', ok ? 'info' : 'error'))
+                .catch(e => toast.toast(String(e), 'error'))}>取消下载</button>
+            )}
+            {busy && launchState.message && <div className="muted" style={{ maxWidth: 220, fontSize: 11 }}>{launchState.message}</div>}
+          </div>
+          {progress && (
+            <div className="hero-progress">
+              <div className="progress"><div style={{ width: `${Math.min(100, (progress.done / Math.max(1, progress.total)) * 100)}%` }} /></div>
+              <div className="faint">已下载 {formatBytes(progress.done)} / {formatBytes(progress.total)}</div>
             </div>
-          </div>
-        </div>
-        <div className="hero-actions">
-          <button className="launch-btn" onClick={doLaunch} disabled={busy || !selected} aria-busy={busy}>
-            {busy ? <span className="btn-spinner" aria-hidden="true" /> : <span className="launch-icon"><Icon name="play" size={10} /></span>}
-            {busy ? (launchState.status === 'running' ? '游戏运行中' : '准备中…') : '启 动'}
-          </button>
-          {busy && launchState.status === 'downloading' && (
-            <button className="btn" onClick={() => api.launchCancelDownload()
-              .then(ok => toast.toast(ok ? '已发送取消下载请求' : '当前没有可取消的下载', ok ? 'info' : 'error'))
-              .catch(e => toast.toast(String(e), 'error'))}>取消下载</button>
           )}
-          {busy && launchState.message && <div className="muted" style={{ maxWidth: 220, fontSize: 11 }}>{launchState.message}</div>}
         </div>
-        {progress && (
-          <div className="hero-progress">
-            <div className="progress"><div style={{ width: `${Math.min(100, (progress.done / Math.max(1, progress.total)) * 100)}%` }} /></div>
-            <div className="faint">已下载 {formatBytes(progress.done)} / {formatBytes(progress.total)}</div>
-          </div>
-        )}
       </section>
 
       {crash && (
@@ -214,6 +224,65 @@ export default function Home({ onNavigate, onLaunchFail }: { onNavigate: (p: Pag
         <div className="stat-card"><div className="stat-icon"><Icon name="puzzle" size={16} /></div><div><div className="k">模组</div><div className="v"><span>{totalMods}</span></div><div className="d">一键体检</div></div></div>
         <div className="stat-card"><div className="stat-icon"><Icon name="clock" size={16} /></div><div><div className="k">游玩</div><div className="v"><span>{Math.floor(totalPlaySeconds / 3600)}</span><small>小时</small></div><div className="d">仅存本机</div></div></div>
       </div>
+
+      <section className="home-section">
+        <div className="section-head">
+          <div><h2>我的实例</h2><p>单击选择，双击启动 · 悬停封面可直接启动</p></div>
+          <button className="btn small ghost" onClick={() => onNavigate('instances')}>管理全部 →</button>
+        </div>
+        {instances.length === 0 ? (
+          <div className="drop-hint">
+            <div className="big"><Icon name="box" size={30} /></div>
+            <div style={{ fontWeight: 700 }}>还没有任何实例</div>
+            <div className="faint mt">创建第一个实例，或从 HMCL / PCL2 / Prism 迁移过来</div>
+            <div className="row mt-lg" style={{ justifyContent: 'center' }}>
+              <button className="btn primary" onClick={() => onNavigate('instances')}>创建实例</button>
+              <button className="btn" onClick={() => onNavigate('migrate')}>从其它启动器迁移</button>
+            </div>
+          </div>
+        ) : (
+          <div className="library-shelf">
+            {sortedInstances.map(inst => {
+              const key = loaderKey(inst.loader);
+              return (
+                <div
+                  key={inst.id}
+                  role="button"
+                  tabIndex={0}
+                  className={`game-card ${selected?.id === inst.id ? 'selected' : ''}`}
+                  onClick={() => setSelectedId(inst.id)}
+                  onDoubleClick={() => launchInstance(inst)}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') setSelectedId(inst.id);
+                    if (e.key === ' ') { e.preventDefault(); launchInstance(inst); }
+                  }}
+                  aria-label={`${inst.name}，${inst.mcVersion}，${LOADER_LABEL[key]}`}
+                  title="单击选择，双击启动；悬停封面可直接启动"
+                >
+                  <div className={`game-cover loader-${key}`}>
+                    <div className="game-cover-top">
+                      <span className="cover-pill">{LOADER_LABEL[key]}</span>
+                      {inst.favorite && <Icon name="star" size={12} className="game-cover-star" />}
+                    </div>
+                    <div className="game-cover-version">{inst.mcVersion === 'unknown' ? '?' : inst.mcVersion}</div>
+                    <div className="game-cover-foot">
+                      <span>{timeAgo(inst.lastPlayedAt)}</span>
+                      <span>{PRESET_LABEL[inst.memoryPreset ?? 'standard']}内存</span>
+                    </div>
+                    <button className="game-cover-play" onClick={e => { e.stopPropagation(); setSelectedId(inst.id); launchInstance(inst); }} onDoubleClick={e => e.stopPropagation()} aria-label={`启动 ${inst.name}`}>
+                      <span><Icon name="play" size={11} /> 启动</span>
+                    </button>
+                  </div>
+                  <div className="game-card-body">
+                    <span className="n" title={inst.name}>{inst.name}</span>
+                    <span className="d">{inst.modsCount} 模组 · {inst.savesCount} 存档</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </section>
 
       {stats && (
         <section className="home-section">
@@ -251,52 +320,6 @@ export default function Home({ onNavigate, onLaunchFail }: { onNavigate: (p: Pag
           </div>
         </section>
       )}
-
-      <section className="home-section">
-        <div className="section-head">
-          <div><h2>我的实例</h2><p>单击选择，双击启动 · 收藏与标签会在实例页置顶</p></div>
-          <button className="btn small ghost" onClick={() => onNavigate('instances')}>管理全部 →</button>
-        </div>
-        {instances.length === 0 ? (
-          <div className="drop-hint">
-            <div className="big"><Icon name="box" size={30} /></div>
-            <div style={{ fontWeight: 700 }}>还没有任何实例</div>
-            <div className="faint mt">创建第一个实例，或从 HMCL / PCL2 / Prism 迁移过来</div>
-            <div className="row mt-lg" style={{ justifyContent: 'center' }}>
-              <button className="btn primary" onClick={() => onNavigate('instances')}>创建实例</button>
-              <button className="btn" onClick={() => onNavigate('migrate')}>从其它启动器迁移</button>
-            </div>
-          </div>
-        ) : (
-          <div className="instance-rows">
-            {sortedInstances.map(inst => {
-              const key = loaderKey(inst.loader);
-              return (
-                <div
-                  key={inst.id}
-                  className={`instance-row ${selected?.id === inst.id ? 'selected' : ''}`}
-                  onClick={() => setSelectedId(inst.id)}
-                  onDoubleClick={() => launchInstance(inst)}
-                  title="单击选择，双击启动"
-                >
-                  <div className={`row-cover loader-${key}`}>
-                    <span className="cover-pill">{LOADER_LABEL[key]}</span>
-                    <b>{inst.mcVersion === 'unknown' ? '?' : inst.mcVersion}</b>
-                  </div>
-                  <div className="row-info">
-                    <div className="n" title={inst.name}>{inst.favorite && <Icon name="star" size={11} className="fav-inline" />}{inst.name}</div>
-                    <div className="d">{inst.loaderVersion ? `${LOADER_LABEL[key]} ${inst.loaderVersion}` : LOADER_LABEL[key]} · {PRESET_LABEL[inst.memoryPreset ?? 'standard']}内存 · {timeAgo(inst.lastPlayedAt)}{(inst.tags?.length ?? 0) > 0 ? ` · ${(inst.tags ?? []).join('/')}` : ''}</div>
-                  </div>
-                  <div className="row-meta"><span><Icon name="puzzle" size={11} /> {inst.modsCount}</span><span><Icon name="globe" size={11} /> {inst.savesCount}</span></div>
-                  <div className="row-actions">
-                    <button className="btn small row-launch" title="启动" onClick={e => { e.stopPropagation(); launchInstance(inst); }}><Icon name="play" size={11} /></button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </section>
 
       <section className="home-section">
         <div className="section-head"><div><h2>快捷操作</h2><p>常用入口，一步到位</p></div></div>

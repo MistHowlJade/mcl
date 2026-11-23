@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 
 /**
- * 导航样式偏好（极简高级浅色为唯一设计系统，不再提供暗色主题）
+ * 导航样式偏好（深色游戏库为唯一设计系统，不提供明暗切换）
  * 只存本机，不进主进程设置，不影响游戏与下载逻辑。
  */
 export type NavStyle = 'side' | 'top';

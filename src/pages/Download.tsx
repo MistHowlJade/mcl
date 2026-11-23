@@ -157,41 +157,48 @@ export default function Download() {
         )}
       </div>
 
-      {searching && <div className="empty panel"><div className="big">⏳</div>正在向 Modrinth 查询…</div>}
-      {!searching && error && <div className="empty panel">{error}</div>}
-      {!searching && !error && (
-        <div className="panel mt">
-          <div className="list">
-            {shown.map(item => (
-              <div key={item.projectId} className="list-row" style={{ alignItems: 'flex-start' }}>
-                <div style={{ width: 46, height: 46, borderRadius: 9, background: 'var(--panel-3)', overflow: 'hidden', display: 'grid', placeItems: 'center', flexShrink: 0 }}>
-                  {item.iconUrl ? <img src={item.iconUrl} alt="" style={{ width: 46, height: 46, objectFit: 'cover' }} /> : <Icon name="box" size={20} />}
+      {searching && <div className="empty panel mt"><div className="spinner" />正在向 Modrinth 查询…</div>}
+      {!searching && error && <div className="empty panel mt">{error}</div>}
+      {!searching && !error && shown.length === 0 && (
+        <div className="empty panel mt">
+          <div className="big"><Icon name="search" size={26} /></div>
+          没有找到资源，换个关键词或关闭「只看收藏」试试。
+        </div>
+      )}
+      {!searching && !error && shown.length > 0 && (
+        <div className="resource-grid mt">
+          {shown.map(item => (
+            <article key={item.projectId} className="resource-card">
+              <div className="resource-head">
+                <div className="resource-icon">
+                  {item.iconUrl ? <img src={item.iconUrl} alt="" loading="lazy" /> : <Icon name="box" size={20} />}
                 </div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
-                    <strong>{item.title}</strong>
-                    <span className="tag">{item.author || '未知作者'}</span>
-                    {gameVersion.trim() && item.gameVersions.includes(gameVersion.trim()) && <span className="tag green">兼容 {gameVersion.trim()}</span>}
-                  </div>
-                  <div className="faint" style={{ marginTop: 2 }}>{item.description}</div>
-                  <div className="faint row" style={{ marginTop: 4, gap: 6 }}>
-                    <Icon name="download" size={12} /> {item.downloads.toLocaleString()}
-                    <span>·</span>
-                    <Icon name="heart" size={12} /> {item.follows.toLocaleString()}
-                    {item.gameVersions.length > 0 && ` · 支持 ${item.gameVersions.slice(-4).join(' / ')}`}
-                    {item.loaders.length > 0 && ` · ${item.loaders.slice(0, 4).join(' / ')}`}
-                  </div>
+                <div className="resource-title">
+                  <strong title={item.title}>{item.title}</strong>
+                  <span className="faint">{item.author || '未知作者'}</span>
                 </div>
-                <div className="row" style={{ gap: 6, flexShrink: 0 }}>
-                  <FavoriteButton id={item.projectId} />
-                  <button className="btn small" onClick={() => api.openExternal(`https://modrinth.com/project/${item.slug}`).catch(e => toast.toast(String(e), 'error'))}>详情 ↗</button>
-                  <button className="btn small primary" onClick={() => void install(item)} disabled={installingId !== null}>
-                    {installingId === item.projectId ? '安装中…' : '下载'}
-                  </button>
-                </div>
+                <FavoriteButton id={item.projectId} />
               </div>
-            ))}
-          </div>
+              <p className="resource-desc" title={item.description}>{item.description}</p>
+              <div className="resource-stats">
+                <span className="row" style={{ gap: 3 }}><Icon name="download" size={11} /> {item.downloads.toLocaleString()}</span>
+                <span>·</span>
+                <span className="row" style={{ gap: 3 }}><Icon name="heart" size={11} /> {item.follows.toLocaleString()}</span>
+                {gameVersion.trim() && item.gameVersions.includes(gameVersion.trim()) && <span className="tag green">兼容 {gameVersion.trim()}</span>}
+                {item.loaders.slice(0, 3).map(l => <span key={l} className="tag">{l}</span>)}
+              </div>
+              <div className="resource-actions">
+                <span className="faint" title={item.gameVersions.join(' / ')}>
+                  {item.gameVersions.length > 0 ? `支持 ${item.gameVersions.slice(-3).join(' / ')}` : '版本未知'}
+                </span>
+                <span className="spacer" />
+                <button className="btn small" onClick={() => api.openExternal(`https://modrinth.com/project/${item.slug}`).catch(e => toast.toast(String(e), 'error'))}>详情 ↗</button>
+                <button className="btn small primary" onClick={() => void install(item)} disabled={installingId !== null}>
+                  {installingId === item.projectId ? '安装中…' : '下载'}
+                </button>
+              </div>
+            </article>
+          ))}
         </div>
       )}
 

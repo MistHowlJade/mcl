@@ -196,17 +196,24 @@ export function InstanceCard({ inst, onReload, onDiskUsage, onDelete, onExport, 
   const preset = inst.memoryPreset ?? 'standard';
 
   return (
-    <div className="instance-tile" onDoubleClick={() => onLaunch(inst)} title="双击直接启动">
-      <div className={`cover cover-tile loader-${key}`}>
+    <div className="instance-tile" title="双击封面直接启动">
+      <div className={`instance-cover loader-${key}`} onDoubleClick={() => onLaunch(inst)}>
         <div className="cover-topline">
           <span className="cover-pill">{LOADER_LABEL[key]}{inst.loaderVersion ? ` ${inst.loaderVersion}` : ''}</span>
           <span className="cover-pill">{PRESET_INFO[preset].badge} 内存</span>
         </div>
-        <div className="cover-version">{inst.mcVersion === 'unknown' ? '?' : inst.mcVersion}</div>
+        <div className="instance-cover-version">{inst.mcVersion === 'unknown' ? '?' : inst.mcVersion}</div>
+        <div className="instance-cover-foot">
+          <span>{timeAgo(inst.lastPlayedAt)}</span>
+          <span>{inst.modsCount} 模组 · {inst.savesCount} 存档</span>
+        </div>
+        <button className="instance-play" onClick={e => { e.stopPropagation(); onLaunch(inst); }} onDoubleClick={e => e.stopPropagation()} aria-label={`启动 ${inst.name}`}>
+          <span><Icon name="play" size={12} /> 启动</span>
+        </button>
       </div>
 
-      <div className="instance-tile-body">
-        <div className="instance-tile-title">
+      <div className="instance-card-body">
+        <div className="instance-card-title">
           {editing
             ? <input className="input rename-input" value={name} onChange={e => setName(e.target.value)} autoFocus onKeyDown={e => e.key === 'Enter' && save()} />
             : <h3 title={inst.name}>{inst.name}</h3>}
@@ -214,7 +221,6 @@ export function InstanceCard({ inst, onReload, onDiskUsage, onDelete, onExport, 
             onClick={e => { e.stopPropagation(); api.instanceUpdate(inst.id, { favorite: !inst.favorite }).then(onReload).catch(err => toast.toast(String(err), 'error')); }}>
             <Icon name="star" size={14} />
           </button>
-          {inst.mcVersion === 'unknown' && <span className="tag amber">MC 版本未识别</span>}
         </div>
         {(inst.tags?.length ?? 0) > 0 && (
           <div className="instance-tag-row">
@@ -222,35 +228,33 @@ export function InstanceCard({ inst, onReload, onDiskUsage, onDelete, onExport, 
           </div>
         )}
 
+        <div className="instance-card-meta">
+          <span><Icon name="puzzle" size={12} /> <b>{inst.modsCount}</b> 模组</span>
+          <span><Icon name="globe" size={12} /> <b>{inst.savesCount}</b> 存档</span>
+          <span><Icon name="clock" size={12} /> {timeAgo(inst.lastPlayedAt)}</span>
+          {inst.mcVersion === 'unknown' && <span className="tag amber">版本未识别</span>}
+        </div>
+
         {inst.mcVersion === 'unknown' && (
           <div className="row" style={{ gap: 8 }}>
             <span className="faint">设置版本后才能启动</span>
-            <input className="input" style={{ width: 120, height: 30 }} placeholder="如 1.20.1" value={mcVersion} onChange={e => setMcVersion(e.target.value)} onKeyDown={e => e.key === 'Enter' && save()} />
+            <input className="input" style={{ width: 104, height: 28 }} placeholder="如 1.20.1" value={mcVersion} onChange={e => setMcVersion(e.target.value)} onKeyDown={e => e.key === 'Enter' && save()} />
             <button className="btn small primary" onClick={save}>保存</button>
           </div>
         )}
 
-        <div className="instance-tile-meta">
-          <span><Icon name="puzzle" size={12} /> <b>{inst.modsCount}</b> 模组</span>
-          <span><Icon name="globe" size={12} /> <b>{inst.savesCount}</b> 存档</span>
-          <span><Icon name="clock" size={12} /> {timeAgo(inst.lastPlayedAt)}</span>
-        </div>
-
-        <div className="memory-line">
-          <div className="row" style={{ gap: 8 }}>
-            <span className="faint">禁止 Mod 自动更新</span>
-            <Tip text="开启后，此实例不会提示任何模组可更新。适合整合包玩家避免随手更新导致版本错乱（大坑，官方没有这个开关时只能服主口头叮嘱）。" />
+        <div className="instance-card-controls">
+          <div className="row" style={{ gap: 6 }} title="开启后此实例不会提示任何模组更新">
             <Toggle checked={!!inst.noModUpdate} onChange={v => { api.instanceUpdate(inst.id, { noModUpdate: v }).then(onReload).catch(e => toast.toast(String(e), 'error')); }} label="禁止 Mod 自动更新" />
+            <span className="faint">锁模组更新</span>
+            <Tip text="开启后，此实例不会提示任何模组可更新。适合整合包玩家避免随手更新导致版本错乱（大坑，官方没有这个开关时只能服主口头叮嘱）。" />
           </div>
-          <div className="row" style={{ gap: 6 }}>
-            <span className="faint">内存</span>
-            <select className="input" value={preset} onChange={e => { api.instanceUpdate(inst.id, { memoryPreset: e.target.value }).then(onReload).catch(err => toast.toast(String(err), 'error')); }}>
-              {(Object.keys(PRESET_INFO) as MemoryPreset[]).map(k => <option key={k} value={k}>{PRESET_INFO[k].label}</option>)}
-            </select>
-          </div>
+          <select className="input" aria-label="内存预设" value={preset} onChange={e => { api.instanceUpdate(inst.id, { memoryPreset: e.target.value }).then(onReload).catch(err => toast.toast(String(err), 'error')); }}>
+            {(Object.keys(PRESET_INFO) as MemoryPreset[]).map(k => <option key={k} value={k}>{PRESET_INFO[k].badge} · {PRESET_INFO[k].label}</option>)}
+          </select>
         </div>
 
-        <div className="instance-tile-actions">
+        <div className="instance-card-actions">
           {editing ? (
             <>
               <button className="btn small primary" onClick={save}>保存</button>
@@ -258,26 +262,26 @@ export function InstanceCard({ inst, onReload, onDiskUsage, onDelete, onExport, 
             </>
           ) : (
             <>
-              <button className="btn small row-launch" onClick={() => onLaunch(inst)}><Icon name="play" size={11} /> 启动</button>
-              <button className="btn small" onClick={() => setEditing(true)}>重命名</button>
+              <button className="btn small primary" onClick={() => onLaunch(inst)}><Icon name="play" size={11} /> 启动</button>
+              <button className="btn small" onClick={() => setGameOptionsOpen(true)} title="图形化修改 options.txt 的常用项（需先退出游戏）">游戏设置</button>
+              <details className="more-menu">
+                <summary><span>更多 ▾</span></summary>
+                <div className="menu-pop">
+                  <button className="btn small" onClick={() => setEditing(true)}>重命名</button>
+                  <button className="btn small" onClick={() => setTagsEditing(true)} title="给实例打标签，方便筛选整理"><Icon name="star" size={12} /> 标签…</button>
+                  <button className="btn small" onClick={() => setAdvanced(true)}><Icon name="cog" size={12} /> 高级设置…</button>
+                  <button className="btn small" onClick={() => onExport(inst)}><Icon name="box" size={12} /> 导出…</button>
+                  <button className="btn small" onClick={() => api.instanceOpenGameDir(inst.id).catch(e => toast.toast(String(e), 'error'))}><Icon name="folder" size={12} /> 打开游戏目录</button>
+                  <button className="btn small" onClick={() => api.instanceOpenDir(inst.id).catch(e => toast.toast(String(e), 'error'))}><Icon name="folderTree" size={12} /> 实例文件夹</button>
+                  <button className="btn small" onClick={() => onDiskUsage(inst.id)}><Icon name="disk" size={12} /> 磁盘占用</button>
+                  <button className="btn small" onClick={duplicate} disabled={duplicating} title="完整复制模组、存档与配置，适合开新档或测试模组">
+                    {duplicating ? '复制中…' : <><Icon name="copy" size={12} /> 复制实例</>}
+                  </button>
+                  <button className="btn small danger" onClick={() => onDelete(inst)}><Icon name="trash" size={12} /> 删除…</button>
+                </div>
+              </details>
             </>
           )}
-          <button className="btn small" onClick={() => setTagsEditing(true)} title="给实例打标签，方便筛选整理">标签</button>
-          <button className="btn small" onClick={() => setGameOptionsOpen(true)} title="图形化修改 options.txt 的常用项（需先退出游戏）">游戏设置</button>
-          <button className="btn small" onClick={() => setAdvanced(true)}>高级设置</button>
-          <button className="btn small" onClick={() => onExport(inst)}>导出…</button>
-          <details className="more-menu">
-            <summary><span>更多 ▾</span></summary>
-            <div className="menu-pop">
-              <button className="btn small" onClick={() => api.instanceOpenGameDir(inst.id).catch(e => toast.toast(String(e), 'error'))}><Icon name="folder" size={12} /> 打开游戏目录</button>
-              <button className="btn small" onClick={() => api.instanceOpenDir(inst.id).catch(e => toast.toast(String(e), 'error'))}><Icon name="folderTree" size={12} /> 实例文件夹</button>
-              <button className="btn small" onClick={() => onDiskUsage(inst.id)}><Icon name="disk" size={12} /> 磁盘占用</button>
-              <button className="btn small" onClick={duplicate} disabled={duplicating} title="完整复制模组、存档与配置，适合开新档或测试模组">
-                {duplicating ? '复制中…' : <><Icon name="copy" size={12} /> 复制实例</>}
-              </button>
-              <button className="btn small danger" onClick={() => onDelete(inst)}><Icon name="trash" size={12} /> 删除…</button>
-            </div>
-          </details>
         </div>
       </div>
 
@@ -422,7 +426,7 @@ function ExportModal({ inst, onClose }: { inst: InstanceInfo; onClose: () => voi
         ))}
       </div>
       {result && (
-        <div className="mt" style={{ padding: '10px 14px', borderRadius: 9, background: 'var(--accent-soft)', border: '1px solid rgba(93,211,158,.35)' }}>
+        <div className="mt" style={{ padding: '10px 14px', borderRadius: 9, background: 'var(--accent-soft)', border: '1px solid rgba(61,220,151,.35)' }}>
           <div className="row" style={{ fontWeight: 700, gap: 6 }}><Icon name="check" size={14} /> 导出完成</div>
           <div className="faint mono" style={{ marginTop: 6, wordBreak: 'break-all' }}>{result.filePath}</div>
           <div className="faint">大小 {formatBytes(result.sizeBytes)} · {result.files} 个文件</div>
