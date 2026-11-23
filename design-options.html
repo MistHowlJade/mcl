@@ -1,0 +1,825 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>MCL · 首页方案对比</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    font-family: "Segoe UI", "Microsoft YaHei", "PingFang SC", "Noto Sans SC", sans-serif;
+    background: radial-gradient(1200px 600px at 50% -10%, #23262d, #14161a 70%);
+    color: #e8eaef; -webkit-font-smoothing: antialiased; overflow: hidden;
+  }
+  button, input { font-family: inherit; }
+  .ic { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; flex-shrink: 0; vertical-align: middle; }
+
+  /* ============ 顶部切换条 ============ */
+  .cmp-bar {
+    position: fixed; top: 0; left: 0; right: 0; height: 56px; z-index: 999;
+    background: rgba(17,19,23,.92); border-bottom: 1px solid #2a2d35;
+    display: flex; align-items: center; gap: 18px; padding: 0 20px; color: #fff;
+    backdrop-filter: blur(10px);
+  }
+  .cmp-brand { font-size: 12.5px; font-weight: 750; letter-spacing: .3px; white-space: nowrap; }
+  .cmp-brand small { color: #7f8593; font-weight: 450; margin-left: 7px; letter-spacing: 0; }
+  .cmp-tabs { display: flex; gap: 3px; background: #1d2027; border: 1px solid #2c3039; padding: 3px; border-radius: 10px; }
+  .cmp-tab {
+    border: 0; background: transparent; color: #a7acb8; height: 30px; padding: 0 13px;
+    border-radius: 7px; font-size: 12px; cursor: pointer; display: inline-flex; align-items: center; gap: 7px;
+    transition: background .16s, color .16s;
+  }
+  .cmp-tab b {
+    width: 17px; height: 17px; border-radius: 4px; background: #2c3039; color: #b8bdc8;
+    display: grid; place-items: center; font-size: 9.5px; font-weight: 800;
+  }
+  .cmp-tab:hover { color: #e8eaf0; }
+  .cmp-tab.on { background: #f2f3ef; color: #15171b; font-weight: 650; }
+  .cmp-tab.on b { background: #15171b; color: #f2f3ef; }
+  .cmp-note { margin-left: auto; font-size: 12px; color: #8b919e; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .cmp-note b { color: #e6e8ee; font-weight: 600; }
+
+  .stage { position: fixed; inset: 56px 0 0; display: grid; place-items: center; }
+  .stage-fit { position: relative; }
+  .artboard {
+    position: absolute; top: 0; left: 0; width: 1280px; height: 800px; transform-origin: 0 0;
+    display: none; overflow: hidden; border-radius: 10px; box-shadow: 0 30px 80px rgba(0,0,0,.6);
+  }
+  .artboard.is-on { display: block; animation: boardIn .22s ease; }
+  @keyframes boardIn { from { opacity: 0; } to { opacity: 1; } }
+
+  /* ============ 共用封面（CSS 方块地形） ============ */
+  .art { position: relative; overflow: hidden; background: linear-gradient(158deg, var(--ca), var(--cb)); color: var(--ci); isolation: isolate; }
+  .art .glow { position: absolute; width: 80%; aspect-ratio: 1; left: 48%; top: -34%; border-radius: 50%; background: radial-gradient(circle, var(--gl), transparent 70%); opacity: .3; z-index: 0; }
+  .art .land { position: absolute; left: -2%; width: 104%; bottom: 0; color: var(--r1); z-index: 1; opacity: .92; }
+  .art .land.l1 { height: 66%; }
+  .art .land.l2 { height: 42%; color: var(--r2); opacity: 1; transform: scaleX(-1); }
+  .art::after { content: ''; position: absolute; inset: 0; z-index: 2; background: linear-gradient(0deg, rgba(0,0,0,.52), transparent 58%); }
+  .art .ver { position: absolute; left: 11px; bottom: 9px; z-index: 3; font: 700 18px/1 "Cascadia Code", "SFMono-Regular", Consolas, monospace; letter-spacing: -.4px; text-shadow: 0 1px 6px rgba(0,0,0,.35); }
+  .art .ver.sm { font-size: 12px; }
+  .art .ver.xs { font-size: 10px; }
+
+  .p-deep    { --ca: #24506e; --cb: #0c1a24; --gl: #7fd8ff; --r1: #153040; --r2: #091820; --ci: #e2f2fc; }
+  .p-create  { --ca: #8a4a20; --cb: #2a1407; --gl: #ffb35c; --r1: #4b2710; --r2: #231005; --ci: #ffe6c9; }
+  .p-vanilla { --ca: #2c6b4d; --cb: #0e2216; --gl: #9dffc4; --r1: #1a4230; --r2: #0a1d13; --ci: #dbffe9; }
+  .p-neo     { --ca: #6d2a4f; --cb: #230d19; --gl: #ff9ec7; --r1: #40172f; --r2: #1c0914; --ci: #ffdceb; }
+  .p-quilt   { --ca: #2e3a7c; --cb: #0f1228; --gl: #a9b8ff; --r1: #1d2452; --r2: #0b0e21; --ci: #e1e6ff; }
+  .p-old     { --ca: #5b4724; --cb: #1d160b; --gl: #ffe08a; --r1: #392c15; --r2: #160f08; --ci: #f5e8c8; }
+
+  /* ============================================================
+     A · 明亮专业（浅色 / 高密度效率）
+     ============================================================ */
+  .opt-a { background: #eef1f6; color: #17202c; }
+  .a-app { height: 100%; display: flex; flex-direction: column; }
+  .a-title { height: 36px; flex-shrink: 0; background: #fff; border-bottom: 1px solid #dde3ec; display: flex; align-items: center; gap: 12px; padding: 0 8px 0 12px; font-size: 11.5px; color: #77828f; }
+  .a-brand { display: flex; align-items: center; gap: 8px; font-weight: 700; color: #17202c; font-size: 12.5px; }
+  .a-brand i { width: 20px; height: 20px; border-radius: 5px; background: linear-gradient(135deg, #4d92f5, #2563eb); color: #fff; display: grid; place-items: center; font-style: normal; font-size: 10.5px; font-weight: 800; }
+  .a-path { color: #9aa4b1; }
+  .a-state { display: inline-flex; align-items: center; gap: 5px; margin-left: 2px; color: #7f8b98; font-size: 11px; }
+  .a-state i { width: 6px; height: 6px; border-radius: 50%; background: #1f9d63; }
+  .a-win { margin-left: auto; display: flex; gap: 1px; }
+  .a-win span { width: 34px; height: 26px; display: grid; place-items: center; border-radius: 4px; color: #7d8896; font-size: 12px; }
+  .a-win span:hover { background: #eef1f6; }
+
+  .a-body { flex: 1; display: flex; min-height: 0; }
+  .a-side { width: 208px; flex-shrink: 0; background: #fbfcfe; border-right: 1px solid #e2e7ee; padding: 12px 10px; display: flex; flex-direction: column; gap: 1px; }
+  .a-sec { font-size: 10px; color: #9aa5b2; letter-spacing: 1.1px; padding: 14px 10px 5px; font-weight: 700; }
+  .a-sec:first-child { padding-top: 2px; }
+  .a-nav { height: 33px; display: flex; align-items: center; gap: 10px; padding: 0 10px; border-radius: 7px; font-size: 12.5px; color: #4a5666; white-space: nowrap; }
+  .a-nav:hover { background: #eff3f8; }
+  .a-nav.on { background: #e8f0fe; color: #1d5fd0; font-weight: 650; box-shadow: inset 3px 0 0 #2563eb; }
+  .a-nav .ic { width: 15px; height: 15px; }
+  .a-nav .cnt { margin-left: auto; font-size: 10px; color: #93a0ae; font-style: normal; }
+  .a-nav.on .cnt { color: #4d84d8; }
+  .a-user { margin-top: auto; border-top: 1px solid #e7ebf1; padding: 11px 4px 2px; display: flex; align-items: center; gap: 9px; }
+  .a-user .av { width: 30px; height: 30px; border-radius: 50%; background: #dce8fb; display: grid; place-items: center; font-size: 11px; font-weight: 700; color: #2c5c9c; flex-shrink: 0; }
+  .a-user b { display: block; font-size: 12px; color: #22303f; line-height: 1.3; }
+  .a-user small { display: block; font-size: 10px; color: #94a0ad; }
+
+  .a-main { flex: 1; min-width: 0; display: flex; flex-direction: column; padding: 18px 22px 12px; min-height: 0; }
+  .a-top { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 14px; }
+  .a-top h1 { font-size: 21px; margin: 0; letter-spacing: -.3px; font-weight: 700; }
+  .a-top p { font-size: 12px; color: #7a8694; margin: 3px 0 0; }
+  .a-tools { display: flex; align-items: center; gap: 8px; }
+  .a-search { height: 32px; width: 208px; border: 1px solid #dde4ec; border-radius: 7px; background: #fff; padding: 0 10px; font-size: 12px; color: #95a1ae; display: flex; align-items: center; gap: 6px; }
+  .a-search .ic { width: 13px; height: 13px; }
+  .a-btn { height: 32px; padding: 0 12px; border-radius: 7px; border: 1px solid #d9e0e9; background: #fff; color: #39475a; font-size: 12px; display: inline-flex; align-items: center; gap: 6px; }
+  .a-btn:hover { border-color: #bcc8d6; }
+  .a-btn.pri { background: #2563eb; border-color: #2563eb; color: #fff; font-weight: 650; }
+  .a-btn.pri:hover { background: #1e57d4; }
+  .a-btn .ic { width: 14px; height: 14px; }
+
+  .a-hero { height: 172px; flex-shrink: 0; display: grid; grid-template-columns: 264px minmax(0, 1fr) 184px; background: #fff; border: 1px solid #dfe5ed; border-radius: 12px; overflow: hidden; margin-bottom: 14px; box-shadow: 0 1px 2px rgba(23,32,44,.04); }
+  .a-hero-art { height: 100%; }
+  .a-hero-copy { padding: 18px 20px; min-width: 0; display: flex; flex-direction: column; justify-content: center; }
+  .a-eyebrow { font-size: 10px; letter-spacing: 1.8px; font-weight: 750; color: #2563eb; }
+  .a-hero-copy h2 { font-size: 25px; margin: 6px 0 8px; letter-spacing: -.5px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .a-tags { display: flex; gap: 6px; flex-wrap: wrap; }
+  .a-tag { font-size: 11px; color: #56657a; background: #f2f5f9; border: 1px solid #e3e9f0; border-radius: 5px; padding: 2px 7px; }
+  .a-kpis { display: flex; align-items: center; gap: 16px; margin-top: 13px; }
+  .a-kpis div { display: flex; align-items: baseline; gap: 5px; }
+  .a-kpis b { font-size: 16px; font-weight: 750; letter-spacing: -.3px; }
+  .a-kpis small { font-size: 10.5px; color: #8794a2; }
+  .a-kpis i { width: 1px; height: 12px; background: #e2e8ef; }
+  .a-hero-go { border-left: 1px solid #edf1f6; background: #fbfcfe; padding: 16px; display: flex; flex-direction: column; justify-content: center; gap: 8px; }
+  .a-go-row { display: flex; gap: 6px; }
+  .a-select { flex: 1; height: 28px; border: 1px solid #dbe2ea; border-radius: 6px; background: #fff; font-size: 11px; padding: 0 8px; color: #485769; display: flex; align-items: center; justify-content: space-between; white-space: nowrap; }
+  .a-select .ic { width: 11px; height: 11px; color: #8b98a6; }
+  .a-play { width: 100%; height: 40px; border: 0; border-radius: 7px; background: linear-gradient(180deg, #3b82f6, #2563eb); color: #fff; font-size: 13.5px; font-weight: 700; display: flex; align-items: center; justify-content: center; gap: 7px; box-shadow: 0 4px 12px rgba(37,99,235,.28); cursor: default; }
+  .a-play .ic { width: 13px; height: 13px; fill: currentColor; stroke: none; }
+  .a-hint { font-size: 10px; color: #9aa6b3; text-align: center; }
+
+  .a-cols { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 322px; gap: 14px; align-items: start; }
+  .a-panel { background: #fff; border: 1px solid #dfe5ed; border-radius: 10px; overflow: hidden; display: flex; flex-direction: column; height: 100%; }
+  .a-ph { height: 42px; flex-shrink: 0; display: flex; align-items: center; gap: 8px; padding: 0 13px; border-bottom: 1px solid #edf1f6; }
+  .a-ph h2 { font-size: 13px; margin: 0; font-weight: 700; }
+  .a-ph em { font-style: normal; font-size: 10px; color: #7b8794; background: #eff3f8; border-radius: 99px; padding: 1px 7px; }
+  .a-ph .sp { margin-left: auto; font-size: 11px; color: #7b8794; display: flex; align-items: center; gap: 5px; }
+  .a-thead, .a-row { display: grid; grid-template-columns: 40px minmax(0, 1fr) 74px 46px 82px 26px; gap: 9px; align-items: center; padding: 0 13px; }
+  .a-thead { height: 28px; flex-shrink: 0; background: #f8fafc; border-bottom: 1px solid #eef2f6; font-size: 10px; color: #98a4b1; letter-spacing: .4px; }
+  .a-row { height: 56px; border-bottom: 1px solid #f1f4f8; }
+  .a-row:last-child { border-bottom: 0; }
+  .a-row:hover { background: #f8fafc; }
+  .a-row.on { background: #f0f6ff; box-shadow: inset 3px 0 0 #2563eb; }
+  .a-cov { width: 38px; height: 38px; border-radius: 7px; }
+  .a-name { font-size: 13px; font-weight: 650; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .a-sub { font-size: 10.5px; color: #8b97a4; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .a-ver { font: 650 11.5px "Cascadia Code", "SFMono-Regular", Consolas, monospace; color: #41526a; }
+  .a-num { font-size: 11.5px; color: #647487; white-space: nowrap; }
+  .a-more { width: 26px; height: 24px; border: 1px solid transparent; background: transparent; border-radius: 5px; color: #8b98a6; display: grid; place-items: center; }
+  .a-more:hover { background: #fff; border-color: #dbe2ea; color: #2563eb; }
+
+  .a-right { display: flex; flex-direction: column; gap: 12px; height: 100%; }
+  .a-card { background: #fff; border: 1px solid #dfe5ed; border-radius: 10px; padding: 13px 14px; }
+  .a-card.grow { flex: 1; min-height: 0; }
+  .a-card h4 { font-size: 12px; margin: 0 0 9px; display: flex; align-items: center; gap: 7px; color: #3a4a5d; font-weight: 700; }
+  .a-card h4 .ic { width: 14px; height: 14px; color: #7c8998; }
+  .a-card h4 a { margin-left: auto; font-size: 10.5px; color: #2563eb; font-weight: 500; text-decoration: none; }
+  .a-check { display: flex; align-items: center; gap: 8px; font-size: 11.5px; color: #4f5f72; padding: 4px 0; }
+  .a-check .ic { width: 13px; height: 13px; }
+  .a-check .ok { color: #1f9d63; }
+  .a-check .warn { color: #c98118; }
+  .a-log { font: 10.5px/1.85 "Cascadia Code", "SFMono-Regular", Consolas, monospace; color: #5d6c7d; background: #f8fafc; border: 1px solid #eef2f6; border-radius: 6px; padding: 8px 10px; }
+  .a-log b { color: #2563eb; font-weight: 600; }
+  .a-note { flex-shrink: 0; margin-top: 11px; font-size: 11px; color: #8b97a4; display: flex; align-items: center; gap: 8px; }
+  .a-note b { color: #55657a; font-weight: 600; }
+  .a-status { height: 26px; flex-shrink: 0; background: #fff; border-top: 1px solid #e0e6ee; display: flex; align-items: center; gap: 16px; padding: 0 14px; font-size: 10.5px; color: #7d8a98; }
+  .a-status .dot { width: 6px; height: 6px; border-radius: 50%; background: #1f9d63; display: inline-block; margin-right: 5px; }
+  .a-status .r { margin-left: auto; }
+
+  /* ============================================================
+     B · 深色沉浸（封面驱动 / 顶部导航）
+     ============================================================ */
+  .opt-b { background: #0b0d10; color: #eef1f5; }
+  .b-app { height: 100%; display: flex; flex-direction: column; }
+  .b-title { height: 32px; flex-shrink: 0; display: flex; align-items: center; padding: 0 14px; font-size: 10.5px; color: #6d7480; border-bottom: 1px solid #15181d; }
+  .b-title .w { margin-left: auto; display: flex; gap: 18px; font-size: 12px; color: #6d7480; }
+  .b-head { height: 64px; flex-shrink: 0; display: flex; align-items: center; gap: 28px; padding: 0 30px; border-bottom: 1px solid #1b1f25; }
+  .b-brand { display: flex; align-items: center; gap: 9px; font-size: 16px; font-weight: 800; letter-spacing: -.3px; }
+  .b-brand i { width: 18px; height: 18px; border-radius: 5px; background: linear-gradient(140deg, #f0c274, #c98f36); box-shadow: 0 0 16px rgba(233,180,92,.35); }
+  .b-nav { display: flex; gap: 24px; font-size: 12.5px; color: #98a1ad; }
+  .b-nav a { text-decoration: none; color: inherit; padding: 22px 0; position: relative; cursor: default; }
+  .b-nav a.on { color: #f2f4f7; font-weight: 600; }
+  .b-nav a.on::after { content: ''; position: absolute; left: 0; right: 0; bottom: -1px; height: 2px; background: #e9b45c; }
+  .b-head-r { margin-left: auto; display: flex; align-items: center; gap: 12px; }
+  .b-chip { height: 30px; display: inline-flex; align-items: center; gap: 7px; padding: 0 11px; border-radius: 99px; background: #14181e; border: 1px solid #232832; font-size: 11.5px; color: #aab2bd; }
+  .b-chip i { width: 6px; height: 6px; border-radius: 50%; background: #e9b45c; }
+  .b-ico { width: 32px; height: 32px; border-radius: 8px; display: grid; place-items: center; color: #a5adb8; border: 1px solid transparent; }
+  .b-ico:hover { background: #15191f; border-color: #262b34; color: #f0f2f5; }
+  .b-avatar { width: 30px; height: 30px; border-radius: 50%; background: #1d222a; color: #e9b45c; font-size: 11px; font-weight: 750; display: grid; place-items: center; border: 1px solid #333a45; }
+
+  .b-main { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 17px; padding: 18px 30px 16px; }
+  .b-hero { position: relative; height: 312px; flex-shrink: 0; border-radius: 14px; overflow: hidden; border: 1px solid rgba(255,255,255,.07); }
+  .b-hero .art { position: absolute; inset: 0; }
+  .b-hero .art .land.l1 { height: 74%; }
+  .b-hero .art .land.l2 { height: 50%; }
+  .b-hero .art .glow { opacity: .45; }
+  .b-hero .veil { position: absolute; inset: 0; z-index: 3; background: linear-gradient(88deg, rgba(8,10,13,.92) 2%, rgba(8,10,13,.58) 44%, rgba(8,10,13,.08) 76%), linear-gradient(0deg, rgba(8,10,13,.66), transparent 52%); }
+  .b-hero-copy { position: absolute; left: 30px; bottom: 26px; z-index: 4; max-width: 560px; }
+  .b-eyebrow { display: flex; align-items: center; gap: 9px; font-size: 10px; font-weight: 750; letter-spacing: 2.4px; color: #e9b45c; }
+  .b-eyebrow::before { content: ''; width: 20px; height: 1px; background: #e9b45c; }
+  .b-hero-copy h1 { font-size: 40px; line-height: 1.06; margin: 10px 0 10px; letter-spacing: -1.4px; font-weight: 800; }
+  .b-meta { font-size: 12.5px; color: #b3bbc5; display: flex; gap: 9px; align-items: center; flex-wrap: wrap; }
+  .b-meta i { width: 3px; height: 3px; border-radius: 50%; background: #5e6673; }
+  .b-actions { display: flex; align-items: center; gap: 10px; margin-top: 20px; }
+  .b-play { height: 42px; padding: 0 26px; border-radius: 99px; border: 0; background: #ece7da; color: #0b0d10; font-size: 13px; font-weight: 750; display: inline-flex; align-items: center; gap: 9px; }
+  .b-play .ic { width: 13px; height: 13px; fill: currentColor; stroke: none; }
+  .b-play:hover { background: #fff; }
+  .b-ghost { height: 42px; padding: 0 18px; border-radius: 99px; border: 1px solid rgba(255,255,255,.22); background: rgba(255,255,255,.05); color: #e7eaee; font-size: 12px; display: inline-flex; align-items: center; gap: 7px; }
+  .b-ghost:hover { background: rgba(255,255,255,.1); }
+  .b-side { position: absolute; right: 26px; bottom: 24px; z-index: 4; display: flex; flex-direction: column; gap: 8px; width: 178px; }
+  .b-glass { background: rgba(10,13,17,.5); border: 1px solid rgba(255,255,255,.1); border-radius: 10px; padding: 9px 12px; backdrop-filter: blur(8px); }
+  .b-glass span { display: block; font-size: 9.5px; letter-spacing: 1.4px; color: #8f97a2; font-weight: 700; }
+  .b-glass b { font-size: 17px; font-weight: 750; letter-spacing: -.3px; }
+  .b-glass b small { font-size: 10px; color: #9aa2ad; font-weight: 500; margin-left: 3px; }
+
+  .b-shelf { flex-shrink: 0; }
+  .b-shelf-h { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 10px; }
+  .b-shelf-h h2 { font-size: 14px; margin: 0; font-weight: 700; letter-spacing: .1px; }
+  .b-shelf-h h2 em { font-style: normal; font-size: 11px; color: #7d8692; margin-left: 6px; font-weight: 500; }
+  .b-shelf-h a { font-size: 11px; color: #8d96a2; text-decoration: none; }
+  .b-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 13px; }
+  .b-card { cursor: default; min-width: 0; }
+  .b-card .art { height: 118px; border-radius: 10px; border: 1px solid rgba(255,255,255,.08); transition: transform .18s, box-shadow .18s; }
+  .b-card:hover .art { transform: translateY(-3px); box-shadow: 0 14px 30px rgba(0,0,0,.5); }
+  .b-card .art .ver { font-size: 15px; }
+  .b-card b { display: block; font-size: 12.5px; font-weight: 650; margin-top: 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .b-card small { display: block; font-size: 10.5px; color: #8b94a0; margin-top: 2px; }
+
+  .b-bottom { flex: 1; min-height: 0; display: grid; grid-template-columns: 1.5fr .5fr; gap: 24px; border-top: 1px solid #1a1e24; padding-top: 14px; }
+  .b-bottom h3 { font-size: 9.5px; letter-spacing: 1.8px; color: #7c8591; margin: 0 0 9px; font-weight: 700; }
+  .b-quick { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; align-content: start; }
+  .b-q { height: 62px; border-radius: 9px; background: #11151a; border: 1px solid #1d222a; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; font-size: 10.5px; color: #b4bdc8; }
+  .b-q:hover { background: #161b22; border-color: #2b323c; color: #f1f3f6; }
+  .b-q .ic { width: 16px; height: 16px; color: #e9b45c; }
+  .b-feed { min-width: 0; border-left: 1px solid #1a1e24; padding-left: 22px; }
+  .b-feed .f { display: flex; gap: 10px; font-size: 11px; color: #98a1ad; padding: 3px 0; white-space: nowrap; overflow: hidden; }
+  .b-feed .f time { color: #6e7783; font-variant-numeric: tabular-nums; flex-shrink: 0; font-size: 10px; }
+  .b-feed .f b { color: #d9dde3; font-weight: 600; }
+  .b-status { height: 28px; flex-shrink: 0; border-top: 1px solid #171b21; display: flex; align-items: center; gap: 16px; padding: 0 30px; font-size: 10.5px; color: #79828e; }
+  .b-status .dot { width: 6px; height: 6px; border-radius: 50%; background: #4fbf83; display: inline-block; margin-right: 5px; }
+  .b-status .r { margin-left: auto; }
+
+  /* ============================================================
+     C · 暖白编辑（排版 / 留白）
+     ============================================================ */
+  .opt-c { background: #f5f2ea; color: #191b16; }
+  .c-app { height: 100%; display: flex; min-height: 0; }
+  .c-rail { width: 68px; flex-shrink: 0; background: #191b15; display: flex; flex-direction: column; align-items: center; padding: 15px 0 13px; gap: 4px; }
+  .c-logo { width: 36px; height: 36px; border-radius: 50%; background: #f5f2ea; color: #191b15; display: grid; place-items: center; font-weight: 800; font-size: 15px; margin-bottom: 22px; }
+  .c-nav { width: 40px; height: 40px; border-radius: 10px; display: grid; place-items: center; color: #8d9184; }
+  .c-nav:hover { background: #262a21; color: #eae6da; }
+  .c-nav.on { background: #f5f2ea; color: #191b15; }
+  .c-nav .ic { width: 18px; height: 18px; }
+  .c-rail .low { margin-top: auto; display: flex; flex-direction: column; gap: 4px; align-items: center; }
+  .c-rail .me { width: 32px; height: 32px; border-radius: 50%; background: #3d6b52; color: #f2efe6; font-size: 10.5px; font-weight: 750; display: grid; place-items: center; margin-top: 10px; }
+
+  .c-shell { flex: 1; min-width: 0; display: flex; flex-direction: column; min-height: 0; }
+  .c-title { height: 34px; flex-shrink: 0; display: flex; align-items: center; gap: 12px; padding: 0 26px; border-bottom: 1px solid #e3ded3; font-size: 10.5px; color: #8b8c81; }
+  .c-title .crumb { letter-spacing: 1.9px; text-transform: uppercase; font-weight: 700; font-size: 9.5px; color: #9fa093; }
+  .c-title .acc { margin-left: auto; display: flex; align-items: center; gap: 7px; color: #6f7166; font-size: 11px; }
+  .c-title .acc i { width: 19px; height: 19px; border-radius: 50%; background: #dcd6c8; display: grid; place-items: center; font-style: normal; font-size: 8.5px; font-weight: 700; color: #5b5d52; }
+  .c-title .win { display: flex; gap: 17px; color: #a6a79c; font-size: 12px; margin-left: 16px; }
+
+  .c-main { flex: 1; overflow-y: auto; padding: 20px 48px 16px; width: 100%; max-width: 1180px; margin: 0 auto; }
+  .c-kicker { display: flex; align-items: center; gap: 11px; font-size: 9.5px; letter-spacing: 2.2px; font-weight: 700; color: #8b8c7f; }
+  .c-kicker::after { content: ''; height: 1px; width: 46px; background: #c9c5b8; }
+  .c-main h1 { font-size: 36px; line-height: 1.12; letter-spacing: -1.3px; margin: 8px 0 5px; font-weight: 650; }
+  .c-main h1 em { font-family: Georgia, "Times New Roman", serif; font-style: italic; font-weight: 400; letter-spacing: -2px; }
+  .c-sub { font-size: 12.5px; color: #73756a; margin: 0 0 18px; }
+
+  .c-hero { display: grid; grid-template-columns: 1.06fr .94fr; gap: 30px; padding-bottom: 20px; border-bottom: 1px solid #ded9cd; }
+  .c-hero-copy { min-width: 0; display: flex; flex-direction: column; justify-content: center; }
+  .c-tags { display: flex; gap: 7px; margin-bottom: 12px; flex-wrap: wrap; }
+  .c-tag { font-size: 9.5px; font-weight: 700; letter-spacing: .8px; padding: 3px 9px; border: 1px solid #cfcabd; border-radius: 99px; color: #5f6157; background: #fbf9f3; }
+  .c-tag.solid { background: #3d6b52; border-color: #3d6b52; color: #f5f2ea; }
+  .c-hero h2 { font-size: 31px; margin: 0 0 9px; letter-spacing: -.9px; line-height: 1.2; }
+  .c-hero .meta { font-size: 11.5px; color: #797b6f; display: flex; gap: 9px; flex-wrap: wrap; align-items: center; }
+  .c-hero .meta i { width: 3px; height: 3px; border-radius: 50%; background: #b5b0a3; }
+  .c-actions { display: flex; align-items: center; gap: 18px; margin-top: 21px; }
+  .c-play { height: 42px; padding: 0 23px; border-radius: 2px; border: 0; background: #191b16; color: #f5f2ea; font-size: 12px; font-weight: 650; display: inline-flex; align-items: center; gap: 10px; letter-spacing: .3px; }
+  .c-play:hover { background: #000; }
+  .c-play .ic { width: 12px; height: 12px; fill: currentColor; stroke: none; }
+  .c-link { font-size: 11.5px; color: #4d5045; border-bottom: 1px solid #b9b5a8; padding-bottom: 2px; }
+  .c-hero-art { position: relative; height: 204px; border-radius: 2px; overflow: hidden; }
+  .c-hero-art .art { position: absolute; inset: 0; }
+  .c-hero-art .art .ver { left: 18px; bottom: 14px; font: 400 46px/1 Georgia, "Times New Roman", serif; letter-spacing: -2px; }
+  .c-hero-art .cap { position: absolute; inset: 14px 16px auto; z-index: 3; display: flex; justify-content: space-between; font-size: 8.5px; letter-spacing: 1.8px; color: rgba(255,255,255,.7); }
+
+  .c-shelf { margin-top: 18px; }
+  .c-shelf-h { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 12px; }
+  .c-shelf-h h3 { font-size: 13px; margin: 0; letter-spacing: .2px; font-weight: 700; }
+  .c-shelf-h a { font-size: 9.5px; color: #85877b; letter-spacing: 1.3px; text-transform: uppercase; text-decoration: none; }
+  .c-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px; }
+  .c-card { min-width: 0; cursor: default; }
+  .c-card .art { height: 90px; border-radius: 2px; }
+  .c-card .art .ver { font-size: 15px; }
+  .c-card:hover .art { filter: brightness(1.06); }
+  .c-card b { display: block; font-size: 12px; font-weight: 650; margin-top: 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .c-card small { display: block; font-size: 10px; color: #8a8b7f; margin-top: 2px; }
+
+  .c-lower { display: grid; grid-template-columns: 1.12fr .88fr; gap: 44px; margin-top: 12px; padding-top: 14px; border-top: 1px solid #ded9cd; }
+  .c-lower h4 { font-size: 9.5px; letter-spacing: 2px; color: #939486; margin: 0 0 8px; font-weight: 700; text-transform: uppercase; }
+  .c-feed .f { display: flex; gap: 14px; font-size: 11.5px; color: #5c5f54; padding: 3.5px 0; border-bottom: 1px solid rgba(0,0,0,.05); }
+  .c-feed .f time { color: #a2a394; font-variant-numeric: tabular-nums; flex-shrink: 0; font-size: 10px; min-width: 44px; padding-top: 1px; }
+  .c-feed .f b { font-weight: 650; }
+  .c-links .l { display: flex; align-items: center; gap: 10px; font-size: 11.5px; color: #3f4239; padding: 4.5px 0; border-bottom: 1px solid rgba(0,0,0,.05); }
+  .c-links .l .ic { width: 14px; height: 14px; color: #8d8e82; }
+  .c-links .l span { margin-left: auto; color: #a6a79a; font-size: 10px; }
+
+  /* ============ 小屏兜底：允许缩放后仍可滚动 ============ */
+  @media (max-height: 640px) {
+    .stage { place-items: start center; overflow: auto; }
+  }
+</style>
+</head>
+<body>
+
+<div class="cmp-bar">
+  <div class="cmp-brand">MCL <small>首页方案对比</small></div>
+  <div class="cmp-tabs">
+    <button class="cmp-tab on" data-opt="a"><b>A</b>明亮专业</button>
+    <button class="cmp-tab" data-opt="b"><b>B</b>深色沉浸</button>
+    <button class="cmp-tab" data-opt="c"><b>C</b>暖白编辑</button>
+  </div>
+  <div class="cmp-note" id="note"><b>A · 明亮专业</b>　浅色、高信息密度，像 PCL2 一样一眼看全实例与状态</div>
+</div>
+
+<svg xmlns="http://www.w3.org/2000/svg" style="display:none">
+  <symbol id="terrain" viewBox="0 0 400 200"><path d="M0 200 V132 H14 V122 H34 V128 H52 V108 H74 V118 H92 V102 H116 V114 H134 V92 H156 V104 H174 V98 H196 V116 H214 V106 H234 V114 H256 V100 H276 V110 H294 V104 H318 V120 H336 V112 H354 V132 H372 V122 H390 V126 H400 V200 Z" fill="currentColor"/></symbol>
+  <symbol id="i-home" viewBox="0 0 24 24"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/><path d="M9 21v-6h6v6"/></symbol>
+  <symbol id="i-grid" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></symbol>
+  <symbol id="i-server" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="7" rx="2"/><rect x="3" y="13" width="18" height="7" rx="2"/><path d="M7 7.5h.01M7 16.5h.01"/></symbol>
+  <symbol id="i-box" viewBox="0 0 24 24"><path d="m12 3 8 4.5v9L12 21l-8-4.5v-9L12 3Z"/><path d="m4 7.5 8 4.5 8-4.5M12 12v9"/></symbol>
+  <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M4 21h16"/></symbol>
+  <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z"/></symbol>
+  <symbol id="i-archive" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="5" rx="1"/><path d="M5 9v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V9M10 13h4"/></symbol>
+  <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3 5 6v6c0 4.5 3 7.5 7 9 4-1.5 7-4.5 7-9V6l-7-3Z"/><path d="m9 12 2 2 4-4"/></symbol>
+  <symbol id="i-wrench" viewBox="0 0 24 24"><path d="M14.5 6.5a4 4 0 0 0-5 5L4 17l3 3 5.5-5.5a4 4 0 0 0 5-5l-2.5 2.5-3-3 2.5-2.5Z"/></symbol>
+  <symbol id="i-log" viewBox="0 0 24 24"><path d="M5 3h11l3 3v15H5z"/><path d="M16 3v4h4M8 11h8M8 15h8"/></symbol>
+  <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.5-6 8-6s8 2 8 6"/></symbol>
+  <symbol id="i-cloud" viewBox="0 0 24 24"><path d="M7 18a4 4 0 0 1 0-8 5.5 5.5 0 0 1 10.5-1.5A4.5 4.5 0 0 1 17 18H7Z"/></symbol>
+  <symbol id="i-settings" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9 7 7M17 17l2.1 2.1M19.1 4.9 17 7M7 17l-2.1 2.1"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24"><path d="m8 5 11 7-11 7V5Z"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m15.5 15.5 5 5"/></symbol>
+  <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+  <symbol id="i-star" viewBox="0 0 24 24"><path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2L12 17.3 6.4 20.2l1.1-6.2L3 9.6l6.2-.9L12 3Z"/></symbol>
+  <symbol id="i-more" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.4"/><circle cx="12" cy="12" r="1.4"/><circle cx="19" cy="12" r="1.4"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 4.5 4.5L19 7"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+  <symbol id="i-cpu" viewBox="0 0 24 24"><rect x="7" y="7" width="10" height="10" rx="2"/><path d="M9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3"/></symbol>
+  <symbol id="i-disk" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 15h6M16 15h1"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2 5.5"/><path d="M20 4v7h-7"/></symbol>
+  <symbol id="i-external" viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-9 9"/><path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></symbol>
+</svg>
+
+<div class="stage">
+  <div class="stage-fit" id="fitBox">
+
+    <!-- ============================================================ A ============================================================ -->
+    <section class="artboard opt-a is-on" data-opt="a">
+      <div class="a-app">
+        <div class="a-title">
+          <div class="a-brand"><i>M</i>MCL 启动器</div>
+          <span class="a-path">启动台</span>
+          <span class="a-state"><i></i>离线模式</span>
+          <div class="a-win"><span>—</span><span>□</span><span>×</span></div>
+        </div>
+
+        <div class="a-body">
+          <aside class="a-side">
+            <div class="a-sec">游戏</div>
+            <div class="a-nav on"><svg class="ic"><use href="#i-home"/></svg><span>启动台</span></div>
+            <div class="a-nav"><svg class="ic"><use href="#i-grid"/></svg><span>实例管理</span><em class="cnt">6</em></div>
+            <div class="a-nav"><svg class="ic"><use href="#i-server"/></svg><span>服务器</span><em class="cnt">3</em></div>
+            <div class="a-sec">资源</div>
+            <div class="a-nav"><svg class="ic"><use href="#i-box"/></svg><span>模组中心</span></div>
+            <div class="a-nav"><svg class="ic"><use href="#i-download"/></svg><span>资源下载</span></div>
+            <div class="a-nav"><svg class="ic"><use href="#i-archive"/></svg><span>下载任务</span><em class="cnt">2</em></div>
+            <div class="a-nav"><svg class="ic"><use href="#i-folder"/></svg><span>内容管理</span></div>
+            <div class="a-nav"><svg class="ic"><use href="#i-archive"/></svg><span>存档备份</span></div>
+            <div class="a-sec">工具</div>
+            <div class="a-nav"><svg class="ic"><use href="#i-shield"/></svg><span>崩溃分析</span></div>
+            <div class="a-nav"><svg class="ic"><use href="#i-wrench"/></svg><span>迁移中心</span></div>
+            <div class="a-nav"><svg class="ic"><use href="#i-log"/></svg><span>日志</span></div>
+            <div class="a-sec">账号与同步</div>
+            <div class="a-nav"><svg class="ic"><use href="#i-user"/></svg><span>账号</span></div>
+            <div class="a-nav"><svg class="ic"><use href="#i-cloud"/></svg><span>云同步</span></div>
+            <div class="a-nav"><svg class="ic"><use href="#i-settings"/></svg><span>设置</span></div>
+            <div class="a-user"><span class="av">J</span><div><b>Jade</b><small>离线账号</small></div></div>
+          </aside>
+
+          <main class="a-main">
+            <div class="a-top">
+              <div>
+                <h1>启动台</h1>
+                <p>6 个实例 · 上次游玩 2 小时前 · 一切就绪</p>
+              </div>
+              <div class="a-tools">
+                <span class="a-search"><svg class="ic"><use href="#i-search"/></svg>搜索实例、模组…</span>
+                <button class="a-btn"><svg class="ic"><use href="#i-folder"/></svg>打开目录</button>
+                <button class="a-btn pri"><svg class="ic"><use href="#i-plus"/></svg>新建实例</button>
+              </div>
+            </div>
+
+            <div class="a-hero">
+              <div class="art p-deep a-hero-art">
+                <span class="glow"></span>
+                <svg class="land l1" viewBox="0 0 400 200" preserveAspectRatio="none"><use href="#terrain"/></svg>
+                <svg class="land l2" viewBox="0 0 400 200" preserveAspectRatio="none"><use href="#terrain"/></svg>
+                <span class="ver">1.20.1</span>
+              </div>
+              <div class="a-hero-copy">
+                <div class="a-eyebrow">继续游玩</div>
+                <h2>深渊生存 · 长期档</h2>
+                <div class="a-tags">
+                  <span class="a-tag">Fabric</span>
+                  <span class="a-tag">42 模组</span>
+                  <span class="a-tag">3 存档</span>
+                  <span class="a-tag">上次 2 小时前</span>
+                </div>
+                <div class="a-kpis">
+                  <div><b>6</b><small>实例</small></div><i></i>
+                  <div><b>12</b><small>存档</small></div><i></i>
+                  <div><b>257</b><small>模组</small></div><i></i>
+                  <div><b>202</b><small>小时</small></div>
+                </div>
+              </div>
+              <div class="a-hero-go">
+                <div class="a-go-row">
+                  <span class="a-select">6 GB 内存<svg class="ic"><use href="#i-chevron"/></svg></span>
+                  <span class="a-select">Java 21<svg class="ic"><use href="#i-chevron"/></svg></span>
+                </div>
+                <button class="a-play"><svg class="ic"><use href="#i-play"/></svg>启动游戏</button>
+                <div class="a-hint">Ctrl + Enter 快速启动</div>
+              </div>
+            </div>
+
+            <div class="a-cols">
+              <section class="a-panel">
+                <div class="a-ph">
+                  <h2>我的实例</h2><em>6</em>
+                  <span class="sp">按最近游玩排序<svg class="ic" style="width:12px;height:12px"><use href="#i-chevron"/></svg></span>
+                </div>
+                <div class="a-thead"><span></span><span>实例</span><span>版本</span><span>模组</span><span>上次游玩</span><span></span></div>
+
+                <div class="a-row on">
+                  <div class="art p-deep a-cov"></div>
+                  <div><div class="a-name">深渊生存 · 长期档</div><div class="a-sub">Fabric · 42 模组 · 3 存档</div></div>
+                  <span class="a-ver">1.20.1</span><span class="a-num">42</span><span class="a-num">2 小时前</span>
+                  <button class="a-more"><svg class="ic" style="width:14px;height:14px"><use href="#i-more"/></svg></button>
+                </div>
+                <div class="a-row">
+                  <div class="art p-create a-cov"></div>
+                  <div><div class="a-name">Create 机械</div><div class="a-sub">Forge · 86 模组 · 4 存档</div></div>
+                  <span class="a-ver">1.18.2</span><span class="a-num">86</span><span class="a-num">5 天前</span>
+                  <button class="a-more"><svg class="ic" style="width:14px;height:14px"><use href="#i-more"/></svg></button>
+                </div>
+                <div class="a-row">
+                  <div class="art p-vanilla a-cov"></div>
+                  <div><div class="a-name">纯净测试</div><div class="a-sub">原版 · 无模组 · 0 存档</div></div>
+                  <span class="a-ver">1.21</span><span class="a-num">0</span><span class="a-num">2 天前</span>
+                  <button class="a-more"><svg class="ic" style="width:14px;height:14px"><use href="#i-more"/></svg></button>
+                </div>
+                <div class="a-row">
+                  <div class="art p-neo a-cov"></div>
+                  <div><div class="a-name">NeoForge 实验场</div><div class="a-sub">NeoForge · 57 模组 · 2 存档</div></div>
+                  <span class="a-ver">1.20.4</span><span class="a-num">57</span><span class="a-num">8 天前</span>
+                  <button class="a-more"><svg class="ic" style="width:14px;height:14px"><use href="#i-more"/></svg></button>
+                </div>
+                <div class="a-row">
+                  <div class="art p-quilt a-cov"></div>
+                  <div><div class="a-name">Quilt 轻量整合</div><div class="a-sub">Quilt · 23 模组 · 1 存档</div></div>
+                  <span class="a-ver">1.19.4</span><span class="a-num">23</span><span class="a-num">3 天前</span>
+                  <button class="a-more"><svg class="ic" style="width:14px;height:14px"><use href="#i-more"/></svg></button>
+                </div>
+                <div class="a-row">
+                  <div class="art p-old a-cov"></div>
+                  <div><div class="a-name">远古整合包</div><div class="a-sub">Forge · 版本未识别 · 1 存档</div></div>
+                  <span class="a-ver">—</span><span class="a-num">49</span><span class="a-num">2 周前</span>
+                  <button class="a-more"><svg class="ic" style="width:14px;height:14px"><use href="#i-more"/></svg></button>
+                </div>
+              </section>
+
+              <aside class="a-right">
+                <div class="a-card">
+                  <h4><svg class="ic"><use href="#i-shield"/></svg>启动检查<a>体检</a></h4>
+                  <div class="a-check"><svg class="ic ok"><use href="#i-check"/></svg>游戏文件完整</div>
+                  <div class="a-check"><svg class="ic ok"><use href="#i-check"/></svg>Java 21.0.5 已就绪</div>
+                  <div class="a-check"><svg class="ic warn"><use href="#i-refresh"/></svg>2 个模组有更新</div>
+                </div>
+                <div class="a-card grow">
+                  <h4><svg class="ic"><use href="#i-log"/></svg>最近日志</h4>
+                  <div class="a-log">
+                    <b>12:41:03</b> 校验资源索引…<br>
+                    <b>12:41:05</b> 索引已是最新<br>
+                    <b>12:41:07</b> 257 个模组就绪<br>
+                    <b>12:41:08</b> 就绪，可启动
+                  </div>
+                </div>
+              </aside>
+            </div>
+
+            <div class="a-note"><b>最近游玩</b>昨天 22:41 · Create 机械　·　3 天前 · Quilt 轻量整合</div>
+          </main>
+        </div>
+
+        <div class="a-status">
+          <span><i class="dot"></i>就绪</span>
+          <span>Java 21.0.5</span>
+          <span>内存 6 / 16 GB</span>
+          <span class="r">MCL v0.1.0 · 便携模式</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================================================ B ============================================================ -->
+    <section class="artboard opt-b" data-opt="b">
+      <div class="b-app">
+        <div class="b-title">
+          <span>MCL Launcher</span>
+          <div class="w"><span>—</span><span>□</span><span>×</span></div>
+        </div>
+
+        <header class="b-head">
+          <div class="b-brand"><i></i>MCL</div>
+          <nav class="b-nav">
+            <a class="on">启动台</a>
+            <a>实例库</a>
+            <a>资源下载</a>
+            <a>服务器</a>
+            <a>诊断</a>
+          </nav>
+          <div class="b-head-r">
+            <span class="b-chip"><i></i>离线 · Jade</span>
+            <span class="b-ico"><svg class="ic"><use href="#i-search"/></svg></span>
+            <span class="b-avatar">J</span>
+          </div>
+        </header>
+
+        <main class="b-main">
+          <div class="b-hero">
+            <div class="art p-deep">
+              <span class="glow"></span>
+              <svg class="land l1" viewBox="0 0 400 200" preserveAspectRatio="none"><use href="#terrain"/></svg>
+              <svg class="land l2" viewBox="0 0 400 200" preserveAspectRatio="none"><use href="#terrain"/></svg>
+            </div>
+            <div class="veil"></div>
+            <div class="b-hero-copy">
+              <div class="b-eyebrow">继续游玩</div>
+              <h1>深渊生存 · 长期档</h1>
+              <div class="b-meta"><span>Fabric 1.20.1</span><i></i><span>42 个模组</span><i></i><span>3 个存档</span><i></i><span>上次游玩 2 小时前</span></div>
+              <div class="b-actions">
+                <button class="b-play"><svg class="ic"><use href="#i-play"/></svg>启动游戏</button>
+                <button class="b-ghost"><svg class="ic" style="width:13px;height:13px"><use href="#i-settings"/></svg>实例设置</button>
+              </div>
+            </div>
+            <div class="b-side">
+              <div class="b-glass"><span>内存</span><b>6<small>GB</small></b></div>
+              <div class="b-glass"><span>JAVA</span><b>21<small>.0.5</small></b></div>
+            </div>
+          </div>
+
+          <div class="b-shelf">
+            <div class="b-shelf-h">
+              <h2>我的库<em>6 个实例</em></h2>
+              <a>查看全部 →</a>
+            </div>
+            <div class="b-grid">
+              <div class="b-card">
+                <div class="art p-deep">
+                  <span class="glow"></span>
+                  <svg class="land l1" viewBox="0 0 400 200" preserveAspectRatio="none"><use href="#terrain"/></svg>
+                  <svg class="land l2" viewBox="0 0 400 200" preserveAspectRatio="none"><use href="#terrain"/></svg>
+                  <span class="ver">1.20.1</span>
+                </div>
+                <b>深渊生存</b><small>Fabric · 42 模组</small>
+              </div>
+              <div class="b-card">
+                <div class="art p-create">
+                  <span class="glow"></span>
+                  <svg class="land l1" viewBox="0 0 400 200" preserveAspectRatio="none"><use href="#terrain"/></svg>
+                  <svg class="land l2" viewBox="0 0 400 200" preserveAspectRatio="none"><use href="#terrain"/></svg>
+                  <span class="ver">1.18.2</span>
+                </div>
+                <b>Create 机械</b><small>Forge · 86 模组</small>
+              </div>
+              <div class="b-card">
+                <div class="art p-vanilla">
+                  <span class="glow"></span>
+                  <svg class="land l1" viewBox="0 0 400 200" preserveAspectRatio="none"><use href="#terrain"/></svg>
+                  <svg class="land l2" viewBox="0 0 400 200" preserveAspectRatio="none"><use href="#terrain"/></svg>
+                  <span class="ver">1.21</span>
+                </div>
+                <b>纯净测试</b><small>原版 · 0 模组</small>
+              </div>
+              <div class="b-card">
+                <div class="art p-neo">
+                  <span class="glow"></span>
+                  <svg class="land l1" viewBox="0 0 400 200" preserveAspectRatio="none"><use href="#terrain"/></svg>
+                  <svg class="land l2" viewBox="0 0 400 200" preserveAspectRatio="none"><use href="#terrain"/></svg>
+                  <span class="ver">1.20.4</span>
+                </div>
+                <b>NeoForge 实验场</b><small>NeoForge · 57 模组</small>
+              </div>
+              <div class="b-card">
+                <div class="art p-quilt">
+                  <span class="glow"></span>
+                  <svg class="land l1" viewBox="0 0 400 200" preserveAspectRatio="none"><use href="#terrain"/></svg>
+                  <svg class="land l2" viewBox="0 0 400 200" preserveAspectRatio="none"><use href="#terrain"/></svg>
+                  <span class="ver">1.19.4</span>
+                </div>
+                <b>Quilt 轻量整合</b><small>Quilt · 23 模组</small>
+              </div>
+            </div>
+          </div>
+
+          <div class="b-bottom">
+            <div>
+              <h3>快捷操作</h3>
+              <div class="b-quick">
+                <div class="b-q"><svg class="ic"><use href="#i-plus"/></svg>新建实例</div>
+                <div class="b-q"><svg class="ic"><use href="#i-download"/></svg>下载资源</div>
+                <div class="b-q"><svg class="ic"><use href="#i-folder"/></svg>打开目录</div>
+                <div class="b-q"><svg class="ic"><use href="#i-archive"/></svg>备份存档</div>
+                <div class="b-q"><svg class="ic"><use href="#i-shield"/></svg>崩溃分析</div>
+                <div class="b-q"><svg class="ic"><use href="#i-server"/></svg>开服</div>
+              </div>
+            </div>
+            <div class="b-feed">
+              <h3>最近动态</h3>
+              <div class="f"><time>12:41</time><span>资源索引校验完成，<b>257 个模组</b>就绪</span></div>
+              <div class="f"><time>昨天</time><span>Create 机械 新增 <b>2 个模组</b></span></div>
+              <div class="f"><time>3 天前</time><span>纯净测试 备份存档 <b>world-03.zip</b></span></div>
+            </div>
+          </div>
+        </main>
+
+        <footer class="b-status">
+          <span><i class="dot"></i>就绪</span>
+          <span>Java 21.0.5</span>
+          <span>内存 6 / 16 GB</span>
+          <span class="r">MCL v0.1.0</span>
+        </footer>
+      </div>
+    </section>
+
+    <!-- ============================================================ C ============================================================ -->
+    <section class="artboard opt-c" data-opt="c">
+      <div class="c-app">
+        <aside class="c-rail">
+          <div class="c-logo">M</div>
+          <div class="c-nav on"><svg class="ic"><use href="#i-home"/></svg></div>
+          <div class="c-nav"><svg class="ic"><use href="#i-grid"/></svg></div>
+          <div class="c-nav"><svg class="ic"><use href="#i-server"/></svg></div>
+          <div class="c-nav"><svg class="ic"><use href="#i-box"/></svg></div>
+          <div class="c-nav"><svg class="ic"><use href="#i-download"/></svg></div>
+          <div class="c-nav"><svg class="ic"><use href="#i-archive"/></svg></div>
+          <div class="low">
+            <div class="c-nav"><svg class="ic"><use href="#i-shield"/></svg></div>
+            <div class="c-nav"><svg class="ic"><use href="#i-log"/></svg></div>
+            <div class="c-nav"><svg class="ic"><use href="#i-settings"/></svg></div>
+            <div class="me">J</div>
+          </div>
+        </aside>
+
+        <div class="c-shell">
+          <div class="c-title">
+            <span class="crumb">Workspace / 启动台</span>
+            <div class="acc"><i>J</i>Jade · 离线</div>
+            <div class="win"><span>—</span><span>□</span><span>×</span></div>
+          </div>
+
+          <main class="c-main">
+            <div class="c-kicker">晚上好</div>
+            <h1>今晚继续<em>深渊生存</em>。</h1>
+            <p class="c-sub">6 个实例 · 257 个模组 · 累计游玩 202 小时 · 一切就绪</p>
+
+            <div class="c-hero">
+              <div class="c-hero-copy">
+                <div class="c-tags">
+                  <span class="c-tag solid">Fabric</span>
+                  <span class="c-tag">1.20.1</span>
+                  <span class="c-tag">42 模组</span>
+                  <span class="c-tag">3 存档</span>
+                </div>
+                <h2>深渊生存 · 长期档</h2>
+                <div class="meta"><span>上次游玩 2 小时前</span><i></i><span>6 GB 内存</span><i></i><span>Java 21.0.5</span></div>
+                <div class="c-actions">
+                  <button class="c-play"><svg class="ic"><use href="#i-play"/></svg>启动游戏</button>
+                  <span class="c-link">打开实例文件夹</span>
+                </div>
+              </div>
+              <div class="c-hero-art">
+                <div class="art p-deep">
+                  <span class="glow"></span>
+                  <svg class="land l1" viewBox="0 0 400 200" preserveAspectRatio="none"><use href="#terrain"/></svg>
+                  <svg class="land l2" viewBox="0 0 400 200" preserveAspectRatio="none"><use href="#terrain"/></svg>
+                  <span class="ver">1.20.1</span>
+                </div>
+                <div class="cap"><span>DEPTHS SURVIVAL</span><span>LONG TERM</span></div>
+              </div>
+            </div>
+
+            <div class="c-shelf">
+              <div class="c-shelf-h">
+                <h3>继续游玩</h3>
+                <a>全部实例 →</a>
+              </div>
+              <div class="c-grid">
+                <div class="c-card">
+                  <div class="art p-create">
+                    <span class="glow"></span>
+                    <svg class="land l1" viewBox="0 0 400 200" preserveAspectRatio="none"><use href="#terrain"/></svg>
+                    <svg class="land l2" viewBox="0 0 400 200" preserveAspectRatio="none"><use href="#terrain"/></svg>
+                    <span class="ver">1.18.2</span>
+                  </div>
+                  <b>Create 机械</b><small>Forge · 86 模组 · 5 天前</small>
+                </div>
+                <div class="c-card">
+                  <div class="art p-vanilla">
+                    <span class="glow"></span>
+                    <svg class="land l1" viewBox="0 0 400 200" preserveAspectRatio="none"><use href="#terrain"/></svg>
+                    <svg class="land l2" viewBox="0 0 400 200" preserveAspectRatio="none"><use href="#terrain"/></svg>
+                    <span class="ver">1.21</span>
+                  </div>
+                  <b>纯净测试</b><small>原版 · 0 模组 · 2 天前</small>
+                </div>
+                <div class="c-card">
+                  <div class="art p-neo">
+                    <span class="glow"></span>
+                    <svg class="land l1" viewBox="0 0 400 200" preserveAspectRatio="none"><use href="#terrain"/></svg>
+                    <svg class="land l2" viewBox="0 0 400 200" preserveAspectRatio="none"><use href="#terrain"/></svg>
+                    <span class="ver">1.20.4</span>
+                  </div>
+                  <b>NeoForge 实验场</b><small>NeoForge · 57 模组 · 8 天前</small>
+                </div>
+                <div class="c-card">
+                  <div class="art p-quilt">
+                    <span class="glow"></span>
+                    <svg class="land l1" viewBox="0 0 400 200" preserveAspectRatio="none"><use href="#terrain"/></svg>
+                    <svg class="land l2" viewBox="0 0 400 200" preserveAspectRatio="none"><use href="#terrain"/></svg>
+                    <span class="ver">1.19.4</span>
+                  </div>
+                  <b>Quilt 轻量整合</b><small>Quilt · 23 模组 · 3 天前</small>
+                </div>
+              </div>
+            </div>
+
+            <div class="c-lower">
+              <div class="c-feed">
+                <h4>最近</h4>
+                <div class="f"><time>12:41</time><span>资源索引校验完成，<b>257 个模组</b>就绪</span></div>
+                <div class="f"><time>昨天</time><span>Create 机械 新增 <b>2 个模组</b></span></div>
+                <div class="f"><time>3 天前</time><span>纯净测试 备份存档 <b>world-03.zip</b></span></div>
+                <div class="f"><time>5 天前</time><span>NeoForge 实验场 更新到 <b>1.20.4</b></span></div>
+              </div>
+              <div class="c-links">
+                <h4>快捷操作</h4>
+                <div class="l"><svg class="ic"><use href="#i-plus"/></svg>新建实例<span>6 个现有</span></div>
+                <div class="l"><svg class="ic"><use href="#i-download"/></svg>下载模组与整合包<span>Modrinth</span></div>
+                <div class="l"><svg class="ic"><use href="#i-archive"/></svg>备份存档<span>2 个待备份</span></div>
+                <div class="l"><svg class="ic"><use href="#i-shield"/></svg>崩溃分析<span>上次 8 天前</span></div>
+              </div>
+            </div>
+          </main>
+        </div>
+      </div>
+    </section>
+
+  </div>
+</div>
+
+<script>
+  (function () {
+    var boards = document.querySelectorAll('.artboard');
+    var tabs = document.querySelectorAll('.cmp-tab');
+    var note = document.getElementById('note');
+    var fitBox = document.getElementById('fitBox');
+    var notes = {
+      a: '<b>A · 明亮专业</b>　浅色、高信息密度，像 PCL2 一样一眼看全实例与状态',
+      b: '<b>B · 深色沉浸</b>　封面驱动的游戏库，接近 Steam / Modrinth 的夜间氛围',
+      c: '<b>C · 暖白编辑</b>　大字号排版与留白，安静不刺激，偏向阅读感'
+    };
+
+    function show(id) {
+      var found = false;
+      boards.forEach(function (b) {
+        var on = b.getAttribute('data-opt') === id;
+        b.classList.toggle('is-on', on);
+        if (on) found = true;
+      });
+      if (!found) return;
+      tabs.forEach(function (t) { t.classList.toggle('on', t.getAttribute('data-opt') === id); });
+      note.innerHTML = notes[id];
+      if (history.replaceState) history.replaceState(null, '', '#' + id);
+    }
+
+    tabs.forEach(function (t) {
+      t.addEventListener('click', function () { show(t.getAttribute('data-opt')); });
+    });
+
+    document.addEventListener('keydown', function (e) {
+      if (e.key === '1' || e.key === '2' || e.key === '3') {
+        show({ '1': 'a', '2': 'b', '3': 'c' }[e.key]);
+      }
+    });
+
+    function fit() {
+      var s = Math.min((window.innerWidth - 32) / 1280, (window.innerHeight - 56 - 28) / 800, 1);
+      fitBox.style.width = (1280 * s) + 'px';
+      fitBox.style.height = (800 * s) + 'px';
+      boards.forEach(function (b) { b.style.transform = 'scale(' + s + ')'; });
+    }
+
+    window.addEventListener('resize', fit);
+    fit();
+
+    var h = (location.hash || '').replace('#', '');
+    if (h === 'a' || h === 'b' || h === 'c') show(h);
+  })();
+</script>
+</body>
+</html>
