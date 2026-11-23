@@ -159,37 +159,39 @@ export default function Home({ onNavigate, onLaunchFail }: { onNavigate: (p: Pag
   return (
     <div>
       <section className="home-hero">
-        <div className="home-hero-content">
-          <div className="hero-id">
-            <div className="hero-logo"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.8 20.5 7.5v9L12 21.2 3.5 16.5v-9L12 2.8Z" /><path d="m3.5 7.5 8.5 4.7 8.5-4.7M12 12.2v9" /></svg></div>
-            <div>
-              <span className="eyebrow"><span className="status-dot" />启动台</span>
-              <h2>欢迎回来，{accountName ?? '旅人'}</h2>
-              <div className="hero-hint">
-                {selected ? (
-                  <>
-                    <span className="hero-chip accent">{selected.name}</span>
-                    <span className="hero-sep" />
-                    <span className="hero-chip">{selected.mcVersion} · {LOADER_LABEL[loaderKey(selected.loader)]}</span>
-                    <span className="hero-sep" />
-                    <span>上次游玩 {timeAgo(selected.lastPlayedAt)}</span>
-                  </>
-                ) : '先创建一个实例，或从别的启动器迁移过来——剩下的交给 MCL。'}
+        <div className="hero-overlay">
+          <div className="home-hero-content">
+            <div className="hero-id">
+              <div className="hero-logo"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.8 20.5 7.5v9L12 21.2 3.5 16.5v-9L12 2.8Z" /><path d="m3.5 7.5 8.5 4.7 8.5-4.7M12 12.2v9" /></svg></div>
+              <div>
+                <span className="eyebrow"><span className="status-dot" />启动台</span>
+                <h2>欢迎回来，{accountName ?? '旅人'}</h2>
+                <div className="hero-hint">
+                  {selected ? (
+                    <>
+                      <span className="hero-chip accent">{selected.name}</span>
+                      <span className="hero-sep" />
+                      <span className="hero-chip">{selected.mcVersion} · {LOADER_LABEL[loaderKey(selected.loader)]}</span>
+                      <span className="hero-sep" />
+                      <span>上次游玩 {timeAgo(selected.lastPlayedAt)}</span>
+                    </>
+                  ) : '先创建一个实例，或从别的启动器迁移过来——剩下的交给 MCL。'}
+                </div>
               </div>
             </div>
           </div>
-        </div>
-        <div className="hero-actions">
-          <button className="launch-btn" onClick={doLaunch} disabled={busy || !selected} aria-busy={busy}>
-            {busy ? <span className="btn-spinner" aria-hidden="true" /> : <span className="launch-icon"><Icon name="play" size={10} /></span>}
-            {busy ? (launchState.status === 'running' ? '游戏运行中' : '准备中…') : '启动游戏'}
-          </button>
-          {busy && launchState.status === 'downloading' && (
-            <button className="btn" onClick={() => api.launchCancelDownload()
-              .then(ok => toast.toast(ok ? '已发送取消下载请求' : '当前没有可取消的下载', ok ? 'info' : 'error'))
-              .catch(e => toast.toast(String(e), 'error'))}>取消下载</button>
-          )}
-          {busy && launchState.message && <div className="muted" style={{ maxWidth: 220, fontSize: 11 }}>{launchState.message}</div>}
+          <div className="hero-actions">
+            <button className="launch-btn" onClick={doLaunch} disabled={busy || !selected} aria-busy={busy}>
+              {busy ? <span className="btn-spinner" aria-hidden="true" /> : <span className="launch-icon"><Icon name="play" size={10} /></span>}
+              {busy ? (launchState.status === 'running' ? '游戏运行中' : '准备中…') : '启动游戏'}
+            </button>
+            {busy && launchState.status === 'downloading' && (
+              <button className="btn" onClick={() => api.launchCancelDownload()
+                .then(ok => toast.toast(ok ? '已发送取消下载请求' : '当前没有可取消的下载', ok ? 'info' : 'error'))
+                .catch(e => toast.toast(String(e), 'error'))}>取消下载</button>
+            )}
+            {busy && launchState.message && <div className="muted" style={{ maxWidth: 220, fontSize: 11 }}>{launchState.message}</div>}
+          </div>
         </div>
         {progress && (
           <div className="hero-progress">
