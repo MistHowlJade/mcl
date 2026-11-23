@@ -213,7 +213,7 @@ export default function Content() {
         <div className="empty"><div className="big">⏳</div>正在读取内容…</div>
       ) : items.length === 0 ? (
         <div className="empty">
-          <div className="big">{currentTab.icon}</div>
+          <div className="big"><Icon name={currentTab.icon} size={30} /></div>
           {currentTab.empty}
           <div className="row mt" style={{ justifyContent: 'center' }}>
             <button className="btn primary" onClick={() => importItem(tab === 'worlds' ? 'folder' : 'file')}>导入到「{instance?.name}」</button>
@@ -248,7 +248,7 @@ export default function Content() {
                 <div style={{ width: 42, height: 42, borderRadius: 9, background: 'var(--panel-3)', display: 'grid', placeItems: 'center', fontSize: 20, flexShrink: 0, overflow: 'hidden' }}>
                   {tab === 'worlds' && item.previewPath
                     ? <img src={mediaUrl(item.previewPath)} alt="" style={{ width: 42, height: 42, objectFit: 'cover', imageRendering: 'pixelated' }} />
-                    : currentTab.icon}
+                    : <Icon name={currentTab.icon} size={20} />}
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div className="row" style={{ gap: 8 }}>

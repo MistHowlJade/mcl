@@ -206,78 +206,75 @@ export function InstanceCard({ inst, onReload, onDiskUsage, onDelete, onExport, 
       </div>
 
       <div className="instance-tile-body">
-        <div className="instance-tile-title">
-          {editing
-            ? <input className="input rename-input" value={name} onChange={e => setName(e.target.value)} autoFocus onKeyDown={e => e.key === 'Enter' && save()} />
-            : <h3 title={inst.name}>{inst.name}</h3>}
-          <button className={`fav-btn ${inst.favorite ? 'on' : ''}`} title={inst.favorite ? '取消收藏' : '收藏（置顶显示）'}
-            onClick={e => { e.stopPropagation(); api.instanceUpdate(inst.id, { favorite: !inst.favorite }).then(onReload).catch(err => toast.toast(String(err), 'error')); }}>
-            <Icon name="star" size={14} />
-          </button>
-          {inst.mcVersion === 'unknown' && <span className="tag amber">MC 版本未识别</span>}
-        </div>
-        {(inst.tags?.length ?? 0) > 0 && (
-          <div className="instance-tag-row">
+        <div className="instance-tile-main">
+          <div className="instance-tile-title">
+            {editing
+              ? <input className="input rename-input" value={name} onChange={e => setName(e.target.value)} autoFocus onKeyDown={e => e.key === 'Enter' && save()} />
+              : <h3 title={inst.name}>{inst.name}</h3>}
+            <button className={`fav-btn ${inst.favorite ? 'on' : ''}`} title={inst.favorite ? '取消收藏' : '收藏（置顶显示）'}
+              onClick={e => { e.stopPropagation(); api.instanceUpdate(inst.id, { favorite: !inst.favorite }).then(onReload).catch(err => toast.toast(String(err), 'error')); }}>
+              <Icon name="star" size={14} />
+            </button>
+            {inst.mcVersion === 'unknown' && <span className="tag amber">MC 版本未识别</span>}
             {(inst.tags ?? []).map(tag => <span key={tag} className="tag-chip static">{tag}</span>)}
           </div>
-        )}
-
-        {inst.mcVersion === 'unknown' && (
-          <div className="row" style={{ gap: 8 }}>
-            <span className="faint">设置版本后才能启动</span>
-            <input className="input" style={{ width: 120, height: 30 }} placeholder="如 1.20.1" value={mcVersion} onChange={e => setMcVersion(e.target.value)} onKeyDown={e => e.key === 'Enter' && save()} />
-            <button className="btn small primary" onClick={save}>保存</button>
+          <div className="instance-tile-meta">
+            <span><Icon name="puzzle" size={12} /> <b>{inst.modsCount}</b> 模组</span>
+            <span><Icon name="globe" size={12} /> <b>{inst.savesCount}</b> 存档</span>
+            <span><Icon name="clock" size={12} /> {timeAgo(inst.lastPlayedAt)}</span>
           </div>
-        )}
-
-        <div className="instance-tile-meta">
-          <span><Icon name="puzzle" size={12} /> <b>{inst.modsCount}</b> 模组</span>
-          <span><Icon name="globe" size={12} /> <b>{inst.savesCount}</b> 存档</span>
-          <span><Icon name="clock" size={12} /> {timeAgo(inst.lastPlayedAt)}</span>
-        </div>
-
-        <div className="memory-line">
-          <div className="row" style={{ gap: 8 }}>
-            <span className="faint">禁止 Mod 自动更新</span>
-            <Tip text="开启后，此实例不会提示任何模组可更新。适合整合包玩家避免随手更新导致版本错乱（大坑，官方没有这个开关时只能服主口头叮嘱）。" />
-            <Toggle checked={!!inst.noModUpdate} onChange={v => { api.instanceUpdate(inst.id, { noModUpdate: v }).then(onReload).catch(e => toast.toast(String(e), 'error')); }} label="禁止 Mod 自动更新" />
-          </div>
-          <div className="row" style={{ gap: 6 }}>
-            <span className="faint">内存</span>
-            <select className="input" value={preset} onChange={e => { api.instanceUpdate(inst.id, { memoryPreset: e.target.value }).then(onReload).catch(err => toast.toast(String(err), 'error')); }}>
-              {(Object.keys(PRESET_INFO) as MemoryPreset[]).map(k => <option key={k} value={k}>{PRESET_INFO[k].label}</option>)}
-            </select>
-          </div>
-        </div>
-
-        <div className="instance-tile-actions">
-          {editing ? (
-            <>
+          {inst.mcVersion === 'unknown' && (
+            <div className="row" style={{ gap: 8 }}>
+              <span className="faint">设置版本后才能启动</span>
+              <input className="input" style={{ width: 120, height: 30 }} placeholder="如 1.20.1" value={mcVersion} onChange={e => setMcVersion(e.target.value)} onKeyDown={e => e.key === 'Enter' && save()} />
               <button className="btn small primary" onClick={save}>保存</button>
-              <button className="btn small ghost" onClick={() => { setEditing(false); setName(inst.name); setMcVersion(inst.mcVersion === 'unknown' ? '' : inst.mcVersion); }}>取消</button>
-            </>
-          ) : (
-            <>
-              <button className="btn small row-launch" onClick={() => onLaunch(inst)}><Icon name="play" size={11} /> 启动</button>
-              <button className="btn small" onClick={() => setEditing(true)}>重命名</button>
-            </>
-          )}
-          <button className="btn small" onClick={() => setTagsEditing(true)} title="给实例打标签，方便筛选整理">标签</button>
-          <button className="btn small" onClick={() => setGameOptionsOpen(true)} title="图形化修改 options.txt 的常用项（需先退出游戏）">游戏设置</button>
-          <button className="btn small" onClick={() => setAdvanced(true)}>高级设置</button>
-          <button className="btn small" onClick={() => onExport(inst)}>导出…</button>
-          <details className="more-menu">
-            <summary><span>更多 ▾</span></summary>
-            <div className="menu-pop">
-              <button className="btn small" onClick={() => api.instanceOpenGameDir(inst.id).catch(e => toast.toast(String(e), 'error'))}><Icon name="folder" size={12} /> 打开游戏目录</button>
-              <button className="btn small" onClick={() => api.instanceOpenDir(inst.id).catch(e => toast.toast(String(e), 'error'))}><Icon name="folderTree" size={12} /> 实例文件夹</button>
-              <button className="btn small" onClick={() => onDiskUsage(inst.id)}><Icon name="disk" size={12} /> 磁盘占用</button>
-              <button className="btn small" onClick={duplicate} disabled={duplicating} title="完整复制模组、存档与配置，适合开新档或测试模组">
-                {duplicating ? '复制中…' : <><Icon name="copy" size={12} /> 复制实例</>}
-              </button>
-              <button className="btn small danger" onClick={() => onDelete(inst)}><Icon name="trash" size={12} /> 删除…</button>
             </div>
-          </details>
+          )}
+        </div>
+
+        <div className="instance-tile-side">
+          <div className="instance-tile-actions">
+            {editing ? (
+              <>
+                <button className="btn small primary" onClick={save}>保存</button>
+                <button className="btn small ghost" onClick={() => { setEditing(false); setName(inst.name); setMcVersion(inst.mcVersion === 'unknown' ? '' : inst.mcVersion); }}>取消</button>
+              </>
+            ) : (
+              <>
+                <button className="btn small row-launch" onClick={() => onLaunch(inst)}><Icon name="play" size={11} /> 启动</button>
+                <button className="btn small" onClick={() => setEditing(true)}>重命名</button>
+              </>
+            )}
+            <button className="btn small" onClick={() => setTagsEditing(true)} title="给实例打标签，方便筛选整理">标签</button>
+            <button className="btn small" onClick={() => setGameOptionsOpen(true)} title="图形化修改 options.txt 的常用项（需先退出游戏）">游戏设置</button>
+            <button className="btn small" onClick={() => setAdvanced(true)}>高级设置</button>
+            <button className="btn small" onClick={() => onExport(inst)}>导出…</button>
+            <details className="more-menu">
+              <summary><span>更多 ▾</span></summary>
+              <div className="menu-pop">
+                <button className="btn small" onClick={() => api.instanceOpenGameDir(inst.id).catch(e => toast.toast(String(e), 'error'))}><Icon name="folder" size={12} /> 打开游戏目录</button>
+                <button className="btn small" onClick={() => api.instanceOpenDir(inst.id).catch(e => toast.toast(String(e), 'error'))}><Icon name="folderTree" size={12} /> 实例文件夹</button>
+                <button className="btn small" onClick={() => onDiskUsage(inst.id)}><Icon name="disk" size={12} /> 磁盘占用</button>
+                <button className="btn small" onClick={duplicate} disabled={duplicating} title="完整复制模组、存档与配置，适合开新档或测试模组">
+                  {duplicating ? '复制中…' : <><Icon name="copy" size={12} /> 复制实例</>}
+                </button>
+                <button className="btn small danger" onClick={() => onDelete(inst)}><Icon name="trash" size={12} /> 删除…</button>
+              </div>
+            </details>
+          </div>
+          <div className="memory-line">
+            <div className="row" style={{ gap: 8 }}>
+              <span className="faint">禁止 Mod 自动更新</span>
+              <Tip text="开启后，此实例不会提示任何模组可更新。适合整合包玩家避免随手更新导致版本错乱（大坑，官方没有这个开关时只能服主口头叮嘱）。" />
+              <Toggle checked={!!inst.noModUpdate} onChange={v => { api.instanceUpdate(inst.id, { noModUpdate: v }).then(onReload).catch(e => toast.toast(String(e), 'error')); }} label="禁止 Mod 自动更新" />
+            </div>
+            <div className="row" style={{ gap: 6 }}>
+              <span className="faint">内存</span>
+              <select className="input" value={preset} onChange={e => { api.instanceUpdate(inst.id, { memoryPreset: e.target.value }).then(onReload).catch(err => toast.toast(String(err), 'error')); }}>
+                {(Object.keys(PRESET_INFO) as MemoryPreset[]).map(k => <option key={k} value={k}>{PRESET_INFO[k].label}</option>)}
+              </select>
+            </div>
+          </div>
         </div>
       </div>
 

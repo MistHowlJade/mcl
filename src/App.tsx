@@ -200,6 +200,7 @@ function Shell() {
   useEffect(() => { contentRef.current?.scrollTo({ top: 0, behavior: 'smooth' }); }, [page]);
 
   const launchFail = (message: string) => toast.toast(message, 'error');
+  const current = NAV.find(n => n.id === page) ?? NAV[0];
 
   return (
     <>
@@ -208,15 +209,9 @@ function Shell() {
           <div className="logo"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.8 20.5 7.5v9L12 21.2 3.5 16.5v-9L12 2.8Z" /><path d="m3.5 7.5 8.5 4.7 8.5-4.7M12 12.2v9" /></svg></div>
           MCL<small>新一代我的世界启动器</small>
         </div>
+        <span className="titlebar-divider" />
+        <span className="titlebar-crumb">{current.section}<i>/</i>{current.label}</span>
         <div className="spacer" />
-        <button className="title-account" onClick={() => setPage('accounts')} title="账号设置">
-          <span className="avatar">
-            {activeAccount?.skinUrl
-              ? <img src={activeAccount.skinUrl} alt="" width={22} height={22} style={{ imageRendering: 'pixelated' }} />
-              : <span>{activeAccount?.name?.[0]?.toUpperCase() ?? '?'}</span>}
-          </span>
-          <span className="name">{activeAccount?.name ?? '未登录'}</span>
-        </button>
         <button className="winbtn" onClick={() => api.windowMinimize().catch(() => undefined)} title="最小化" aria-label="最小化">
           <svg viewBox="0 0 24 24"><path d="M5 12h14" /></svg>
         </button>
@@ -229,31 +224,40 @@ function Shell() {
           <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18" /></svg>
         </button>
       </div>
-      <div className="statusbar">
-        <span className={`status-item ${status.tone}`}><span className="dot" />{status.label}</span>
-        {status.detail && <span className="faint" style={{ maxWidth: 420, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{status.detail}</span>}
-        {status.page && <button className="status-link" onClick={() => setPage(status.page!)}>查看 →</button>}
-      </div>
       <div className="app-shell">
         <nav className="sidebar">
           {sections.map(([section, items]) => (
-            <div key={section}>
+            <div key={section} className="rail-group">
               <div className="side-section">{section}</div>
               {items.map(item => (
                 <button
                   key={item.id}
                   className={`nav-item ${page === item.id ? 'active' : ''}`}
                   onClick={() => setPage(item.id)}
+                  title={item.label}
+                  aria-label={item.label}
                 >
                   <span className="icon">{ICONS[item.id]}</span>
-                  {item.label}
+                  <span className="nav-label">{item.label}</span>
                 </button>
               ))}
             </div>
           ))}
           <div className="nav-footer">
-            <div className="trust-line"><Icon name="shield" size={11} /> 开源 · 零遥测 · 令牌仅存本机</div>
-            <div className="shortcut-line">Ctrl+Enter 启动 · Ctrl+K 搜索 · Alt+1~9 切页</div>
+            <button
+              className="rail-account"
+              onClick={() => setPage('accounts')}
+              title={activeAccount?.name ?? '未登录'}
+              aria-label="账号设置"
+            >
+              <span className="avatar">
+                {activeAccount?.skinUrl
+                  ? <img src={activeAccount.skinUrl} alt="" width={28} height={28} style={{ imageRendering: 'pixelated' }} />
+                  : <span>{activeAccount?.name?.[0]?.toUpperCase() ?? '?'}</span>}
+              </span>
+              <span className={`rail-status ${activeAccount ? 'on' : ''}`} />
+              <span className="nav-label">{activeAccount?.name ?? '未登录'}</span>
+            </button>
           </div>
         </nav>
         <main className="content" ref={contentRef}>
@@ -274,6 +278,15 @@ function Shell() {
             {page === 'settings' && <Settings onNavigate={setPage} />}
           </div>
         </main>
+      </div>
+      <div className="statusbar">
+        <span className={`status-item ${status.tone}`}><span className="dot" />{status.label}</span>
+        {status.detail && <span className="status-detail">{status.detail}</span>}
+        {status.page && <button className="status-link" onClick={() => setPage(status.page!)}>查看 →</button>}
+        <div className="spacer" />
+        <span className="status-hint">Ctrl+Enter 启动</span>
+        <span className="status-hint">Ctrl+K 搜索</span>
+        <span className="status-hint"><Icon name="shield" size={11} /> 开源 · 零遥测 · 令牌仅存本机</span>
       </div>
       {modpackDrag && <div className="drop-overlay modpack">松开即可导入整合包（.mrpack / .zip）</div>}
     </>
