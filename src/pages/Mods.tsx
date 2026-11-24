@@ -227,6 +227,7 @@ function InstalledTab({ instance }: { instance: InstanceInfo }) {
         <div className="list">
           {mods.map(mod => (
             <div key={mod.fileName} className="list-row">
+              <div className="list-icon"><Icon name="puzzle" size={15} /></div>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div className="row" style={{ gap: 8 }}>
                   <strong style={{ fontSize: 13, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{mod.title ?? mod.fileName}</strong>
