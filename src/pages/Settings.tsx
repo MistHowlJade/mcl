@@ -43,7 +43,7 @@ export default function Settings({ onNavigate }: { onNavigate?: (page: 'cloud') 
   const [cacheClearing, setCacheClearing] = useState(false);
   const [confirmClearCache, setConfirmClearCache] = useState(false);
   const toast = useToast();
-  const { nav, setNav } = usePrefs();
+  const { nav, setNav, theme, setTheme } = usePrefs();
 
   useEffect(() => {
     api.settingsGet().then(setSettings).catch(e => toast.toast(String(e), 'error'));
@@ -166,15 +166,6 @@ export default function Settings({ onNavigate }: { onNavigate?: (page: 'cloud') 
       <div className="panel">
         <div className="panel-title">常规</div>
         <div className="setting-row">
-          <div className="label">导航样式<Tip text="侧边栏：左侧分组导航，空间利用率高；顶部标签：标题栏下方的横向标签页，切换更直观。只影响启动器界面。" /></div>
-          <div className="control">
-            <div className="segmented">
-              <button className={`btn small ${nav === 'side' ? 'primary' : ''}`} onClick={() => setNav('side')}>侧边栏</button>
-              <button className={`btn small ${nav === 'top' ? 'primary' : ''}`} onClick={() => setNav('top')}>顶部标签</button>
-            </div>
-          </div>
-        </div>
-        <div className="setting-row">
           <div className="label">界面缩放<Tip text="等价于 Windows 的 DPI 设置，解决高分屏字太小/界面错位。立即生效，下次启动保持。" /></div>
           <div className="control">
             <select className="input" style={{ width: 130 }} value={settings.general.zoomFactor} onChange={e => { const v = parseFloat(e.target.value); patch({ general: { zoomFactor: v } }); void api.windowSetZoom(v).catch(() => undefined); }}>
@@ -214,6 +205,29 @@ export default function Settings({ onNavigate }: { onNavigate?: (page: 'cloud') 
             <select className="input" style={{ width: 100 }} value={settings.general.backupKeep} onChange={e => patch({ general: { backupKeep: parseInt(e.target.value, 10) } })}>
               {[3, 5, 10, 20, 50].map(n => <option key={n} value={n}>{n} 份</option>)}
             </select>
+          </div>
+        </div>
+      </div>
+
+      {/* ========== 外观 ========== */}
+      <div className="panel">
+        <div className="panel-title">外观</div>
+        <div className="setting-row">
+          <div className="label">主题<Tip text="纸墨：暖纸底色、墨色文字，白天与亮房间更舒服；夜炉：深炭底色配余烬橙，夜间不刺眼。只影响启动器界面，不会改变游戏画面。" /></div>
+          <div className="control">
+            <div className="segmented">
+              <button className={`btn small ${theme === 'light' ? 'primary' : ''}`} onClick={() => setTheme('light')}>纸墨浅色</button>
+              <button className={`btn small ${theme === 'dark' ? 'primary' : ''}`} onClick={() => setTheme('dark')}>夜炉深色</button>
+            </div>
+          </div>
+        </div>
+        <div className="setting-row">
+          <div className="label">导航样式<Tip text="侧边栏：左侧分组导航，空间利用率高；顶部标签：标题栏下方的横向标签页，切换更直观。只影响启动器界面。" /></div>
+          <div className="control">
+            <div className="segmented">
+              <button className={`btn small ${nav === 'side' ? 'primary' : ''}`} onClick={() => setNav('side')}>侧边栏</button>
+              <button className={`btn small ${nav === 'top' ? 'primary' : ''}`} onClick={() => setNav('top')}>顶部标签</button>
+            </div>
           </div>
         </div>
       </div>
