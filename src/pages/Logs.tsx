@@ -91,7 +91,7 @@ export default function Logs() {
           </div>
           <div className="mono" style={{ background: 'var(--panel-2)', borderRadius: 8, padding: 12, height: '62vh', overflow: 'auto', fontSize: 11.5, lineHeight: 1.6 }}>
             {filtered.map((line, i) => {
-              const cls = /error|exception|fail/i.test(line) ? 'var(--red)' : /warn/i.test(line) ? 'var(--amber)' : /\[mcl\]/.test(line) ? 'var(--accent)' : '#4b617d';
+              const cls = /error|exception|fail/i.test(line) ? 'var(--red)' : /warn/i.test(line) ? 'var(--amber)' : /\[mcl\]/.test(line) ? 'var(--accent)' : 'var(--ink-3)';
               return <div key={i} style={{ color: cls, whiteSpace: 'pre-wrap' }}>{line}</div>;
             })}
             {filtered.length === 0 && <div className="faint">没有匹配的内容</div>}

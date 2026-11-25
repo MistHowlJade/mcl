@@ -80,7 +80,7 @@ export default function Backups() {
                 </div>
                 <div className="row" style={{ gap: 6 }}>
                   <button className="btn small ghost" title="在文件夹中定位" onClick={() => api.appRevealFile(b.filePath).catch(e => toast.toast(String(e), 'error'))}>定位</button>
-                  <button className="btn small primary" onClick={() => setRestoreTarget(b)}>恢复…</button>
+                  <button className="btn small" onClick={() => setRestoreTarget(b)}>恢复…</button>
                   <button className="btn small danger" onClick={() => setDeleteTarget(b)}>删除</button>
                 </div>
               </div>

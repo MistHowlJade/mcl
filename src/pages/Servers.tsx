@@ -411,7 +411,7 @@ export default function Servers() {
 
           {tab === 'console' && (
             <div className="mt">
-              <div ref={logRef} className="log-strip" style={{ height: 320, overflowY: 'auto' }}>
+              <div ref={logRef} className="log-strip" style={{ height: 240, overflowY: 'auto' }}>
                 {logs.length === 0 ? <div className="line">暂无日志。启动服务器后会在这里实时显示。</div> : logs.map((line, i) => (
                   <div key={i} className={`line ${/error|exception|failed|错误/i.test(line) ? 'err' : /warn|警告/i.test(line) ? 'warn' : /^\[install\]|^\[mcl\]/.test(line) ? 'mcl' : ''}`}>{line}</div>
                 ))}
@@ -726,7 +726,7 @@ function CreateServerModal({ onClose, onCreated }: { onClose: () => void; onCrea
             emptyText={versionsError ? '加载失败，请点下方「重试」' : '没有匹配的版本'}
           />
           {versionsError ? (
-            <div className="row" style={{ gap: 8, alignItems: 'flex-start', padding: '8px 10px', borderRadius: 8, background: 'var(--red-soft)', border: '1px solid rgba(242,104,104,.4)' }}>
+            <div className="row" style={{ gap: 8, alignItems: 'flex-start', padding: '8px 10px', borderRadius: 8, background: 'var(--red-soft)', border: '1px solid var(--red)' }}>
               <div className="faint" style={{ flex: 1, lineHeight: 1.6 }}>
                 版本清单加载失败：{versionsError}
                 <br />已安装的服务器不受影响，可稍后重试或换个下载源。
