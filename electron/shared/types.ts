@@ -86,6 +86,9 @@ export interface AppSettings {
     autoBackupBeforeLaunch: boolean;
     backupKeep: number;
     confirmBeforeLaunch: boolean;
+    /** 定时备份：按固定小时间隔为所有实例创建存档备份 */
+    scheduledBackupEnabled: boolean;
+    scheduledBackupIntervalHours: number;
     /** 未单独设置分辨率的实例使用的默认窗口尺寸 */
     defaultResolution: { width: number; height: number } | null;
   };
@@ -466,4 +469,111 @@ export interface EnvironmentReport {
   javas: JavaInfo[];
   instances: Array<{ name: string; mcVersion: string; loader: LoaderType }>;
   lastCrash?: CrashDiagnosis | null;
+}
+
+/* ---------- 启动前预检 ---------- */
+export type PreflightStatus = 'ok' | 'warn' | 'error';
+
+export interface PreflightCheck {
+  id: string;
+  label: string;
+  status: PreflightStatus;
+  message: string;
+  detail?: string;
+  fix?: { action: string; label: string; args?: Record<string, any> };
+}
+
+export interface PreflightReport {
+  instanceId: string;
+  instanceName: string;
+  checkedAt: number;
+  /** 0-100，所有检查通过才算 100 */
+  score: number;
+  ready: boolean;
+  checks: PreflightCheck[];
+}
+
+/* ---------- 下载诊断 ---------- */
+export interface DownloadDiagnosticReport {
+  checkedAt: number;
+  configuredSource: DownloadSource;
+  effectiveSource: 'bmclapi' | 'official';
+  health: Array<{ source: 'official' | 'bmclapi'; latencyMs: number; ok: boolean }>;
+  lastTestAt: number | null;
+  proxyEnabled: boolean;
+  proxyAppliedToDownloads: boolean;
+  cacheDir: string;
+  cacheSizeBytes: number;
+  cacheFiles: number;
+  recentFailures: Array<{ name: string; error: string; finishedAt: number }>;
+  recommendation: string;
+}
+
+/* ---------- 模组依赖 ---------- */
+export interface MissingModDependency {
+  projectId: string;
+  title: string;
+  requiredBy: string;
+  versionId?: string | null;
+  loader?: string | null;
+  gameVersion?: string | null;
+}
+
+export interface ModDependencyReport {
+  instanceId: string;
+  scanned: number;
+  missing: MissingModDependency[];
+  checkedAt: number;
+  note?: string;
+}
+
+/* ---------- 定时备份 ---------- */
+export interface BackupScheduleState {
+  enabled: boolean;
+  intervalHours: number;
+  lastRunAt: number | null;
+  nextRunAt: number | null;
+}
+
+/* ---------- 启动参数预览 ---------- */
+export interface LaunchArgGroup {
+  id: string;
+  label: string;
+  explain: string;
+  args: string[];
+}
+
+export interface LaunchPreview {
+  instanceId: string;
+  instanceName: string;
+  javaPath: string | null;
+  recommendedJavaMajor: number;
+  memory: { initial: string; max: string; label: string };
+  groups: LaunchArgGroup[];
+  command: string;
+  notes: string[];
+}
+
+/* ---------- 运行监控 ---------- */
+export interface ProcessMetrics {
+  pid: number;
+  cpuPercent: number | null;
+  memoryMB: number | null;
+  uptimeSeconds: number | null;
+  alive: boolean;
+}
+
+export interface MonitorStatus {
+  instanceId: string | null;
+  status: string;
+  message?: string;
+  metrics: ProcessMetrics | null;
+}
+
+/* ---------- 批量运维 ---------- */
+export interface BatchResult {
+  id: string;
+  name: string;
+  ok: boolean;
+  message: string;
 }

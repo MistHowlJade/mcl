@@ -55,7 +55,7 @@ function isHeapMB(v: unknown): v is number {
   return Number.isInteger(v) && (v as number) >= 256 && (v as number) <= 65536;
 }
 
-const MEMORY_PRESETS: Record<MemoryPreset, { initial: string; max: string; gc: string[]; label: string }> = {
+export const MEMORY_PRESETS: Record<MemoryPreset, { initial: string; max: string; gc: string[]; label: string }> = {
   low: { initial: '1G', max: '2G', gc: [], label: '低配机器' },
   standard: { initial: '2G', max: '4G', gc: [], label: '标准（大部分整合包）' },
   heavy: {

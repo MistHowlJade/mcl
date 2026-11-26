@@ -11,6 +11,7 @@ import { URL } from 'url';
 import { EventEmitter } from 'events';
 import { cacheDir } from './paths';
 import { errorReason, mapToMirror, USER_AGENT } from './net';
+import { getAutoSource } from './version';
 import { createProxiedRequest } from './proxy';
 import { readJson, writeJson } from './store';
 
@@ -132,10 +133,10 @@ export class DownloadManager extends EventEmitter {
   private mirrorUrls(task: DownloadTask): string[] {
     if (this.opts.source === 'official') return [task.url];
     if (this.opts.source === 'auto') {
-      // auto：先镜像再官方（国内优先），失败互相兜底
-      const m = mapToMirror(task.url, 'bmclapi');
-      const arr = m === task.url ? [task.url] : [m, task.url];
-      return arr;
+      // auto：尊重镜像测速缓存（net.pickBestSource 写入），快的源优先，保留另一个源兜底
+      const mirror = mapToMirror(task.url, 'bmclapi');
+      if (mirror === task.url) return [task.url];
+      return getAutoSource() === 'official' ? [task.url, mirror] : [mirror, task.url];
     }
     const m = mapToMirror(task.url, this.opts.source === 'custom' ? 'custom' : 'bmclapi', this.opts.customMirror);
     return m === task.url ? [task.url] : [m, task.url];
@@ -158,7 +159,13 @@ export class DownloadManager extends EventEmitter {
     return new Promise((resolve, reject) => {
       req.on('response', (res) => {
         const status = res.statusCode ?? 0;
-        if ([301, 302, 303, 307, 308].includes(status) && res.headers.location && redirectDepth < 5) {
+        if ([301, 302, 303, 307, 308].includes(status)) {
+          // 次数用尽或没有 Location：必须报错，绝不能把 3xx 页面当成下载内容
+          if (!res.headers.location || redirectDepth >= 5) {
+            res.resume();
+            reject(new Error(`重定向次数过多或缺少 Location（HTTP ${status}）：${url}`));
+            return;
+          }
           res.resume();
           // Location 由服务器控制：非法地址必须变成可读错误，不能让 new URL 在事件回调里抛出未捕获异常
           let next: string;
@@ -195,6 +202,11 @@ export class DownloadManager extends EventEmitter {
     const { status, stream } = await this.requestWithRedirects(url, { method: 'GET', headers });
     return new Promise((resolve, reject) => {
       if (status === 416) { stream.resume(); resolve(); return; } // 已下完
+      if (status >= 300 && status < 400) {
+        stream.resume();
+        reject(new Error(`服务器返回了未处理的重定向（HTTP ${status}）：${url}`));
+        return;
+      }
       if (status >= 400) {
         stream.resume();
         reject(new Error(`HTTP ${status}：${url}`));

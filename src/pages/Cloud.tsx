@@ -183,7 +183,7 @@ export default function Cloud() {
           <button className="btn" onClick={test} disabled={!!busy || !configured}>{busy === 'test' ? '连接中…' : '测试连接'}</button>
         </div>
         {testResult && (
-          <div className="mt" style={{ padding: '10px 14px', borderRadius: 9, background: testResult.ok ? 'var(--accent-soft)' : 'var(--red-soft)', border: `1px solid ${testResult.ok ? 'rgba(93,211,158,.35)' : 'rgba(242,104,104,.4)'}` }}>
+          <div className="mt" style={{ padding: '10px 14px', borderRadius: 9, background: testResult.ok ? 'var(--green-soft)' : 'var(--red-soft)', border: `1px solid ${testResult.ok ? 'var(--green)' : 'var(--red)'}` }}>
             <Icon name={testResult.ok ? 'check' : 'warn'} size={13} /> {testResult.message}
           </div>
         )}

@@ -515,7 +515,13 @@ export function zipExtractEntry(buf: Buffer, entry: ZipEntry): Buffer {
     throw new Error(`ZIP 数据区越界：${entry.name}`);
   }
   const data = buf.subarray(dataStart, dataStart + entry.compressedSize);
-  if (entry.method === 0) return Buffer.from(data);
+  if (entry.method === 0) {
+    // stored 条目同样要校验声明大小，否则可绕过中央目录的解压炸弹总量防护
+    if (entry.compressedSize !== entry.uncompressedSize) {
+      throw new Error(`ZIP 条目大小不符（声明 ${entry.uncompressedSize}，实际 ${entry.compressedSize}）：${entry.name}`);
+    }
+    return Buffer.from(data);
+  }
   if (entry.method === 8) {
     // inflateRawSync 必须限制输出：中央目录声明的大小可能是假的（解压炸弹）
     const limit = Math.min(Math.max(entry.uncompressedSize, 1), MAX_SYNC_ENTRY);
@@ -532,8 +538,10 @@ export function zipExtractEntry(buf: Buffer, entry: ZipEntry): Buffer {
 function extractTarget(entryName: string, root: string, prefix: string): string | null {
   let rel = entryName.replace(/\\/g, '/');
   if (prefix) {
-    if (!rel.startsWith(prefix)) return null;
-    rel = rel.slice(prefix.length);
+    // 必须按路径边界剥离，否则 stripPrefix='foo' 会把 foobar/a.txt 解到 bar/a.txt
+    const boundary = prefix.endsWith('/') ? prefix : `${prefix}/`;
+    if (!rel.startsWith(boundary)) return null;
+    rel = rel.slice(boundary.length);
   }
   if (!rel || rel.endsWith('/')) return null;
   const target = path.resolve(root, rel);
@@ -635,6 +643,9 @@ export async function zipExtractEntryToFile(zipPath: string, entry: ZipEntry, de
     outFd = fs.openSync(dest, 'w');
     const chunk = Buffer.allocUnsafe(CHUNK_SIZE);
     if (entry.method === 0) {
+      if (entry.compressedSize !== entry.uncompressedSize) {
+        throw new Error(`ZIP 条目大小不符（声明 ${entry.uncompressedSize}，实际 ${entry.compressedSize}）：${entry.name}`);
+      }
       let remaining = entry.compressedSize;
       let pos = dataStart;
       while (remaining > 0) {

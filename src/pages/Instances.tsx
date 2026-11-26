@@ -366,9 +366,9 @@ function AdvancedSettingsModal({ inst, onClose, onSaved }: { inst: InstanceInfo;
       <div className="setting-row">
         <div className="label">堆内存（MB）<Tip text="PCL CE 式精细控制：分别设置初始堆（-Xms）与最大堆（-Xmx）。两个都留空 = 用上面的内存预设；填写时必须同时填且初始不大于最大，范围 256～65536。" /></div>
         <div className="control">
-          <input className="input" style={{ width: 100 }} type="number" placeholder="初始，如 2048" value={heapInitial} onChange={e => setHeapInitial(e.target.value)} />
+          <input className="input" style={{ width: 100 }} type="number" placeholder="初始 MB" value={heapInitial} onChange={e => setHeapInitial(e.target.value)} />
           <span className="faint">→</span>
-          <input className="input" style={{ width: 100 }} type="number" placeholder="最大，如 8192" value={heapMax} onChange={e => setHeapMax(e.target.value)} />
+          <input className="input" style={{ width: 100 }} type="number" placeholder="最大 MB" value={heapMax} onChange={e => setHeapMax(e.target.value)} />
         </div>
       </div>
       <p className="faint mt">留空则由「内存预设」管理；自定义堆会覆盖预设的 -Xms/-Xmx，但 GC 参数仍按预设选择。</p>
@@ -419,7 +419,7 @@ function ExportModal({ inst, onClose }: { inst: InstanceInfo; onClose: () => voi
         ))}
       </div>
       {result && (
-        <div className="mt" style={{ padding: '10px 14px', borderRadius: 9, background: 'var(--accent-soft)', border: '1px solid rgba(93,211,158,.35)' }}>
+        <div className="mt" style={{ padding: '10px 14px', borderRadius: 9, background: 'var(--green-soft)', border: '1px solid var(--green)' }}>
           <div className="row" style={{ fontWeight: 700, gap: 6 }}><Icon name="check" size={14} /> 导出完成</div>
           <div className="faint mono" style={{ marginTop: 6, wordBreak: 'break-all' }}>{result.filePath}</div>
           <div className="faint">大小 {formatBytes(result.sizeBytes)} · {result.files} 个文件</div>
@@ -549,7 +549,7 @@ function CreateInstanceModal({ onClose, onCreated }: { onClose: () => void; onCr
             emptyText={versionsError ? '加载失败，请点下方「重试」' : '没有匹配的版本'}
           />
           {versionsError ? (
-            <div className="row" style={{ gap: 8, alignItems: 'flex-start', padding: '8px 10px', borderRadius: 8, background: 'var(--red-soft)', border: '1px solid rgba(242,104,104,.4)' }}>
+            <div className="row" style={{ gap: 8, alignItems: 'flex-start', padding: '8px 10px', borderRadius: 8, background: 'var(--red-soft)', border: '1px solid var(--red)' }}>
               <div className="faint" style={{ flex: 1, lineHeight: 1.6 }}>
                 版本清单加载失败：{versionsError}
                 <br />已安装的实例和游戏文件不受影响，可稍后重试或换个下载源。

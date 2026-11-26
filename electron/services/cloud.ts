@@ -412,8 +412,8 @@ export async function testCloud(): Promise<{ ok: boolean; message: string }> {
     try {
       const res = await fetchWithTimeout(url, { method: 'HEAD', headers: webdavHeaders(), timeoutMs: 15000 });
       if (res.status === 401 || res.status === 403) return { ok: false, message: `WebDAV 认证失败（HTTP ${res.status}），请检查用户名/密码` };
-      if (res.status >= 400 && res.status !== 404) return { ok: false, message: `WebDAV 返回 HTTP ${res.status}，连接不可用（如 405 表示服务端不支持 HEAD，请改用支持 WebDAV 的服务或检查地址）` };
       if (res.status >= 500) return { ok: false, message: `WebDAV 服务器错误（HTTP ${res.status}）` };
+      if (res.status >= 400 && res.status !== 404) return { ok: false, message: `WebDAV 返回 HTTP ${res.status}，连接不可用（如 405 表示服务端不支持 HEAD，请改用支持 WebDAV 的服务或检查地址）` };
       return { ok: true, message: res.status === 404 ? '连接成功（云端还没有快照）' : `连接成功（HTTP ${res.status}）` };
     } catch (e) {
       return { ok: false, message: `无法连接 WebDAV：${errorReason(e)}` };

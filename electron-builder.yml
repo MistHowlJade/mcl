@@ -21,7 +21,7 @@ electronDownload:
   mirror: https://npmmirror.com/mirrors/electron/
 
 win:
-  icon: assets/app.ico
+  icon: assets/app-craft.ico
   # Linux 交叉打包时 rcedit 需要 wine；关掉 exe 元数据/图标写入即可无 wine 构建。
   # 代价： exe 的版本信息与图标不写入 PE 资源（不影响运行与便携模式）。
   signAndEditExecutable: false

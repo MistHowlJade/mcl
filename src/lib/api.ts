@@ -2,11 +2,11 @@
  * 类型安全的窗口桥（对应 electron/preload.ts 暴露的 window.mcl）
  */
 import type {
-  Account, AppInfo, AppSettings, BackupInfo, CloudSnapshotInfo, ContentInstallResult, ContentKind, ContentList,
+  Account, AppInfo, AppSettings, BackupInfo, BackupScheduleState, BatchResult, CloudSnapshotInfo, ContentInstallResult, ContentKind, ContentList,
   ContentProjectType,
-  CrashDiagnosis, CrashFix, DownloadTaskInfo, EnvironmentReport, ExportFormat, ExportResult, GameOptions,
-  InstanceConfig, InstanceInfo, InstalledMod, JavaInfo, LanWorld, LaunchState, MigrationCandidate,
-  MigrationPreview, MigrationResult, ModHealthIssue, ModSearchResult, PlayStats, ServerBackupInfo,
+  CrashDiagnosis, CrashFix, DownloadDiagnosticReport, DownloadSource, DownloadTaskInfo, EnvironmentReport, ExportFormat, ExportResult, GameOptions,
+  InstanceConfig, InstanceInfo, InstalledMod, JavaInfo, LanWorld, LaunchPreview, LaunchState, MigrationCandidate, MonitorStatus,
+  MigrationPreview, MigrationResult, ModDependencyReport, ModHealthIssue, ModSearchResult, PlayStats, PreflightReport, ServerBackupInfo,
   ServerConfig, ServerInfo, ServerLoader, ServerProperties, UpdateInfo, VersionManifestEntry,
 } from '../../electron/shared/types';
 
@@ -148,6 +148,33 @@ export const api = {
 
   diagnosticExport: (instanceId?: string | null) => invoke<string | null>('diagnostic:export', instanceId ?? null),
   mirrorTest: () => invoke<{ source: 'official' | 'bmclapi' | 'custom'; latencies: Array<{ source: string; latencyMs: number; ok: boolean }> }>('mirror:test'),
+
+  /* ---------- 新增功能 ---------- */
+  preflightRun: (instanceId: string) => invoke<PreflightReport>('preflight:run', instanceId),
+  preflightFix: (instanceId: string, fix: { action: string; label: string; args?: Record<string, any> }) =>
+    invoke<{ ok: boolean; message: string }>('preflight:fix', instanceId, fix),
+
+  downloadDiagReport: () => invoke<DownloadDiagnosticReport>('downloadDiag:report'),
+  downloadDiagProbe: () => invoke<DownloadDiagnosticReport>('downloadDiag:probe'),
+  downloadDiagSetSource: (source: DownloadSource) => invoke<DownloadDiagnosticReport>('downloadDiag:setSource', source),
+
+  launchPreview: (instanceId: string) => invoke<LaunchPreview>('launch:preview', instanceId),
+
+  monitorStatus: () => invoke<MonitorStatus>('monitor:status'),
+  monitorLogTail: (instanceId: string, maxLines?: number) => invoke<string[]>('monitor:logTail', instanceId, maxLines),
+  monitorKill: () => invoke<boolean>('monitor:kill'),
+
+  batchBackup: (ids: string[]) => invoke<BatchResult[]>('batch:backup', ids),
+  batchCheckUpdates: (ids: string[]) => invoke<BatchResult[]>('batch:checkUpdates', ids),
+  batchExport: (ids: string[], format: ExportFormat, destDir: string) => invoke<BatchResult[]>('batch:export', ids, format, destDir),
+
+  modDepsScan: (instanceId: string) => invoke<ModDependencyReport>('modDeps:scan', instanceId),
+  modDepsInstall: (instanceId: string, items: Array<{ projectId: string; versionId?: string | null }>) =>
+    invoke<Array<{ projectId: string; fileName: string; title: string }>>('modDeps:install', instanceId, items),
+
+  backupScheduleGet: () => invoke<BackupScheduleState>('backupSchedule:get'),
+  backupScheduleUpdate: (patch: { enabled?: boolean; intervalHours?: number }) => invoke<BackupScheduleState>('backupSchedule:update', patch),
+  backupScheduleRunNow: (instanceId?: string) => invoke<{ created: number; skipped: string[] }>('backupSchedule:runNow', instanceId),
 
   /* ---------- 服务器 ---------- */
   serversList: () => invoke<ServerInfo[]>('server:list'),

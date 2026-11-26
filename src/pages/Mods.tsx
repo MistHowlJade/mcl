@@ -4,9 +4,9 @@ import { useToast } from '../components/Toast';
 import { Modal, Tip, formatBytes, timeAgo } from '../components/Modal';
 import { FavoriteButton, useFavorites } from '../components/FavoriteButton';
 import { Icon } from '../components/Icon';
-import type { InstanceInfo, InstalledMod, ModHealthIssue, ModSearchResult } from '../../electron/shared/types';
+import type { InstanceInfo, InstalledMod, ModDependencyReport, ModHealthIssue, ModSearchResult } from '../../electron/shared/types';
 
-type Tab = 'installed' | 'search' | 'import';
+type Tab = 'installed' | 'search' | 'import' | 'deps';
 
 /**
  * Modrinth 搜索结果的 versions 一般按从旧到新排序，直接 slice(0, 4) 会展示最旧的四个版本，
@@ -76,13 +76,14 @@ export default function Mods() {
       </div>
 
       <div className="row" style={{ gap: 6, marginBottom: 16 }}>
-        {([['installed', '已安装'], ['search', '搜索 Modrinth'], ['import', '导入整合包']] as Array<[Tab, string]>).map(([id, label]) => (
+        {([['installed', '已安装'], ['search', '搜索 Modrinth'], ['deps', '依赖体检'], ['import', '导入整合包']] as Array<[Tab, string]>).map(([id, label]) => (
           <button key={id} className={`btn ${tab === id ? 'primary' : ''}`} onClick={() => setTab(id)}>{label}</button>
         ))}
       </div>
 
       {tab === 'installed' && instance && <InstalledTab instance={instance} />}
       {tab === 'search' && instance && <SearchTab instance={instance} />}
+      {tab === 'deps' && instance && <DepsTab instance={instance} />}
       {tab === 'import' && <ImportTab onImported={id => { void reloadInstances().then(() => setInstanceId(id)); }} />}
     </div>
   );
@@ -390,6 +391,98 @@ function ImportTab({ onImported }: { onImported?: (instanceId: string) => void }
                 <button key={i} className="btn small ghost" style={{ display: 'block', marginTop: 6 }} onClick={() => api.openExternal(d.url).catch(e => toast.toast(String(e), 'error'))}><Icon name="link" size={12} /> {d.name}</button>
               ))}
             </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DepsTab({ instance }: { instance: InstanceInfo }) {
+  const [report, setReport] = useState<ModDependencyReport | null>(null);
+  const [scanning, setScanning] = useState(false);
+  const [installing, setInstalling] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const toast = useToast();
+
+  const scan = async () => {
+    setScanning(true);
+    setReport(null);
+    try {
+      const result = await api.modDepsScan(instance.id);
+      setReport(result);
+      setSelected(new Set(result.missing.map(item => item.projectId)));
+      if (result.missing.length === 0) toast.toast(`检查完成：${result.scanned} 个模组，没有发现缺失前置`);
+    } catch (e) { toast.toast(String(e), 'error'); }
+    finally { setScanning(false); }
+  };
+
+  const install = async () => {
+    if (!report || selected.size === 0) return;
+    setInstalling(true);
+    try {
+      const items = report.missing.filter(item => selected.has(item.projectId)).map(item => ({ projectId: item.projectId, versionId: item.versionId }));
+      const installed = await api.modDepsInstall(instance.id, items);
+      toast.toast(`已补装 ${installed.length} 个前置模组`, 'ok');
+      await scan();
+    } catch (e) { toast.toast(String(e), 'error'); }
+    finally { setInstalling(false); }
+  };
+
+  const toggle = (projectId: string) => {
+    setSelected(prev => {
+      const next = new Set(prev);
+      if (next.has(projectId)) next.delete(projectId);
+      else next.add(projectId);
+      return next;
+    });
+  };
+
+  return (
+    <div>
+      <div className="panel">
+        <div className="row spread">
+          <div>
+            <div style={{ fontWeight: 700, fontSize: 13 }}>扫描已安装模组的必填前置</div>
+            <div className="faint" style={{ marginTop: 4 }}>
+              {instance.name} · {instance.mcVersion} · {instance.loader} · 基于 Modrinth 版本元数据
+            </div>
+          </div>
+          <button className="btn primary" onClick={scan} disabled={scanning}>{scanning ? '扫描中…' : '开始检查'}</button>
+        </div>
+      </div>
+
+      {report && (
+        <div className="panel" style={{ marginTop: 12 }}>
+          <div className="panel-title">
+            检查结果
+            <span className="faint">{report.scanned} 个模组 · {report.missing.length} 个缺失前置</span>
+          </div>
+          {report.note && <div className="faint" style={{ marginBottom: 8 }}>{report.note}</div>}
+          {report.missing.length === 0 ? (
+            <div className="faint">没有发现缺失的必填前置。</div>
+          ) : (
+            <>
+              <div className="list">
+                {report.missing.map(item => (
+                  <label key={item.projectId} className="list-row" style={{ cursor: 'pointer' }}>
+                    <input type="checkbox" checked={selected.has(item.projectId)} onChange={() => toggle(item.projectId)} />
+                    <div className="list-icon"><Icon name="puzzle" size={17} /></div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <strong style={{ fontSize: 13 }}>{item.title}</strong>
+                      <div className="faint">{item.projectId} · 由「{item.requiredBy}」需要</div>
+                    </div>
+                    <span className="tag amber">缺失</span>
+                  </label>
+                ))}
+              </div>
+              <div className="row" style={{ marginTop: 12 }}>
+                <button className="btn primary" onClick={install} disabled={installing || selected.size === 0}>
+                  {installing ? '安装中…' : `补装选中的 ${selected.size} 个前置`}
+                </button>
+                <span className="faint">安装会自动匹配 {instance.mcVersion} / {instance.loader}，并递归处理它的必填前置。</span>
+              </div>
+            </>
           )}
         </div>
       )}

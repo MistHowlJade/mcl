@@ -1,11 +1,11 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { api } from '../lib/api';
 import { useToast } from '../components/Toast';
 import { ConfirmModal, formatBytes, timeAgo } from '../components/Modal';
 import { Icon } from '../components/Icon';
 import { EmptyState } from '../components/ui';
 import { useAsyncList, useInstanceSelection } from '../lib/hooks';
-import type { BackupInfo } from '../../electron/shared/types';
+import type { BackupInfo, BackupScheduleState } from '../../electron/shared/types';
 
 export default function Backups() {
   const { instances, instanceId, setInstanceId } = useInstanceSelection();
@@ -16,10 +16,42 @@ export default function Backups() {
   const [restoreTarget, setRestoreTarget] = useState<BackupInfo | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<BackupInfo | null>(null);
   const [creating, setCreating] = useState(false);
+  const [schedule, setSchedule] = useState<BackupScheduleState | null>(null);
+  const [savingSchedule, setSavingSchedule] = useState(false);
+  const [runningAll, setRunningAll] = useState(false);
   const toast = useToast();
 
+  useEffect(() => { api.backupScheduleGet().then(setSchedule).catch(() => undefined); }, []);
+
   const totalBytes = useMemo(() => backups.reduce((a, b) => a + b.sizeBytes, 0), [backups]);
+  const byDay = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const item of backups) {
+      const day = new Date(item.createdAt).toLocaleDateString('zh-CN');
+      map.set(day, (map.get(day) ?? 0) + 1);
+    }
+    return [...map.entries()];
+  }, [backups]);
   const instance = instances.find(i => i.id === instanceId) ?? null;
+
+  const saveSchedule = async (patch: { enabled?: boolean; intervalHours?: number }) => {
+    setSavingSchedule(true);
+    try {
+      setSchedule(await api.backupScheduleUpdate(patch));
+      toast.toast('定时备份设置已保存', 'ok');
+    } catch (e) { toast.toast(String(e), 'error'); }
+    finally { setSavingSchedule(false); }
+  };
+
+  const runAll = async () => {
+    setRunningAll(true);
+    try {
+      const result = await api.backupScheduleRunNow();
+      toast.toast(`已为 ${result.created} 个实例创建定时备份${result.skipped.length ? `，跳过 ${result.skipped.length} 个` : ''}`, 'ok');
+      void reload();
+    } catch (e) { toast.toast(String(e), 'error'); }
+    finally { setRunningAll(false); }
+  };
 
   const create = async () => {
     if (!instanceId) return;
@@ -53,6 +85,28 @@ export default function Backups() {
       </div>
 
       <div className="panel" style={{ marginBottom: 14 }}>
+        <div className="panel-title">定时备份</div>
+        <div className="row" style={{ flexWrap: 'wrap' }}>
+          <label className="row" style={{ gap: 6 }}>
+            <input type="checkbox" checked={schedule?.enabled ?? false}
+              onChange={e => saveSchedule({ enabled: e.target.checked })} disabled={savingSchedule} />
+            <span>启用定时备份</span>
+          </label>
+          <span className="faint">间隔</span>
+          <input className="input" type="number" min={1} max={168} style={{ width: 80 }}
+            value={schedule?.intervalHours ?? 6}
+            onChange={e => setSchedule(prev => prev ? { ...prev, intervalHours: Number(e.target.value) } : prev)} />
+          <span className="faint">小时</span>
+          <button className="btn small" disabled={savingSchedule} onClick={() => saveSchedule({ intervalHours: schedule?.intervalHours ?? 6 })}>保存间隔</button>
+          <button className="btn small" disabled={runningAll} onClick={runAll}>{runningAll ? '备份中…' : '立即备份所有实例'}</button>
+          <span className="faint">
+            {schedule?.lastRunAt ? `上次 ${new Date(schedule.lastRunAt).toLocaleString()}` : '尚未自动备份'}
+            {schedule?.nextRunAt && schedule.enabled ? ` · 下次约 ${new Date(schedule.nextRunAt).toLocaleString()}` : ''}
+          </span>
+        </div>
+      </div>
+
+      <div className="panel" style={{ marginBottom: 14 }}>
         <div className="row spread">
           <div className="row" style={{ gap: 24 }}>
             <div><div className="faint">备份数量</div><div style={{ fontSize: 20, fontWeight: 800 }}>{backups.length}</div></div>
@@ -62,6 +116,13 @@ export default function Backups() {
           <div className="faint" style={{ maxWidth: 340, textAlign: 'right' }}>自动备份默认保留最近 10 份（启动前自动备份会清理更旧的），可在设置中调整</div>
         </div>
       </div>
+
+      {byDay.length > 0 && (
+        <div className="tag-filter-row" style={{ marginBottom: 10 }}>
+          <span className="faint">恢复点时间轴</span>
+          {byDay.map(([day, count]) => <span key={day} className="tag-chip static">{day} · {count}</span>)}
+        </div>
+      )}
 
       {backups.length === 0 ? (
         <EmptyState icon="save" title="还没有备份" description="建议先手动备份一次，崩溃或更新翻车都能回去。" />
@@ -80,7 +141,7 @@ export default function Backups() {
                 </div>
                 <div className="row" style={{ gap: 6 }}>
                   <button className="btn small ghost" title="在文件夹中定位" onClick={() => api.appRevealFile(b.filePath).catch(e => toast.toast(String(e), 'error'))}>定位</button>
-                  <button className="btn small primary" onClick={() => setRestoreTarget(b)}>恢复…</button>
+                  <button className="btn small" onClick={() => setRestoreTarget(b)}>恢复…</button>
                   <button className="btn small danger" onClick={() => setDeleteTarget(b)}>删除</button>
                 </div>
               </div>

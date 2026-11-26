@@ -1,8 +1,10 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { ToastProvider, useToast } from './components/Toast';
 import { api, dropPaths, on } from './lib/api';
-import { Icon } from './components/Icon';
 import { formatBytes } from './components/Modal';
+import { Icon } from './components/Icon';
+import { usePrefs } from './lib/theme';
 import type { Account, LaunchState, ServerInfo } from '../electron/shared/types';
 import Home from './pages/Home';
 import Instances from './pages/Instances';
@@ -16,10 +18,15 @@ import Migrate from './pages/Migrate';
 import Accounts from './pages/Accounts';
 import Cloud from './pages/Cloud';
 import Logs from './pages/Logs';
+import Preflight from './pages/Preflight';
+import Diagnostics from './pages/Diagnostics';
+import LaunchPreview from './pages/LaunchPreview';
+import Monitor from './pages/Monitor';
+import Batch from './pages/Batch';
 import Settings from './pages/Settings';
 import Tasks from './pages/Tasks';
 
-type PageId = 'home' | 'instances' | 'servers' | 'mods' | 'download' | 'tasks' | 'content' | 'backups' | 'crash' | 'migrate' | 'accounts' | 'cloud' | 'logs' | 'settings';
+type PageId = 'home' | 'instances' | 'servers' | 'mods' | 'download' | 'tasks' | 'content' | 'backups' | 'preflight' | 'diagnostics' | 'launchPreview' | 'monitor' | 'batch' | 'crash' | 'migrate' | 'accounts' | 'cloud' | 'logs' | 'settings';
 
 const ICONS: Record<PageId, React.ReactNode> = {
   home: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 10.5 12 3l9 7.5" /><path d="M5 9.5V21h14V9.5" /><path d="M9.5 21v-6h5v6" /></svg>,
@@ -30,6 +37,11 @@ const ICONS: Record<PageId, React.ReactNode> = {
   mods: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3 3 8v8l9 5 9-5V8l-9-5Z" /><path d="M12 12 3 8" /><path d="M12 12l9-4" /><path d="M12 12v9" /></svg>,
   content: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="16" rx="2" /><circle cx="9" cy="9" r="1.8" /><path d="m21 15-4.5-4.5L7 20" /></svg>,
   backups: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M4 7a8 3 0 0 1 16 0v10a8 3 0 0 1-16 0V7Z" /><path d="M4 12a8 3 0 0 0 16 0" /></svg>,
+  preflight: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3 4 6v6c0 5 3.4 8.4 8 9 4.6-.6 8-4 8-9V6l-8-3Z" /><path d="m9 12 2 2 4-4" /></svg>,
+  diagnostics: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12h4l2-6 4 12 2-6h6" /></svg>,
+  launchPreview: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="16" rx="2" /><path d="m7 9 3 3-3 3M12.5 15H17" /></svg>,
+  monitor: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12h3l2-5 3 10 3-7 2 2h5" /></svg>,
+  batch: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.2" /><rect x="14" y="14" width="7" height="7" rx="1.2" /><path d="M14 6h7M17.5 2.5v7M3 17h7M6.5 13.5v7" /></svg>,
   crash: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M13 2 4 14h6l-1 8 9-12h-6l1-8Z" /></svg>,
   migrate: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14" /><path d="M13 6l6 6-6 6" /></svg>,
   accounts: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="8" r="4" /><path d="M4 21c0-4 4-6 8-6s8 2 8 6" /></svg>,
@@ -47,6 +59,11 @@ const NAV: Array<{ id: PageId; label: string; section: string }> = [
   { id: 'tasks', label: '下载任务', section: '模组与资源' },
   { id: 'content', label: '内容管理', section: '模组与资源' },
   { id: 'backups', label: '存档备份', section: '模组与资源' },
+  { id: 'preflight', label: '启动前预检', section: '诊断与工具' },
+  { id: 'diagnostics', label: '下载诊断', section: '诊断与工具' },
+  { id: 'launchPreview', label: '启动参数', section: '诊断与工具' },
+  { id: 'monitor', label: '运行监控', section: '诊断与工具' },
+  { id: 'batch', label: '批量运维', section: '诊断与工具' },
   { id: 'crash', label: '崩溃分析', section: '诊断与工具' },
   { id: 'migrate', label: '迁移中心', section: '诊断与工具' },
   { id: 'logs', label: '日志', section: '诊断与工具' },
@@ -55,12 +72,127 @@ const NAV: Array<{ id: PageId; label: string; section: string }> = [
   { id: 'settings', label: '设置', section: '系统' },
 ];
 
+function LogoMark() {
+  return (
+    <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+      <rect x="2" y="3" width="3" height="10" />
+      <rect x="11" y="3" width="3" height="10" />
+      <rect x="5" y="5" width="2" height="3" />
+      <rect x="9" y="5" width="2" height="3" />
+      <rect x="7" y="8" width="2" height="3" />
+    </svg>
+  );
+}
+
+type CommandItem = { id: string; label: string; group: string; hint?: string; run: () => void };
+
+function CommandPalette({ open, onClose, onNavigate, onLaunch, onBackup, onOpenDir, theme, toggleTheme }: {
+  open: boolean;
+  onClose: () => void;
+  onNavigate: (p: PageId) => void;
+  onLaunch: () => void;
+  onBackup: () => void;
+  onOpenDir: () => void;
+  theme: 'light' | 'dark';
+  toggleTheme: () => void;
+}) {
+  const [query, setQuery] = useState('');
+  const [index, setIndex] = useState(0);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const items = useMemo<CommandItem[]>(() => [
+    ...NAV.map(item => ({
+      id: `nav:${item.id}`,
+      label: item.label,
+      group: item.section,
+      hint: '页面',
+      run: () => onNavigate(item.id),
+    })),
+    { id: 'action:launch', label: '启动当前实例', group: '操作', hint: 'Ctrl ↵', run: onLaunch },
+    { id: 'action:backup', label: '备份当前实例的存档', group: '操作', run: onBackup },
+    { id: 'action:dir', label: '打开当前实例的游戏目录', group: '操作', run: onOpenDir },
+    { id: 'action:theme', label: theme === 'light' ? '切换到夜炉（深色）' : '切换到纸墨（浅色）', group: '外观', run: toggleTheme },
+  ], [onNavigate, onLaunch, onBackup, onOpenDir, theme, toggleTheme]);
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return q ? items.filter(i => `${i.label} ${i.group}`.toLowerCase().includes(q)) : items;
+  }, [items, query]);
+
+  useEffect(() => {
+    if (!open) return;
+    setQuery('');
+    setIndex(0);
+    const timer = window.setTimeout(() => inputRef.current?.focus(), 30);
+    return () => window.clearTimeout(timer);
+  }, [open]);
+
+  useEffect(() => { setIndex(0); }, [query]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.stopPropagation(); onClose(); } };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [open, onClose]);
+
+  if (!open) return null;
+
+  const active = Math.min(index, Math.max(0, filtered.length - 1));
+
+  return createPortal(
+    <div className="command-mask" onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="command" role="dialog" aria-modal="true" aria-label="命令面板">
+        <div className="command-search">
+          <Icon name="search" size={16} />
+          <input
+            ref={inputRef}
+            value={query}
+            placeholder="搜索页面或操作…"
+            onChange={e => setQuery(e.target.value)}
+            onKeyDown={e => {
+              if (e.key === 'ArrowDown') { e.preventDefault(); setIndex(i => Math.min(filtered.length - 1, i + 1)); }
+              else if (e.key === 'ArrowUp') { e.preventDefault(); setIndex(i => Math.max(0, i - 1)); }
+              else if (e.key === 'Enter') { e.preventDefault(); filtered[active]?.run(); onClose(); }
+            }}
+          />
+          <kbd>ESC</kbd>
+        </div>
+        <div className="command-list">
+          {filtered.length === 0 && <div className="command-empty">没有匹配的页面或操作</div>}
+          {filtered.map((item, i) => (
+            <button
+              key={item.id}
+              className={`command-item ${i === active ? 'active' : ''}`}
+              onMouseEnter={() => setIndex(i)}
+              onClick={() => { item.run(); onClose(); }}
+            >
+              <span className="command-label">{item.label}</span>
+              <span className="command-group">{item.group}</span>
+              {item.hint && <span className="command-hint">{item.hint}</span>}
+            </button>
+          ))}
+        </div>
+        <div className="command-foot">
+          <span><kbd>↑</kbd><kbd>↓</kbd> 选择</span>
+          <span><kbd>↵</kbd> 打开</span>
+          <span><kbd>Esc</kbd> 关闭</span>
+        </div>
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
 function Shell() {
   const [page, setPage] = useState<PageId>('home');
   const [activeAccount, setActiveAccount] = useState<Account | null>(null);
   const [maximized, setMaximized] = useState(false);
+  const [appVersion, setAppVersion] = useState('');
+  const [paletteOpen, setPaletteOpen] = useState(false);
   const contentRef = useRef<HTMLElement>(null);
   const toast = useToast();
+  const { theme, setTheme } = usePrefs();
   const [launchState, setLaunchState] = useState<LaunchState>({ instanceId: null, status: 'idle' });
   const [launchProgress, setLaunchProgress] = useState<{ done: number; total: number } | null>(null);
   const [serverInfo, setServerInfo] = useState<ServerInfo | null>(null);
@@ -70,6 +202,7 @@ function Shell() {
   useEffect(() => {
     api.accountsActive().then(setActiveAccount).catch(() => setActiveAccount(null));
     api.windowIsMaximized().then(setMaximized).catch(() => undefined);
+    api.appInfo().then(info => setAppVersion(info.version)).catch(() => undefined);
     const off = on('accounts:microsoft-result', () => {
       api.accountsActive().then(setActiveAccount).catch(() => undefined);
     });
@@ -97,7 +230,7 @@ function Shell() {
     return () => window.clearInterval(timer);
   }, []);
 
-  /* 全局快捷键：Ctrl+Enter 启动当前实例、Ctrl+K 聚焦搜索、Alt+1~9 切页 */
+  /* 全局快捷键：Ctrl+K 命令面板、Ctrl+Enter 启动当前实例、Alt+1~9 切页 */
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       const el = e.target as HTMLElement | null;
@@ -105,8 +238,7 @@ function Shell() {
       const mod = e.ctrlKey || e.metaKey;
       if (mod && e.key.toLowerCase() === 'k') {
         e.preventDefault();
-        const input = document.querySelector<HTMLInputElement>('input[data-mcl-search]');
-        if (input) { input.focus(); input.select(); }
+        setPaletteOpen(v => !v);
         return;
       }
       if (mod && e.key === 'Enter') {
@@ -173,6 +305,29 @@ function Shell() {
     return [...map.entries()];
   }, []);
 
+  const selectedInstanceId = () => localStorage.getItem('mcl:selectedInstance');
+
+  const paletteLaunch = () => {
+    const id = selectedInstanceId();
+    const start = (target: string) => api.launchStart(target).catch(err => toast.toast(err instanceof Error ? err.message : String(err), 'error'));
+    if (id) void start(id);
+    else void api.instancesList().then(list => { if (list[0]) void start(list[0].id); }).catch(() => undefined);
+  };
+
+  const paletteBackup = () => {
+    const id = selectedInstanceId();
+    if (!id) { toast.toast('先创建一个实例再备份', 'info'); return; }
+    api.backupCreate(id, '手动快速备份')
+      .then(b => toast.toast(b ? `已备份（${b.worldNames.length} 个世界）` : '这个实例还没有存档', b ? 'ok' : 'info'))
+      .catch(err => toast.toast(String(err), 'error'));
+  };
+
+  const paletteOpenDir = () => {
+    const id = selectedInstanceId();
+    if (!id) { toast.toast('先创建一个实例', 'info'); return; }
+    api.instanceOpenGameDir(id).catch(err => toast.toast(String(err), 'error'));
+  };
+
   const status = useMemo<{ label: string; detail?: string; tone: 'idle' | 'busy' | 'ok' | 'error'; page?: PageId }>(() => {
     if (updateProgress) {
       const pct = Math.min(100, Math.round((updateProgress.done / Math.max(1, updateProgress.total)) * 100));
@@ -193,71 +348,106 @@ function Shell() {
       const label = ss === 'preparing' ? '安装服务端' : ss === 'starting' ? '启动服务端' : ss === 'stopping' ? '停止服务端' : '服务端运行中';
       return { label, detail: serverInfo?.name, tone: 'busy', page: 'servers' };
     }
-    return { label: '就绪', tone: 'idle' };
+    return { label: '一切就绪', tone: 'idle' };
   }, [launchState, launchProgress, serverInfo, updateProgress]);
 
-  // 切页回到顶部（借鉴 Modrinth：进入子页面时不应保留上一页的滚动位置）
+  // 切页回到顶部（进入子页面时不应保留上一页的滚动位置）
   useEffect(() => { contentRef.current?.scrollTo({ top: 0, behavior: 'smooth' }); }, [page]);
 
   const launchFail = (message: string) => toast.toast(message, 'error');
-  const current = NAV.find(n => n.id === page) ?? NAV[0];
 
   return (
     <>
       <div className="titlebar">
         <div className="brand">
-          <div className="logo"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.8 20.5 7.5v9L12 21.2 3.5 16.5v-9L12 2.8Z" /><path d="m3.5 7.5 8.5 4.7 8.5-4.7M12 12.2v9" /></svg></div>
-          MCL<small>新一代我的世界启动器</small>
+          <div className="logo"><LogoMark /></div>
+          <span className="brand-name">MCL<small>我的世界启动器</small></span>
         </div>
-        <span className="titlebar-divider" />
-        <span className="titlebar-crumb">{current.section}<i>/</i>{current.label}</span>
+        <div className="titlebar-sep" />
+        <button className="omnibox" onClick={() => setPaletteOpen(true)} title="打开命令面板（Ctrl K）">
+          <Icon name="search" size={14} />
+          <span>搜索页面与操作</span>
+          <kbd>Ctrl K</kbd>
+        </button>
         <div className="spacer" />
-        <button className="winbtn" onClick={() => api.windowMinimize().catch(() => undefined)} title="最小化" aria-label="最小化">
-          <svg viewBox="0 0 24 24"><path d="M5 12h14" /></svg>
+        <button
+          className={`status-pill ${status.tone} ${status.page ? 'link' : ''}`}
+          disabled={!status.page}
+          onClick={() => { if (status.page) setPage(status.page); }}
+          title={status.detail ? `${status.label} · ${status.detail}` : status.label}
+        >
+          <span className="dot" />
+          <span>{status.label}</span>
+          {status.detail && <span className="status-pill-detail">{status.detail}</span>}
         </button>
-        <button className="winbtn" onClick={() => api.windowToggleMaximize().then(setMaximized).catch(() => undefined)} title="最大化/还原" aria-label="最大化或还原">
-          {maximized
-            ? <svg viewBox="0 0 24 24"><rect x="7" y="7" width="12" height="12" rx="1.5" /><path d="M5 17V6a1 1 0 0 1 1-1h11" /></svg>
-            : <svg viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="14" rx="1.5" /></svg>}
+        <button
+          className="winbtn themebtn"
+          onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')}
+          title={theme === 'light' ? '切换到夜炉深色' : '切换到纸墨浅色'}
+          aria-label="切换明暗主题"
+        >
+          <Icon name={theme === 'light' ? 'moon' : 'sun'} size={14} />
         </button>
-        <button className="winbtn close" onClick={() => api.windowClose().catch(() => undefined)} title="关闭" aria-label="关闭">
-          <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18" /></svg>
-        </button>
+        <div className="window-controls">
+          <button className="winbtn" onClick={() => api.windowMinimize().catch(() => undefined)} title="最小化" aria-label="最小化">
+            <svg viewBox="0 0 24 24"><path d="M5 12h14" /></svg>
+          </button>
+          <button className="winbtn" onClick={() => api.windowToggleMaximize().then(setMaximized).catch(() => undefined)} title="最大化/还原" aria-label="最大化或还原">
+            {maximized
+              ? <svg viewBox="0 0 24 24"><rect x="7" y="7" width="12" height="12" rx="1.5" /><path d="M5 17V6a1 1 0 0 1 1-1h11" /></svg>
+              : <svg viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="14" rx="1.5" /></svg>}
+          </button>
+          <button className="winbtn close" onClick={() => api.windowClose().catch(() => undefined)} title="关闭" aria-label="关闭">
+            <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18" /></svg>
+          </button>
+        </div>
       </div>
       <div className="app-shell">
         <nav className="sidebar">
-          {sections.map(([section, items]) => (
-            <div key={section} className="rail-group">
-              <div className="side-section">{section}</div>
-              {items.map(item => (
-                <button
-                  key={item.id}
-                  className={`nav-item ${page === item.id ? 'active' : ''}`}
-                  onClick={() => setPage(item.id)}
-                  title={item.label}
-                  aria-label={item.label}
-                >
-                  <span className="icon">{ICONS[item.id]}</span>
-                  <span className="nav-label">{item.label}</span>
-                </button>
-              ))}
-            </div>
-          ))}
+          <div className="sidebar-scroll">
+            {sections.map(([section, items]) => (
+              <div key={section} className="rail-group">
+                <div className="side-section">{section}</div>
+                {items.map(item => (
+                  <button
+                    key={item.id}
+                    className={`nav-item ${page === item.id ? 'active' : ''}`}
+                    onClick={() => setPage(item.id)}
+                    title={item.label}
+                    aria-label={item.label}
+                    aria-current={page === item.id ? 'page' : undefined}
+                  >
+                    <span className="icon">{ICONS[item.id]}</span>
+                    <span className="nav-label">{item.label}</span>
+                    {page === item.id && <span className="nav-mark" />}
+                  </button>
+                ))}
+              </div>
+            ))}
+          </div>
           <div className="nav-footer">
             <button
               className="rail-account"
               onClick={() => setPage('accounts')}
-              title={activeAccount?.name ?? '未登录'}
+              title={activeAccount ? `${activeAccount.name} · 账号设置` : '未登录 · 点击登录'}
               aria-label="账号设置"
             >
               <span className="avatar">
                 {activeAccount?.skinUrl
-                  ? <img src={activeAccount.skinUrl} alt="" width={28} height={28} style={{ imageRendering: 'pixelated' }} />
-                  : <span>{activeAccount?.name?.[0]?.toUpperCase() ?? '?'}</span>}
+                  ? <img src={activeAccount.skinUrl} alt="" width={32} height={32} style={{ imageRendering: 'pixelated' }} />
+                  : <span>{activeAccount?.name?.[0]?.toUpperCase() ?? <Icon name="accounts" size={15} />}</span>}
+              </span>
+              <span className="account-meta">
+                <b>{activeAccount?.name ?? '未登录'}</b>
+                <small>{activeAccount ? '账号已就绪' : '点击登录'}</small>
               </span>
               <span className={`rail-status ${activeAccount ? 'on' : ''}`} />
-              <span className="nav-label">{activeAccount?.name ?? '未登录'}</span>
             </button>
+            <div className="sidebar-meta">
+              <span>v{appVersion || '0.1.0'}</span>
+              <span className="dot-sep" />
+              <span>数据只存本机</span>
+            </div>
           </div>
         </nav>
         <main className="content" ref={contentRef}>
@@ -270,6 +460,11 @@ function Shell() {
             {page === 'tasks' && <Tasks />}
             {page === 'content' && <Content />}
             {page === 'backups' && <Backups />}
+            {page === 'preflight' && <Preflight />}
+            {page === 'diagnostics' && <Diagnostics />}
+            {page === 'launchPreview' && <LaunchPreview />}
+            {page === 'monitor' && <Monitor />}
+            {page === 'batch' && <Batch />}
             {page === 'crash' && <Crash />}
             {page === 'migrate' && <Migrate />}
             {page === 'accounts' && <Accounts />}
@@ -279,16 +474,17 @@ function Shell() {
           </div>
         </main>
       </div>
-      <div className="statusbar">
-        <span className={`status-item ${status.tone}`}><span className="dot" />{status.label}</span>
-        {status.detail && <span className="status-detail">{status.detail}</span>}
-        {status.page && <button className="status-link" onClick={() => setPage(status.page!)}>查看 →</button>}
-        <div className="spacer" />
-        <span className="status-hint">Ctrl+Enter 启动</span>
-        <span className="status-hint">Ctrl+K 搜索</span>
-        <span className="status-hint"><Icon name="shield" size={11} /> 开源 · 零遥测 · 令牌仅存本机</span>
-      </div>
       {modpackDrag && <div className="drop-overlay modpack">松开即可导入整合包（.mrpack / .zip）</div>}
+      <CommandPalette
+        open={paletteOpen}
+        onClose={() => setPaletteOpen(false)}
+        onNavigate={setPage}
+        onLaunch={paletteLaunch}
+        onBackup={paletteBackup}
+        onOpenDir={paletteOpenDir}
+        theme={theme}
+        toggleTheme={() => setTheme(theme === 'light' ? 'dark' : 'light')}
+      />
     </>
   );
 }

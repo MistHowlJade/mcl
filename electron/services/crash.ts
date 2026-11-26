@@ -23,10 +23,11 @@ const RULES: CrashRule[] = [
   {
     id: 'unsupported-class-version',
     // 去掉跨行贪婪的 (\d+)\.0.*?class file 与 s 标志：正常日志里的 "1.20.0" + "class file cache" 会误报
-    pattern: /UnsupportedClassVersionError[^0-9]*?(?:major|class file) version (\d+)|major version (\d+)|class file version (\d+)/i,
+    // 去掉裸「major version」分支（协议日志会误报），补上旧 JVM 的 Unsupported major.minor version 句式
+    pattern: /UnsupportedClassVersionError[^\n]*?(?:major(?:\.minor)?|class file) version (\d+(?:\.\d+)?)|class file version (\d+(?:\.\d+)?)|Unsupported major\.minor version (\d+(?:\.\d+)?)/i,
     title: 'Java 版本不匹配',
     summary: (m) => {
-      const major = parseInt(m[1] ?? m[2] ?? m[3] ?? m[4] ?? '0', 10);
+      const major = parseInt(m[1] ?? m[2] ?? m[3] ?? '0', 10);
       const need = MAJOR_TO_JAVA[major] ?? major;
       return `这个版本的 Minecraft / 模组需要 Java ${need}，而启动器选用的 Java 版本太老（或整合包自带的 Java 太新）。这是闪退最常见的原因之一。`;
     },
@@ -86,7 +87,8 @@ const RULES: CrashRule[] = [
   },
   {
     id: 'natives-lwjgl',
-    pattern: /UnsatisfiedLinkError[^\n]*|Failed to locate library[^\n]*|natives?[^\n]{0,80}(failed|error|unable|could not|找不到)[^\n]*|找不到[^\n]{0,40}dll/i,
+    // 「natives loaded successfully without error」不能命中，失败词必须跟 load/extract/find/locate
+    pattern: /UnsatisfiedLinkError[^\n]*|Failed to locate library[^\n]*|natives?[^\n]{0,80}(?:failed to (?:load|extract|find|locate)|could not (?:load|extract|find|locate)|unable to (?:load|extract|find|locate)|找不到)/i,
     title: '原生库（natives）损坏或被占用',
     summary: '游戏依赖的本地库文件（如 lwjgl.dll）加载失败——可能是文件损坏，也可能是上一次游戏没退干净、文件被占用。',
     detail: 'LWJGL 提供 OpenGL/GLFW 绑定。UnsatisfiedLinkError 常见原因：natives 未解压 / 被安全软件拦截 / 文件被占用 / 32 位 natives 混入 64 位运行环境。',
@@ -98,7 +100,8 @@ const RULES: CrashRule[] = [
   },
   {
     id: 'tls-too-old',
-    pattern: /SSLHandshakeException|NoSuchMethodError.*SSL|TLSv1\.3|TLS 1\.3/i,
+    // 裸 TLSv1.3 是正常协议日志，只有和 SSLHandshakeException 同时出现才算 Java 8 过旧
+    pattern: /SSLHandshakeException[^\n]{0,160}(?:TLSv?1\.3|TLS 1\.3)|(?:TLSv?1\.3|TLS 1\.3)[^\n]{0,160}SSLHandshakeException|NoSuchMethodError[^\n]{0,120}SSL/i,
     title: 'Java 8 版本过低，不支持 TLS 1.3',
     summary: '你的 Java 8 小版本低于 8u291，连接微软验证服务器会失败，报出来的错和网络毫无关系，非常有迷惑性。',
     detail: 'TLS 1.3 需要 Java 8u261+（完整支持 8u291+）。旧版 Java 调 SSLContext.getDefault() 会走不支持 TLS1.3 的实现。',
@@ -120,7 +123,8 @@ const RULES: CrashRule[] = [
   },
   {
     id: 'duplicate-mods',
-    pattern: /Duplicate.*(mod|jar|file)|already exists.*mods|duplicate mod/i,
+    // 「Duplicate mod entries were skipped」是正常日志，必须有 found/detected/conflict 等错误上下文
+    pattern: /DuplicateModIdException|duplicate (?:mod|jar)[^\n]{0,80}(?:found|detected|conflict|error|failed)|already exists[^\n]{0,40}mods/i,
     title: '重复的模组文件',
     summary: 'mods 目录里有同一个模组的多个版本同时存在（常见于手动更新模组后忘了删旧文件）。',
     detail: '重复模组会导致类加载冲突。MCL 的"模组体检"可以自动发现并隔离旧版本。',
@@ -142,7 +146,8 @@ const RULES: CrashRule[] = [
   },
   {
     id: 'shader-cache',
-    pattern: /shader.*(cache|corrupted|corrupt)|ShaderCompile|glsl.*error/i,
+    // 「Cleared shader cache successfully」是正常维护日志，必须有损坏语义
+    pattern: /shader[^\n]{0,80}(?:cache[^\n]{0,40}(?:corrupt|invalid|damaged|bad)|corrupt[^\n]{0,40}(?:cache|shader))|ShaderCompile[^\n]{0,120}(?:error|fail)|glsl[^\n]{0,80}error/i,
     title: '光影缓存损坏',
     summary: '光影的着色器缓存坏了。这种损坏会跨启动保留，只有手动清掉缓存才能恢复。',
     detail: 'OptiFine/Iris/Oculus 都会把编译好的 shader 缓存到游戏目录。损坏时游戏卡死在黑屏或持续报 shader 错误。',
@@ -167,7 +172,8 @@ const RULES: CrashRule[] = [
   {
     id: 'connection-reset',
     // "handshake completed with remote peer" 是正常调试日志，不能单独命中失败规则
-    pattern: /Connection refused|Connection reset|SocketTimeout|handshake.{0,40}(?:fail|error|refus|timed out)|timed out.*connect/i,
+    // 裸「Connection refused」可能只是服务端满员提示；要求 ConnectException / SocketTimeout 上下文
+    pattern: /(?:java\.net\.)?(?:ConnectException|SocketTimeoutException|SocketTimeout)[^\n]{0,120}(?:Connection refused|Connection reset|timed out)|Connection reset|handshake[^\n]{0,40}(?:fail|error|refus|timed out)|timed out[^\n]{0,40}connect/i,
     title: '网络连接失败',
     summary: '游戏连接服务器（或验证服务器）被对方拒绝或超时。联机时这可能是服务器挂了，也可能是你的验证通道不通。',
     detail: '常见：正版验证服务器暂时不可达、Java 8 过旧（TLS 1.3）、或本机防火墙/代理拦截。',

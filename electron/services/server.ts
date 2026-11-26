@@ -818,11 +818,24 @@ export async function stopServer(id: string): Promise<boolean> {
   rt.stopping = true;
   setStatus(id, 'stopping');
   emitLog(id, '[mcl] 正在发送 stop 命令…');
-  try { rt.child.stdin.write('stop\n'); } catch { /* ignore */ }
   const child = rt.child;
   const exited = await new Promise<boolean>(resolve => {
-    const timer = setTimeout(() => resolve(false), 30000);
-    child.once('close', () => { clearTimeout(timer); resolve(true); });
+    let settled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const finish = (value: boolean) => {
+      if (settled) return;
+      settled = true;
+      if (timer) clearTimeout(timer);
+      resolve(value);
+    };
+    timer = setTimeout(() => finish(false), 30000);
+    // 先监听再写：服务端可能在 write 之后、once('close') 之前就退出，否则会白等 30 秒
+    child.once('close', () => finish(true));
+    if (child.exitCode !== null || child.signalCode !== null) {
+      finish(true);
+      return;
+    }
+    try { child.stdin.write('stop\n'); } catch { /* ignore */ }
   });
   if (!exited) {
     emitLog(id, '[mcl] 服务器 30 秒内未退出，强制结束进程。');

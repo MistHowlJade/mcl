@@ -141,26 +141,28 @@ export function mapToMirror(url: string, source: 'official' | 'bmclapi' | 'custo
     const u = new URL(url);
     const host = u.host;
     const pathname = u.pathname;
+    // 签名 / 缓存参数必须保留，否则映射后的 URL 会失效
+    const suffix = `${u.search}${u.hash}`;
     if (host.includes('piston-meta.mojang.com') || host.includes('launchermeta.mojang.com')) {
-      return `${base}${pathname}`;
+      return `${base}${pathname}${suffix}`;
     }
     if (host.includes('piston-data.mojang.com')) {
       // BMCLAPI：/piston-data 前缀是多余的（404），保留原路径即可
-      return `${base}${pathname}`;
+      return `${base}${pathname}${suffix}`;
     }
     if (host.includes('repo.maven.apache.org') || host.includes('libraries.minecraft.net') || host.includes('maven.minecraft.net')) {
       // 官方仓库路径带 /maven2 前缀，BMCLAPI 的 /libraries 下不需要
       const rel = pathname.replace(/^\/maven2\//, '/');
-      return `${base}/libraries${rel}`;
+      return `${base}/libraries${rel}${suffix}`;
     }
     if (host.includes('resources.download.minecraft.net')) {
       // BMCLAPI 资源与 2 级目录不同步，直接用 sha1 全路径
       const hash = pathname.split('/').filter(Boolean).pop() ?? '';
-      return `${base}/assets/${hash}`;
+      return `${base}/assets/${hash}${suffix}`;
     }
     if (host.includes('maven.fabricmc.net') || host.includes('maven.quiltmc.org')) {
       // BMCLAPI 的 Fabric/Quilt Maven 在 /maven 前缀下，直接拼原路径会 404
-      return `${base}/maven${pathname}`;
+      return `${base}/maven${pathname}${suffix}`;
     }
     // Forge/NeoForge Maven 不在 BMCLAPI 上，不映射（走官方小文件即可）
     return url;

@@ -268,7 +268,7 @@ function SkinModal({ account, onClose, onChanged }: { account: Account; onClose:
             <button className="btn" disabled={!!busy} onClick={() => apply('cape', () => api.accountLocalCape(account.id))}>导入披风预览</button>
             {account.capeUrl && <button className="btn ghost" disabled={!!busy} onClick={() => apply('capeClear', () => api.accountClearLocalCape(account.id))}>清除披风预览</button>}
           </div>
-          <div className="mt row" style={{ padding: '10px 14px', borderRadius: 9, background: 'var(--amber-soft)', border: '1px solid rgba(240,180,91,.3)', fontSize: 13, gap: 8, alignItems: 'flex-start' }}>
+          <div className="mt row" style={{ padding: '10px 14px', borderRadius: 9, background: 'var(--amber-soft)', border: '1px solid rgba(148,102,26,.28)', fontSize: 13, gap: 8, alignItems: 'flex-start' }}>
             <Icon name="warn" size={15} />
             <span>离线皮肤只保存在本机 <span className="mono">accounts.json</span>，仅 MCL 界面可见。离线模式不会向服务器上报皮肤，其他玩家看到的是默认皮肤——这是 Minecraft 离线模式的设计，不是 MCL 的限制。</span>
           </div>

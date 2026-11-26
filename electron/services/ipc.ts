@@ -26,10 +26,17 @@ import * as contentService from './content';
 import * as exporter from './exporter';
 import * as updateService from './update';
 import * as lanService from './lan';
+import * as preflightService from './preflight';
+import * as downloadDiagnostics from './download-diagnostics';
+import * as modDeps from './mod-deps';
+import * as backupScheduler from './backup-scheduler';
+import * as launchPreview from './launch-preview';
+import * as processMonitor from './process-monitor';
+import * as batchService from './batch';
 import { downloadTasks } from './tasks';
 import { getVersionManifest } from './version';
 import { errorReason } from './net';
-import { AppInfo, CrashFix, LoaderType, MemoryPreset, TaskAction, TaskKind } from '../shared/types';
+import { AppInfo, BackupScheduleState, BatchResult, CrashFix, DownloadSource, ExportFormat, LoaderType, MemoryPreset, TaskAction, TaskKind } from '../shared/types';
 import { getChannel } from './channel';
 
 const sendToAll = (channel: string, payload: unknown) => {
@@ -755,6 +762,42 @@ export function registerIpcHandlers(): void {
     const { pickBestSource } = await import('./net');
     return pickBestSource(getSettings().download.customMirror);
   });
+
+  /* ---------- 启动前预检 ---------- */
+  ipcMain.handle('preflight:run', (_e, instanceId: string) => preflightService.runPreflight(String(instanceId ?? '')));
+  ipcMain.handle('preflight:fix', async (_e, instanceId: string, fix: { action: string; label: string; args?: Record<string, any> }) => {
+    if (!fix || typeof fix.action !== 'string') throw new Error('修复动作无效');
+    return preflightService.applyPreflightFix(String(instanceId ?? ''), fix.action, fix.args ?? {});
+  });
+
+  /* ---------- 下载诊断与智能换源 ---------- */
+  ipcMain.handle('downloadDiag:report', () => downloadDiagnostics.getReport());
+  ipcMain.handle('downloadDiag:probe', () => downloadDiagnostics.probeMirrors());
+  ipcMain.handle('downloadDiag:setSource', (_e, source: DownloadSource) => downloadDiagnostics.setSource(source));
+
+  /* ---------- 模组依赖体检 ---------- */
+  ipcMain.handle('modDeps:scan', (_e, instanceId: string) => modDeps.scanDependencies(String(instanceId ?? '')));
+  ipcMain.handle('modDeps:install', (_e, instanceId: string, items: Array<{ projectId: string; versionId?: string | null }>) =>
+    modDeps.installDependencies(String(instanceId ?? ''), items));
+
+  /* ---------- 定时备份 ---------- */
+  ipcMain.handle('backupSchedule:get', (): BackupScheduleState => backupScheduler.getState());
+  ipcMain.handle('backupSchedule:update', (_e, patch: { enabled?: boolean; intervalHours?: number }) => backupScheduler.updateSchedule(patch ?? {}));
+  ipcMain.handle('backupSchedule:runNow', (_e, instanceId?: string) => backupScheduler.runNow(instanceId || undefined));
+
+  /* ---------- 启动参数预览 ---------- */
+  ipcMain.handle('launch:preview', (_e, instanceId: string) => launchPreview.previewLaunch(String(instanceId ?? '')));
+
+  /* ---------- 运行监控 ---------- */
+  ipcMain.handle('monitor:status', () => processMonitor.getStatus());
+  ipcMain.handle('monitor:logTail', (_e, instanceId: string, maxLines?: number) => processMonitor.getLogTail(String(instanceId ?? ''), maxLines ?? 120));
+  ipcMain.handle('monitor:kill', () => processMonitor.killGame());
+
+  /* ---------- 批量运维 ---------- */
+  ipcMain.handle('batch:backup', (_e, ids: string[]): Promise<BatchResult[]> => batchService.batchBackup(ids));
+  ipcMain.handle('batch:checkUpdates', (_e, ids: string[]): Promise<BatchResult[]> => batchService.batchCheckUpdates(ids));
+  ipcMain.handle('batch:export', (_e, ids: string[], format: ExportFormat, destDir: string): Promise<BatchResult[]> =>
+    batchService.batchExport(ids, format, destDir));
 
   /* ---------- 下载任务中心 ---------- */
   ipcMain.handle('tasks:list', () => downloadTasks.list());

@@ -13,6 +13,7 @@ import { dataRoot, ensureLayout, redirectElectronPaths } from './services/paths'
 import { getSettings } from './services/settings';
 import { getChannel, CHANNEL_LABEL } from './services/channel';
 import { killResidualProcesses } from './services/minecraft';
+import { startScheduler } from './services/backup-scheduler';
 import { killAllServersSync, listServers, stopServer } from './services/server';
 
 // 本地媒体协议：只读、限定在 MCL 数据目录内，用于截图/世界图标预览
@@ -91,8 +92,8 @@ async function createWindow(): Promise<void> {
     minWidth: 1024,
     minHeight: 640,
     frame: false,
-    backgroundColor: '#10131a',
-    icon: path.join(__dirname, '..', 'assets', 'app.ico'),
+    backgroundColor: '#f2eee5',
+    icon: path.join(__dirname, '..', 'assets', 'app-craft.ico'),
     show: false,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -150,6 +151,8 @@ if (gotLock) {
     registerMediaProtocol();
     registerIpcHandlers();
     bindServiceEvents();
+    // 定时存档备份：按设置启动，未开启时不产生定时器
+    startScheduler();
     // 残余进程清理：异步进行，不阻塞窗口
     const settings = getSettings();
     if (settings.launch.autoKillResidual) {

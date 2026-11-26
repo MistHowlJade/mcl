@@ -8,3 +8,5 @@ Thumbs.db
 .mcl-data/
 .build-cache/
 .vite/
+.preview/
+.tmp-*

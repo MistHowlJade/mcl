@@ -11,6 +11,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
     autoBackupBeforeLaunch: true,
     backupKeep: 10,
     confirmBeforeLaunch: false,
+    scheduledBackupEnabled: false,
+    scheduledBackupIntervalHours: 6,
     defaultResolution: { width: 1280, height: 720 },
   },
   download: {
@@ -105,6 +107,8 @@ function normalizeSettings(input: AppSettings): AppSettings {
       autoBackupBeforeLaunch: bool(general.autoBackupBeforeLaunch, true),
       backupKeep: num(general.backupKeep, 10, 1, 200, true),
       confirmBeforeLaunch: bool(general.confirmBeforeLaunch, false),
+      scheduledBackupEnabled: bool(general.scheduledBackupEnabled, false),
+      scheduledBackupIntervalHours: num(general.scheduledBackupIntervalHours, 6, 1, 168, true),
       defaultResolution: general.defaultResolution && typeof general.defaultResolution === 'object'
         ? {
           width: num(general.defaultResolution.width, 1280, 320, 7680, true),
