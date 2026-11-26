@@ -57,7 +57,12 @@ export default function Preflight() {
       </div>
 
       {!report ? (
-        <div className="empty"><div className="big"><Icon name="shield" size={30} /></div>选择实例后点「开始预检」，结果会显示在这里。</div>
+        <div className="panel">
+          <div className="empty">
+            <div className="big"><Icon name="shield" size={30} /></div>
+            选择实例后点「开始预检」，结果会显示在这里。
+          </div>
+        </div>
       ) : (
         <>
           <div className="panel" style={{ marginBottom: 14 }}>

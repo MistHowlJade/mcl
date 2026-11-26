@@ -111,7 +111,7 @@ function CommandPalette({ open, onClose, onNavigate, onLaunch, onBackup, onOpenD
     { id: 'action:launch', label: '启动当前实例', group: '操作', hint: 'Ctrl ↵', run: onLaunch },
     { id: 'action:backup', label: '备份当前实例的存档', group: '操作', run: onBackup },
     { id: 'action:dir', label: '打开当前实例的游戏目录', group: '操作', run: onOpenDir },
-    { id: 'action:theme', label: theme === 'light' ? '切换到夜炉（深色）' : '切换到纸墨（浅色）', group: '外观', run: toggleTheme },
+    { id: 'action:theme', label: theme === 'light' ? '切换到深色模式' : '切换到浅色模式', group: '外观', run: toggleTheme },
   ], [onNavigate, onLaunch, onBackup, onOpenDir, theme, toggleTheme]);
 
   const filtered = useMemo(() => {
@@ -190,6 +190,7 @@ function Shell() {
   const [maximized, setMaximized] = useState(false);
   const [appVersion, setAppVersion] = useState('');
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [openSection, setOpenSection] = useState('游戏');
   const contentRef = useRef<HTMLElement>(null);
   const toast = useToast();
   const { theme, setTheme } = usePrefs();
@@ -328,6 +329,12 @@ function Shell() {
     api.instanceOpenGameDir(id).catch(err => toast.toast(String(err), 'error'));
   };
 
+  // 侧栏一次只展开一个分组，19 个页面不会把导航撑出屏幕
+  useEffect(() => {
+    const section = NAV.find(item => item.id === page)?.section;
+    if (section) setOpenSection(section);
+  }, [page]);
+
   const status = useMemo<{ label: string; detail?: string; tone: 'idle' | 'busy' | 'ok' | 'error'; page?: PageId }>(() => {
     if (updateProgress) {
       const pct = Math.min(100, Math.round((updateProgress.done / Math.max(1, updateProgress.total)) * 100));
@@ -383,7 +390,7 @@ function Shell() {
         <button
           className="winbtn themebtn"
           onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')}
-          title={theme === 'light' ? '切换到夜炉深色' : '切换到纸墨浅色'}
+          title={theme === 'light' ? '切换到深色模式' : '切换到浅色模式'}
           aria-label="切换明暗主题"
         >
           <Icon name={theme === 'light' ? 'moon' : 'sun'} size={14} />
@@ -405,25 +412,38 @@ function Shell() {
       <div className="app-shell">
         <nav className="sidebar">
           <div className="sidebar-scroll">
-            {sections.map(([section, items]) => (
-              <div key={section} className="rail-group">
-                <div className="side-section">{section}</div>
-                {items.map(item => (
+            {sections.map(([section, items]) => {
+              const open = openSection === section;
+              const hasActive = items.some(item => item.id === page);
+              return (
+                <div key={section} className={`rail-group ${open ? 'open' : ''} ${hasActive ? 'has-active' : ''}`}>
                   <button
-                    key={item.id}
-                    className={`nav-item ${page === item.id ? 'active' : ''}`}
-                    onClick={() => setPage(item.id)}
-                    title={item.label}
-                    aria-label={item.label}
-                    aria-current={page === item.id ? 'page' : undefined}
+                    className="side-section"
+                    onClick={() => setOpenSection(prev => (prev === section ? '' : section))}
+                    aria-expanded={open}
+                    title={open ? `收起「${section}」` : `展开「${section}」`}
                   >
-                    <span className="icon">{ICONS[item.id]}</span>
-                    <span className="nav-label">{item.label}</span>
-                    {page === item.id && <span className="nav-mark" />}
+                    <span className="side-section-label">{section}</span>
+                    <span className="side-count">{items.length}</span>
+                    <Icon name="chevronDown" size={12} className="side-chev" />
                   </button>
-                ))}
-              </div>
-            ))}
+                  {open && items.map(item => (
+                    <button
+                      key={item.id}
+                      className={`nav-item ${page === item.id ? 'active' : ''}`}
+                      onClick={() => setPage(item.id)}
+                      title={item.label}
+                      aria-label={item.label}
+                      aria-current={page === item.id ? 'page' : undefined}
+                    >
+                      <span className="icon">{ICONS[item.id]}</span>
+                      <span className="nav-label">{item.label}</span>
+                      {page === item.id && <span className="nav-mark" />}
+                    </button>
+                  ))}
+                </div>
+              );
+            })}
           </div>
           <div className="nav-footer">
             <button

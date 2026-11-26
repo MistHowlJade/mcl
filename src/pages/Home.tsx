@@ -4,7 +4,7 @@ import { useToast } from '../components/Toast';
 import { ConfirmModal, formatBytes, timeAgo } from '../components/Modal';
 import { Icon } from '../components/Icon';
 import { PageSkeleton } from '../components/ui';
-import { PixelScene } from '../components/PixelScene';
+import { GlassCube } from '../components/GlassCube';
 import type { Account, AppSettings, CrashDiagnosis, InstanceInfo, LaunchState, PlayStats } from '../../electron/shared/types';
 
 type Page = 'home' | 'instances' | 'servers' | 'mods' | 'download' | 'tasks' | 'content' | 'backups' | 'crash' | 'migrate' | 'accounts' | 'cloud' | 'logs' | 'settings';
@@ -238,7 +238,15 @@ export default function Home({ onNavigate, onLaunchFail }: { onNavigate: (p: Pag
               <div className="launch-specs">
                 <div><span className="micro">Java</span><b>{selected.javaPath ? '指定路径' : '自动匹配'}</b></div>
                 <div><span className="micro">内存</span><b>{PRESET_LABEL[selected.memoryPreset ?? 'standard']}</b></div>
-                <div><span className="micro">上次游玩</span><b>{timeAgo(selected.lastPlayedAt)}</b></div>
+                <div><span className="micro">存档</span><b>{selected.savesCount} 个</b></div>
+              </div>
+
+              <div className="launch-note">
+                <span><Icon name="clock" size={11} /> 上次游玩 {timeAgo(selected.lastPlayedAt)}</span>
+                <span className="dot-sep" />
+                <span>累计 {Math.floor((selected.playTimeSeconds ?? 0) / 3600)} 小时</span>
+                <span className="dot-sep" />
+                <span>{settings?.general.autoBackupBeforeLaunch !== false ? '启动前自动备份' : '自动备份已关闭'}</span>
               </div>
 
               <div className="launch-actions">
@@ -265,8 +273,8 @@ export default function Home({ onNavigate, onLaunchFail }: { onNavigate: (p: Pag
               {busy && launchState.message && <div className="launch-status-note">{launchState.message}</div>}
             </div>
             <div className="launch-art">
-              <PixelScene />
-              <span className="launch-art-tag">世界已就绪</span>
+              <GlassCube />
+              <span className="launch-art-tag">已就绪 · 柔光模式</span>
             </div>
           </section>
         ) : (
@@ -283,7 +291,7 @@ export default function Home({ onNavigate, onLaunchFail }: { onNavigate: (p: Pag
                 <button className="btn" onClick={() => onNavigate('migrate')}>从其它启动器迁移</button>
               </div>
             </div>
-            <div className="launch-art"><PixelScene /></div>
+            <div className="launch-art"><GlassCube /></div>
           </section>
         )}
 

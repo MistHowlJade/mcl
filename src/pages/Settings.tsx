@@ -43,7 +43,7 @@ export default function Settings({ onNavigate }: { onNavigate?: (page: 'cloud') 
   const [cacheClearing, setCacheClearing] = useState(false);
   const [confirmClearCache, setConfirmClearCache] = useState(false);
   const toast = useToast();
-  const { nav, setNav, theme, setTheme } = usePrefs();
+  const { theme, setTheme } = usePrefs();
 
   useEffect(() => {
     api.settingsGet().then(setSettings).catch(e => toast.toast(String(e), 'error'));
@@ -213,20 +213,11 @@ export default function Settings({ onNavigate }: { onNavigate?: (page: 'cloud') 
       <div className="panel">
         <div className="panel-title">外观</div>
         <div className="setting-row">
-          <div className="label">主题<Tip text="纸墨：暖纸底色、墨色文字，白天与亮房间更舒服；夜炉：深炭底色配余烬橙，夜间不刺眼。只影响启动器界面，不会改变游戏画面。" /></div>
+          <div className="label">主题<Tip text="柔光：浅色半透明玻璃与柔和彩光，适合白天与亮房间；深色：低亮度玻璃与同样的柔光层次，夜间不刺眼。只影响启动器界面，不会改变游戏画面。" /></div>
           <div className="control">
             <div className="segmented">
-              <button className={`btn small ${theme === 'light' ? 'primary' : ''}`} onClick={() => setTheme('light')}>纸墨浅色</button>
-              <button className={`btn small ${theme === 'dark' ? 'primary' : ''}`} onClick={() => setTheme('dark')}>夜炉深色</button>
-            </div>
-          </div>
-        </div>
-        <div className="setting-row">
-          <div className="label">导航样式<Tip text="侧边栏：左侧分组导航，空间利用率高；顶部标签：标题栏下方的横向标签页，切换更直观。只影响启动器界面。" /></div>
-          <div className="control">
-            <div className="segmented">
-              <button className={`btn small ${nav === 'side' ? 'primary' : ''}`} onClick={() => setNav('side')}>侧边栏</button>
-              <button className={`btn small ${nav === 'top' ? 'primary' : ''}`} onClick={() => setNav('top')}>顶部标签</button>
+              <button className={`btn small ${theme === 'light' ? 'primary' : ''}`} onClick={() => setTheme('light')}>柔光浅色</button>
+              <button className={`btn small ${theme === 'dark' ? 'primary' : ''}`} onClick={() => setTheme('dark')}>深色模式</button>
             </div>
           </div>
         </div>
