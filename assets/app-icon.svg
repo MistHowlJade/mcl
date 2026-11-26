@@ -1,13 +1,28 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
-  <rect x="12" y="12" width="232" height="232" rx="52" fill="#1D1A15"/>
-  <rect x="16.5" y="16.5" width="223" height="223" rx="47.5" fill="none" stroke="#3A3328" stroke-width="3"/>
-  <g transform="translate(68 78) scale(10)" fill="#F7F0E2">
-    <rect x="0" y="0" width="3" height="10"/>
-    <rect x="9" y="0" width="3" height="10"/>
-    <rect x="3" y="2" width="2" height="3"/>
-    <rect x="7" y="2" width="2" height="3"/>
-    <rect x="5" y="5" width="2" height="3" fill="#EF8A51"/>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#FFA55C"/>
+      <stop offset="0.55" stop-color="#FF7A1F"/>
+      <stop offset="1" stop-color="#F45200"/>
+    </linearGradient>
+    <linearGradient id="gloss" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.55"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="m" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#FFF1E6"/>
+    </linearGradient>
+  </defs>
+  <rect x="10" y="10" width="236" height="236" rx="56" fill="url(#bg)"/>
+  <path d="M10 66C10 35.07 35.07 10 66 10h124c30.93 0 56 25.07 56 56v22c-30 18-64 28-118 28S40 106 10 88V66Z" fill="url(#gloss)"/>
+  <rect x="12.5" y="12.5" width="231" height="231" rx="53.5" fill="none" stroke="#FFFFFF" stroke-opacity="0.45" stroke-width="5"/>
+  <g transform="translate(68 78) scale(10)" fill="url(#m)">
+    <rect x="0" y="0" width="3" height="10" rx="0.35"/>
+    <rect x="9" y="0" width="3" height="10" rx="0.35"/>
+    <rect x="3" y="2" width="2" height="3" rx="0.3"/>
+    <rect x="7" y="2" width="2" height="3" rx="0.3"/>
+    <rect x="5" y="5" width="2" height="3" rx="0.3"/>
   </g>
-  <rect x="188" y="188" width="28" height="28" rx="4" fill="#EF8A51"/>
-  <rect x="196" y="196" width="12" height="12" fill="#1D1A15"/>
+  <rect x="186" y="186" width="30" height="30" rx="8" fill="#FFFFFF" fill-opacity="0.22" stroke="#FFFFFF" stroke-opacity="0.5" stroke-width="1.5"/>
 </svg>

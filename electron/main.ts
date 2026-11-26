@@ -92,8 +92,8 @@ async function createWindow(): Promise<void> {
     minWidth: 1024,
     minHeight: 640,
     frame: false,
-    backgroundColor: '#f2eee5',
-    icon: path.join(__dirname, '..', 'assets', 'app-craft.ico'),
+    backgroundColor: '#e9eff8',
+    icon: path.join(__dirname, '..', 'assets', 'app-soft.ico'),
     show: false,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
